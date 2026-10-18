@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     io::{Read, Write},
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 
 use anyhow::{anyhow, Context};
@@ -10,15 +10,22 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
+pub(crate) mod conpty_bundle;
+
+/// Larger reads keep the number of Tauri events (and therefore IPC framing
+/// overhead and scheduling jitter) low during bursty output such as `help`.
+const READ_BUFFER_SIZE: usize = 32 * 1024;
+
 #[derive(Default)]
 pub struct PtySessionManager {
-    sessions: Mutex<HashMap<String, PtySession>>,
+    sessions: Mutex<HashMap<String, Arc<PtySession>>>,
 }
 
 struct PtySession {
-    master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
-    _child: Box<dyn Child + Send>,
+    master: Mutex<Box<dyn MasterPty + Send>>,
+    writer: Mutex<Box<dyn Write + Send>>,
+    child: Mutex<Box<dyn Child + Send + Sync>>,
+    size: Mutex<PtySize>,
 }
 
 #[derive(Clone, Serialize)]
@@ -27,16 +34,24 @@ struct PtyOutputPayload {
     data: String,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PtyPlatformInfo {
+    backend: Option<&'static str>,
+    build_number: Option<u32>,
+}
+
 impl PtySessionManager {
     pub fn create_session(&self, app: AppHandle, cols: u16, rows: u16) -> anyhow::Result<String> {
         let pty_system = native_pty_system();
+        let initial_size = PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        };
         let pair = pty_system
-            .openpty(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
+            .openpty(initial_size)
             .context("failed to open pty")?;
 
         let shell = if cfg!(windows) {
@@ -51,7 +66,10 @@ impl PtySessionManager {
             .spawn_command(command)
             .context("failed to spawn shell")?;
 
-        let mut reader = pair.master.try_clone_reader().context("failed to clone reader")?;
+        let mut reader = pair
+            .master
+            .try_clone_reader()
+            .context("failed to clone reader")?;
         let writer = pair.master.take_writer().context("failed to get writer")?;
 
         let id = Uuid::new_v4().to_string();
@@ -59,7 +77,7 @@ impl PtySessionManager {
         let app_handle = app.clone();
 
         std::thread::spawn(move || {
-            let mut buffer = [0_u8; 4096];
+            let mut buffer = [0_u8; READ_BUFFER_SIZE];
             loop {
                 match reader.read(&mut buffer) {
                     Ok(0) => break,
@@ -69,59 +87,139 @@ impl PtySessionManager {
                             data: String::from_utf8_lossy(&buffer[..size]).to_string(),
                         };
 
-                        let _ = app_handle.emit(format!("pty-output-{}", event_id), payload.clone());
-                        let _ = app_handle.emit("pty-output", payload);
+                        let _ = app_handle.emit(&format!("pty-output-{}", event_id), payload);
                     }
                     Err(_) => break,
                 }
             }
         });
 
+        let session = Arc::new(PtySession {
+            master: Mutex::new(pair.master),
+            writer: Mutex::new(writer),
+            child: Mutex::new(child),
+            size: Mutex::new(initial_size),
+        });
+
         self.sessions
             .lock()
             .map_err(|_| anyhow!("failed to lock session map"))?
-            .insert(
-                id.clone(),
-                PtySession {
-                    master: pair.master,
-                    writer,
-                    _child: child,
-                },
-            );
+            .insert(id.clone(), session);
 
         Ok(id)
     }
 
     pub fn write_session(&self, id: &str, data: &[u8]) -> anyhow::Result<()> {
-        let mut sessions = self
-            .sessions
+        // Clone the Arc out of the map so the global session map lock is not
+        // held while a potentially blocking PTY write is in flight.
+        let session = self.session(id)?;
+        let mut writer = session
+            .writer
             .lock()
-            .map_err(|_| anyhow!("failed to lock session map"))?;
-        let session = sessions
-            .get_mut(id)
-            .ok_or_else(|| anyhow!("pty session not found"))?;
-        session.writer.write_all(data).context("failed to write pty")?;
-        session.writer.flush().context("failed to flush pty")?;
+            .map_err(|_| anyhow!("failed to lock pty writer"))?;
+        writer.write_all(data).context("failed to write pty")?;
+        writer.flush().context("failed to flush pty")?;
         Ok(())
     }
 
     pub fn resize_session(&self, id: &str, cols: u16, rows: u16) -> anyhow::Result<()> {
-        let mut sessions = self
+        let Some(session) = self.session(id).ok() else {
+            // The session may have already exited while a resize was in flight;
+            // treat that as a no-op instead of surfacing an error to the UI.
+            eprintln!("[pty] resize ignored: session {id} not found");
+            return Ok(());
+        };
+
+        // Hold the size lock across the resize so concurrent requests are
+        // applied in order and the final size always matches the last caller.
+        // Only this session is blocked; writes and other sessions keep running.
+        let mut size = session
+            .size
+            .lock()
+            .map_err(|_| anyhow!("failed to lock pty size"))?;
+        if size.cols == cols && size.rows == rows {
+            return Ok(());
+        }
+
+        let next = PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        };
+        let master = session
+            .master
+            .lock()
+            .map_err(|_| anyhow!("failed to lock pty master"))?;
+        if let Err(error) = master.resize(next) {
+            eprintln!("[pty] failed to resize session {id} to {cols}x{rows}: {error}");
+            return Err(anyhow!("failed to resize pty: {error}"));
+        }
+
+        *size = next;
+        Ok(())
+    }
+
+    pub fn close_session(&self, id: &str) -> anyhow::Result<()> {
+        let session = self
             .sessions
             .lock()
-            .map_err(|_| anyhow!("failed to lock session map"))?;
-        let session = sessions
-            .get_mut(id)
-            .ok_or_else(|| anyhow!("pty session not found"))?;
-        session
-            .master
-            .resize(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .context("failed to resize pty")?;
+            .map_err(|_| anyhow!("failed to lock session map"))?
+            .remove(id);
+
+        if let Some(session) = session {
+            if let Ok(mut child) = session.child.lock() {
+                let _ = child.kill();
+            }
+        }
+
         Ok(())
+    }
+
+    pub fn platform_info(&self) -> PtyPlatformInfo {
+        #[cfg(windows)]
+        {
+            PtyPlatformInfo {
+                backend: Some("conpty"),
+                build_number: conpty_bundle::reported_build_number(windows_build_number()),
+            }
+        }
+
+        #[cfg(not(windows))]
+        {
+            PtyPlatformInfo {
+                backend: None,
+                build_number: None,
+            }
+        }
+    }
+
+    fn session(&self, id: &str) -> anyhow::Result<Arc<PtySession>> {
+        self.sessions
+            .lock()
+            .map_err(|_| anyhow!("failed to lock session map"))?
+            .get(id)
+            .cloned()
+            .ok_or_else(|| anyhow!("pty session not found"))
+    }
+}
+
+#[cfg(windows)]
+fn windows_build_number() -> Option<u32> {
+    use windows::Wdk::System::SystemServices::RtlGetVersion;
+    use windows::Win32::System::SystemInformation::OSVERSIONINFOW;
+
+    let mut info = OSVERSIONINFOW {
+        dwOSVersionInfoSize: std::mem::size_of::<OSVERSIONINFOW>() as u32,
+        ..Default::default()
+    };
+
+    // GetVersionExW lies unless the executable is manifested for the current
+    // Windows version; RtlGetVersion always reports the real build number.
+    let status = unsafe { RtlGetVersion(&mut info) };
+    if status.0 >= 0 {
+        Some(info.dwBuildNumber)
+    } else {
+        None
     }
 }

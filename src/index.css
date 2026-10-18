@@ -1,15 +1,138 @@
+@import './theme/tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-html,
-body,
-#root {
-  width: 100%;
-  height: 100%;
-  margin: 0;
+@layer base {
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family:
+      "Microsoft YaHei", "微软雅黑", Tahoma, Arial, "PingFang SC",
+      "Hiragino Sans GB", sans-serif;
+    font-size: 12px;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  input,
+  textarea,
+  select,
+  [contenteditable='true'] {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  ::selection {
+    background: hsl(var(--accent) / 0.25);
+  }
+
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--background-alt));
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border: 2px solid hsl(var(--background-alt));
+    border-radius: 2px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--border-strong));
+  }
 }
 
-body {
-  @apply bg-zinc-950 text-zinc-100;
+/* Align dockview tabs/groups with NexTerm tokens. The theme class is fixed;
+ * actual colors come from the active [data-theme] variables. */
+.dockview-theme-dark {
+  --dv-group-view-background-color: hsl(var(--background));
+  --dv-tabs-and-actions-container-background-color: hsl(var(--surface-header));
+  --dv-activegroup-visiblepanel-tab-background-color: hsl(var(--surface));
+  --dv-activegroup-hiddenpanel-tab-background-color: hsl(var(--surface-header));
+  --dv-inactivegroup-visiblepanel-tab-background-color: hsl(var(--surface));
+  --dv-inactivegroup-hiddenpanel-tab-background-color: hsl(var(--background-alt));
+  --dv-tab-divider-color: hsl(var(--border-muted));
+  --dv-activegroup-visiblepanel-tab-color: hsl(var(--foreground));
+  --dv-activegroup-hiddenpanel-tab-color: hsl(var(--muted));
+  --dv-inactivegroup-visiblepanel-tab-color: hsl(var(--muted));
+  --dv-inactivegroup-hiddenpanel-tab-color: hsl(var(--muted-foreground));
+  --dv-separator-border: hsl(var(--border));
+  --dv-paneview-active-outline-color: hsl(var(--accent));
+  --dv-paneview-header-border-color: hsl(var(--border));
+  --dv-tabs-and-actions-container-font-size: 12px;
+  --dv-tabs-and-actions-container-height: 30px;
+}
+
+.dockview-theme-dark .dv-tab {
+  border-right: 1px solid hsl(var(--border-muted));
+}
+
+#decorum-titlebar-controls {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 60;
+  display: flex;
+  height: 32px;
+  align-items: stretch;
+  user-select: none;
+}
+
+#decorum-titlebar-controls:empty {
+  display: none;
+}
+
+#decorum-titlebar-controls .decorum-tb-btn {
+  width: 46px;
+  height: 32px;
+  color: hsl(var(--muted));
+  font-size: 10px;
+  transition:
+    background-color 0.1s,
+    color 0.1s;
+}
+
+#decorum-titlebar-controls .decorum-tb-btn:hover {
+  background-color: hsl(var(--surface-active));
+  color: hsl(var(--foreground));
+}
+
+#decorum-titlebar-controls #decorum-tb-close:hover {
+  background-color: #c42b1c !important;
+  color: #ffffff !important;
+}
+
+.selectable,
+.selectable * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.xterm {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

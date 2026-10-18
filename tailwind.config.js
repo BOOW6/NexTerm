@@ -1,8 +1,101 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: ['class', '[data-theme="dark"]'],
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
-    extend: {}
+    extend: {
+      colors: {
+        background: 'hsl(var(--background))',
+        'background-alt': 'hsl(var(--background-alt))',
+        foreground: 'hsl(var(--foreground))',
+        surface: {
+          DEFAULT: 'hsl(var(--surface))',
+          header: 'hsl(var(--surface-header))',
+          hover: 'hsl(var(--surface-hover))',
+          active: 'hsl(var(--surface-active))'
+        },
+        border: {
+          DEFAULT: 'hsl(var(--border))',
+          muted: 'hsl(var(--border-muted))',
+          strong: 'hsl(var(--border-strong))'
+        },
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))'
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          strong: 'hsl(var(--accent-strong))',
+          soft: 'hsl(var(--accent-soft))',
+          foreground: 'hsl(var(--accent-foreground))'
+        },
+        link: {
+          DEFAULT: 'hsl(var(--link))',
+          hover: 'hsl(var(--link-hover))'
+        },
+        success: 'hsl(var(--success))',
+        warning: 'hsl(var(--warning))',
+        error: 'hsl(var(--error))',
+        'focus-ring': 'hsl(var(--focus-ring))',
+        'table-header': 'hsl(var(--table-header))',
+        'row-hover': 'hsl(var(--row-hover))',
+        'row-selected': 'hsl(var(--row-selected))',
+        header: {
+          DEFAULT: 'hsl(var(--header-foreground))',
+          muted: 'hsl(var(--header-muted))'
+        }
+      },
+      borderRadius: {
+        DEFAULT: 'var(--radius-sm)',
+        lg: 'var(--radius-lg)',
+        md: 'var(--radius-md)',
+        sm: 'var(--radius-sm)'
+      },
+      boxShadow: {
+        panel: 'var(--shadow-panel)',
+        popup: 'var(--shadow-popup)',
+        inset: 'var(--shadow-inset)',
+        pressed: 'var(--shadow-button-pressed)'
+      },
+      backgroundImage: {
+        'header-gradient': 'var(--gradient-header)',
+        'panel-title': 'var(--gradient-panel-title)',
+        button: 'var(--gradient-button)',
+        'button-hover': 'var(--gradient-button-hover)',
+        'button-primary': 'var(--gradient-button-primary)'
+      },
+      fontFamily: {
+        sans: [
+          'Microsoft YaHei',
+          '微软雅黑',
+          'Tahoma',
+          'Arial',
+          'PingFang SC',
+          'Hiragino Sans GB',
+          'sans-serif'
+        ],
+        mono: ['Consolas', 'Courier New', 'Sarasa Mono SC', 'monospace']
+      },
+      keyframes: {
+        'fade-in': {
+          from: { opacity: '0' },
+          to: { opacity: '1' }
+        },
+        'zoom-in': {
+          from: { opacity: '0', transform: 'translateY(2px) scale(0.99)' },
+          to: { opacity: '1', transform: 'translateY(0) scale(1)' }
+        },
+        'slide-in': {
+          from: { opacity: '0', transform: 'translateY(6px)' },
+          to: { opacity: '1', transform: 'translateY(0)' }
+        }
+      },
+      animation: {
+        'fade-in': 'fade-in 100ms ease-out',
+        'zoom-in': 'zoom-in 120ms ease-out',
+        'slide-in': 'slide-in 120ms ease-out'
+      }
+    }
   },
   plugins: []
 };

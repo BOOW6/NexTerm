@@ -1,0 +1,99 @@
+/* NexTerm design tokens — 2008–2014 Chinese Web 2.0 classic admin skin.
+ * Colors are stored as HSL triplets so Tailwind can use hsl(var(--token) / alpha). */
+
+:root,
+[data-theme='light'] {
+  --background: 216 33% 97%;
+  --background-alt: 210 33% 95%;
+  --surface: 0 0% 100%;
+  --surface-header: 210 50% 95%;
+  --surface-hover: 212 52% 94%;
+  --surface-active: 211 46% 89%;
+  --border: 212 26% 77%;
+  --border-muted: 211 27% 83%;
+  --border-strong: 211 24% 70%;
+  --foreground: 212 33% 18%;
+  --muted: 209 15% 42%;
+  --muted-foreground: 210 11% 58%;
+  --accent: 209 60% 45%;
+  --accent-strong: 210 67% 35%;
+  --accent-soft: 209 40% 60%;
+  --accent-foreground: 0 0% 100%;
+  --link: 217 93% 35%;
+  --link-hover: 210 100% 40%;
+  --success: 147 50% 36%;
+  --warning: 36 100% 39%;
+  --error: 6 63% 46%;
+  --focus-ring: 209 60% 45%;
+  --table-header: 212 44% 92%;
+  --row-hover: 210 67% 96%;
+  --row-selected: 209 63% 92%;
+  --header-foreground: 0 0% 100%;
+  --header-muted: 210 40% 88%;
+
+  --terminal-background: 210 30% 12%;
+  --terminal-foreground: 210 20% 88%;
+  --terminal-cursor: 209 40% 60%;
+  --terminal-selection: rgba(91, 155, 213, 0.35);
+
+  --gradient-header: linear-gradient(180deg, #5b9bd5, #2e75b6);
+  --gradient-panel-title: linear-gradient(180deg, #f4f8fc, #dce8f4);
+  --gradient-button: linear-gradient(180deg, #fefefe, #e6eef7);
+  --gradient-button-hover: linear-gradient(180deg, #ffffff, #dce8f4);
+  --gradient-button-primary: linear-gradient(180deg, #5b9bd5, #2e75b6);
+
+  --radius: 3px;
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-popup: 0 2px 6px rgba(0, 0, 0, 0.12);
+  --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-button-pressed: inset 0 1px 2px rgba(0, 0, 0, 0.15);
+
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --background: 211 32% 13%;
+  --background-alt: 211 30% 15%;
+  --surface: 212 31% 19%;
+  --surface-header: 212 30% 24%;
+  --surface-hover: 212 29% 24%;
+  --surface-active: 209 32% 31%;
+  --border: 213 24% 30%;
+  --border-muted: 210 25% 27%;
+  --border-strong: 211 22% 38%;
+  --foreground: 213 46% 91%;
+  --muted: 211 22% 69%;
+  --muted-foreground: 210 13% 55%;
+  --accent: 209 40% 60%;
+  --accent-strong: 210 67% 35%;
+  --accent-soft: 210 29% 70%;
+  --accent-foreground: 0 0% 100%;
+  --link: 210 29% 70%;
+  --link-hover: 210 69% 80%;
+  --success: 142 39% 49%;
+  --warning: 38 65% 53%;
+  --error: 2 47% 58%;
+  --focus-ring: 210 29% 70%;
+  --table-header: 212 30% 24%;
+  --row-hover: 212 29% 24%;
+  --row-selected: 209 32% 31%;
+  --header-foreground: 0 0% 100%;
+  --header-muted: 210 40% 82%;
+
+  --terminal-background: 211 35% 10%;
+  --terminal-foreground: 213 40% 88%;
+  --terminal-cursor: 210 29% 70%;
+  --terminal-selection: rgba(127, 178, 229, 0.35);
+
+  --gradient-header: linear-gradient(180deg, #2f5e8c, #173a5c);
+  --gradient-panel-title: linear-gradient(180deg, #31465b, #243445);
+  --gradient-button: linear-gradient(180deg, #34465a, #263646);
+  --gradient-button-hover: linear-gradient(180deg, #3a4e63, #2c3d50);
+  --gradient-button-primary: linear-gradient(180deg, #3d7cb3, #245c8c);
+
+  color-scheme: dark;
+}
