@@ -24,9 +24,8 @@ export default function TransferPanel() {
         <span className="px-1 text-[11px] text-muted">{transfers.length} 个任务</span>
         <Tooltip label="清理已完成">
           <Button
-            size="sm"
+            size="xs"
             variant="ghost"
-            className="h-5 px-1.5 text-[10px]"
             disabled={!hasFinished}
             onClick={clearFinished}
           >

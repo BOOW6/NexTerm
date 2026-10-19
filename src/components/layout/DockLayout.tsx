@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   DockviewReact,
   type DockviewApi,
@@ -8,8 +8,6 @@ import {
 import 'dockview-react/dist/styles/dockview.css';
 import { Plus } from 'lucide-react';
 import TerminalTab from '../terminal/TerminalTab';
-import SFTPPanel from '../sftp/SFTPPanel';
-import TransferPanel from '../transfers/TransferPanel';
 import SessionTab from './SessionTab';
 import { useWorkspace } from '../../features/workspace/WorkspaceContext';
 import { openSessionPanel } from '../../features/workspace/sessionActions';
@@ -20,10 +18,29 @@ import { useQuickConnectLauncher } from '../../features/workspace/useQuickConnec
 
 const LAYOUT_KEY = 'nexterm.workspace.layout.v1';
 
+const SFTPPanel = lazy(() => import('../sftp/SFTPPanel'));
+const TransferPanel = lazy(() => import('../transfers/TransferPanel'));
+
+function PanelFallback() {
+  return (
+    <div className="flex h-full items-center justify-center text-xs text-muted">
+      加载中...
+    </div>
+  );
+}
+
 const components = {
   terminal: (props: IDockviewPanelProps) => <TerminalTab {...props} />,
-  sftp: (props: IDockviewPanelProps) => <SFTPPanel {...props} />,
-  transfers: () => <TransferPanel />
+  sftp: (props: IDockviewPanelProps) => (
+    <Suspense fallback={<PanelFallback />}>
+      <SFTPPanel {...props} />
+    </Suspense>
+  ),
+  transfers: () => (
+    <Suspense fallback={<PanelFallback />}>
+      <TransferPanel />
+    </Suspense>
+  )
 };
 
 interface Disposable {
@@ -35,9 +52,9 @@ function EmptyWorkspace() {
 
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background p-6">
-      <div className="pointer-events-auto w-full max-w-sm overflow-hidden rounded-sm border border-border-strong bg-surface shadow-panel">
-        <div className="border-b border-border bg-panel-title px-3 py-2 text-xs font-semibold text-foreground">
-          NexTerm 工作区
+      <div className="pointer-events-auto w-full max-w-sm overflow-hidden rounded-sm border border-border-strong bg-surface-elevated shadow-panel">
+        <div className="app-dialog-header border-b border-border bg-panel-title px-3 py-2 text-xs font-semibold text-foreground">
+          <span className="app-dialog-title">NexTerm 工作区</span>
         </div>
         <div className="flex flex-col items-center px-4 py-5 text-center">
           <div className="flex h-10 w-10 items-center justify-center rounded-sm border border-border bg-background-alt">

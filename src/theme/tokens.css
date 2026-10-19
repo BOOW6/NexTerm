@@ -1,11 +1,14 @@
-/* NexTerm design tokens — 2008–2014 Chinese Web 2.0 classic admin skin.
- * Colors are stored as HSL triplets so Tailwind can use hsl(var(--token) / alpha). */
+/* NexTerm design tokens.
+ * Colors are stored as HSL triplets so Tailwind can use hsl(var(--token) / alpha).
+ * Theme variants are grouped into light (Day / Aqua / Holo) and dark
+ * (Dim / Aqua / Holo) palettes. */
 
 :root,
-[data-theme='light'] {
+[data-theme='day'] {
   --background: 216 33% 97%;
   --background-alt: 210 33% 95%;
   --surface: 0 0% 100%;
+  --surface-elevated: 0 0% 100%;
   --surface-header: 210 50% 95%;
   --surface-hover: 212 52% 94%;
   --surface-active: 211 46% 89%;
@@ -55,10 +58,11 @@
   color-scheme: light;
 }
 
-[data-theme='dark'] {
+[data-theme='dim'] {
   --background: 211 32% 13%;
   --background-alt: 211 30% 15%;
   --surface: 212 31% 19%;
+  --surface-elevated: 212 31% 22%;
   --surface-header: 212 30% 24%;
   --surface-hover: 212 29% 24%;
   --surface-active: 209 32% 31%;
@@ -94,6 +98,336 @@
   --gradient-button: linear-gradient(180deg, #34465a, #263646);
   --gradient-button-hover: linear-gradient(180deg, #3a4e63, #2c3d50);
   --gradient-button-primary: linear-gradient(180deg, #3d7cb3, #245c8c);
+
+  color-scheme: dark;
+}
+
+[data-theme='aqua-light'] {
+  --background: 210 33% 96%;
+  --background-alt: 210 30% 92%;
+  --surface: 0 0% 100%;
+  --surface-elevated: 0 0% 100%;
+  --surface-header: 209 45% 92%;
+  --surface-hover: 207 55% 94%;
+  --surface-active: 209 45% 86%;
+  --border: 211 25% 76%;
+  --border-muted: 211 25% 82%;
+  --border-strong: 211 22% 64%;
+  --foreground: 211 35% 16%;
+  --muted: 210 12% 40%;
+  --muted-foreground: 210 10% 55%;
+  --accent: 209 76% 44%;
+  --accent-strong: 211 82% 34%;
+  --accent-soft: 206 65% 68%;
+  --accent-foreground: 0 0% 100%;
+  --link: 212 90% 38%;
+  --link-hover: 206 95% 45%;
+  --success: 145 52% 36%;
+  --warning: 38 95% 42%;
+  --error: 358 65% 50%;
+  --focus-ring: 209 80% 50%;
+  --table-header: 209 40% 90%;
+  --row-hover: 207 55% 96%;
+  --row-selected: 207 65% 90%;
+  --header-foreground: 0 0% 100%;
+  --header-muted: 209 35% 88%;
+
+  --terminal-background: 212 30% 13%;
+  --terminal-foreground: 210 18% 91%;
+  --terminal-cursor: 205 75% 58%;
+  --terminal-selection: rgba(97, 166, 230, 0.35);
+
+  --gradient-header: linear-gradient(180deg, #9cc8ee 0%, #5f9fd8 45%, #2f77b7 55%, #205c95 100%);
+  --gradient-panel-title: linear-gradient(180deg, #ffffff 0%, #edf4fb 50%, #dbe8f5 100%);
+  --gradient-button: linear-gradient(180deg, #ffffff 0%, #f2f7fc 48%, #dce9f5 52%, #eef5fb 100%);
+  --gradient-button-hover: linear-gradient(180deg, #ffffff, #e5f0fb 50%, #cfe2f3 100%);
+  --gradient-button-primary: linear-gradient(180deg, #78b4e6 0%, #2f7cbe 48%, #2166a6 52%, #17518a 100%);
+
+  --radius: 4px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+
+  --shadow-panel: 0 1px 2px rgba(21, 58, 94, 0.12);
+  --shadow-popup: 0 3px 10px rgba(21, 58, 94, 0.18);
+  --shadow-inset: inset 0 1px 2px rgba(37, 82, 126, 0.1);
+  --shadow-button-pressed: inset 0 1px 3px rgba(21, 58, 94, 0.22);
+
+  color-scheme: light;
+}
+
+[data-theme='aqua-dark'] {
+  --background: 214 28% 13%;
+  --background-alt: 214 26% 10%;
+  --surface: 214 25% 18%;
+  --surface-elevated: 214 25% 21%;
+  --surface-header: 213 26% 23%;
+  --surface-hover: 213 28% 25%;
+  --surface-active: 212 30% 32%;
+  --border: 213 20% 31%;
+  --border-muted: 213 22% 27%;
+  --border-strong: 213 18% 42%;
+  --foreground: 210 20% 92%;
+  --muted: 210 14% 70%;
+  --muted-foreground: 210 12% 56%;
+  --accent: 206 75% 42%;
+  --accent-strong: 207 80% 34%;
+  --accent-soft: 206 50% 70%;
+  --accent-foreground: 0 0% 100%;
+  --link: 206 80% 68%;
+  --link-hover: 200 85% 78%;
+  --success: 145 45% 55%;
+  --warning: 40 85% 58%;
+  --error: 358 60% 62%;
+  --focus-ring: 206 80% 60%;
+  --table-header: 213 26% 23%;
+  --row-hover: 213 28% 24%;
+  --row-selected: 212 35% 30%;
+  --header-foreground: 0 0% 100%;
+  --header-muted: 210 25% 84%;
+
+  --terminal-background: 214 30% 8%;
+  --terminal-foreground: 210 18% 90%;
+  --terminal-cursor: 206 75% 68%;
+  --terminal-selection: rgba(99, 179, 232, 0.35);
+
+  --gradient-header: linear-gradient(180deg, #4f7fa8 0%, #2d5f8b 48%, #1f4a70 52%, #153a5b 100%);
+  --gradient-panel-title: linear-gradient(180deg, #34485a 0%, #22313f 100%);
+  --gradient-button: linear-gradient(180deg, #3a4c5e 0%, #2d3d4d 48%, #263544 52%, #314353 100%);
+  --gradient-button-hover: linear-gradient(180deg, #43586c, #304353);
+  --gradient-button-primary: linear-gradient(180deg, #5b9bd5 0%, #2d6b9f 48%, #235a86 52%, #173f61 100%);
+
+  --radius: 4px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-popup: 0 3px 12px rgba(0, 0, 0, 0.45);
+  --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-button-pressed: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+
+  color-scheme: dark;
+}
+
+[data-theme='holo-light'] {
+  --background: 0 0% 96%;
+  --background-alt: 0 0% 93%;
+  --surface: 0 0% 100%;
+  --surface-elevated: 0 0% 100%;
+  --surface-header: 0 0% 96%;
+  --surface-hover: 0 0% 92%;
+  --surface-active: 0 0% 88%;
+  --border: 0 0% 80%;
+  --border-muted: 0 0% 87%;
+  --border-strong: 0 0% 70%;
+  --foreground: 0 0% 7%;
+  --muted: 0 0% 40%;
+  --muted-foreground: 0 0% 60%;
+  --accent: 196 78% 55%;
+  --accent-strong: 195 100% 40%;
+  --accent-soft: 196 78% 78%;
+  --accent-foreground: 0 0% 100%;
+  --link: 195 100% 40%;
+  --link-hover: 196 78% 55%;
+  --success: 80 100% 30%;
+  --warning: 36 100% 40%;
+  --error: 0 100% 40%;
+  --focus-ring: 195 100% 40%;
+  --table-header: 0 0% 93%;
+  --row-hover: 0 0% 94%;
+  --row-selected: 196 78% 55%;
+  --header-foreground: 0 0% 100%;
+  --header-muted: 196 60% 92%;
+
+  --terminal-background: 0 0% 0%;
+  --terminal-foreground: 0 0% 90%;
+  --terminal-cursor: 196 78% 55%;
+  --terminal-selection: rgba(51, 181, 229, 0.35);
+
+  --gradient-header: linear-gradient(0deg, #f5f5f5, #f5f5f5);
+  --gradient-panel-title: linear-gradient(0deg, #f5f5f5, #f5f5f5);
+  --gradient-button: linear-gradient(0deg, #f5f5f5, #f5f5f5);
+  --gradient-button-hover: linear-gradient(0deg, #e8e8e8, #e8e8e8);
+  --gradient-button-primary: linear-gradient(0deg, #33b5e5, #33b5e5);
+
+  --radius: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+
+  --shadow-panel: none;
+  --shadow-popup: none;
+  --shadow-inset: none;
+  --shadow-button-pressed: inset 0 0 0 1px hsl(var(--accent) / 0.55);
+
+  color-scheme: light;
+}
+
+[data-theme='holo-dark'] {
+  --background: 0 0% 0%;
+  --background-alt: 0 0% 4%;
+  --surface: 0 0% 5%;
+  --surface-elevated: 0 0% 17%;
+  --surface-header: 0 0% 10%;
+  --surface-hover: 0 0% 12%;
+  --surface-active: 0 0% 20%;
+  --border: 0 0% 20%;
+  --border-muted: 0 0% 15%;
+  --border-strong: 0 0% 30%;
+  --foreground: 0 0% 100%;
+  --muted: 0 0% 70%;
+  --muted-foreground: 0 0% 50%;
+  --accent: 196 78% 55%;
+  --accent-strong: 195 100% 40%;
+  --accent-soft: 196 55% 70%;
+  --accent-foreground: 0 0% 100%;
+  --link: 196 78% 55%;
+  --link-hover: 196 90% 70%;
+  --success: 75 100% 40%;
+  --warning: 40 100% 60%;
+  --error: 0 100% 63%;
+  --focus-ring: 196 78% 55%;
+  --table-header: 0 0% 10%;
+  --row-hover: 0 0% 10%;
+  --row-selected: 196 78% 55%;
+  --header-foreground: 0 0% 100%;
+  --header-muted: 0 0% 80%;
+
+  --terminal-background: 0 0% 0%;
+  --terminal-foreground: 0 0% 100%;
+  --terminal-cursor: 196 78% 55%;
+  --terminal-selection: rgba(51, 181, 229, 0.35);
+
+  --gradient-header: linear-gradient(0deg, #000000, #000000);
+  --gradient-panel-title: linear-gradient(0deg, #1a1a1a, #1a1a1a);
+  --gradient-button: linear-gradient(0deg, #2b2b2b, #2b2b2b);
+  --gradient-button-hover: linear-gradient(0deg, #333333, #333333);
+  --gradient-button-primary: linear-gradient(0deg, #33b5e5, #33b5e5);
+
+  --radius: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+
+  --shadow-panel: none;
+  --shadow-popup: none;
+  --shadow-inset: none;
+  --shadow-button-pressed: inset 0 0 0 1px hsl(var(--accent) / 0.65);
+
+  color-scheme: dark;
+}
+
+[data-theme='eclair-light'] {
+  --background: 0 0% 96%;
+  --background-alt: 0 0% 90%;
+  --surface: 0 0% 100%;
+  --surface-elevated: 0 0% 100%;
+  --surface-header: 0 0% 60%;
+  --surface-hover: 0 0% 91%;
+  --surface-active: 0 0% 84%;
+  --border: 0 0% 68%;
+  --border-muted: 0 0% 80%;
+  --border-strong: 0 0% 52%;
+  --foreground: 0 0% 0%;
+  --muted: 0 0% 34%;
+  --muted-foreground: 0 0% 55%;
+  --accent: 35 92% 55%;
+  --accent-strong: 32 92% 42%;
+  --accent-soft: 38 90% 74%;
+  --accent-foreground: 0 0% 0%;
+  --link: 30 92% 38%;
+  --link-hover: 32 92% 46%;
+  --success: 90 100% 34%;
+  --warning: 35 92% 55%;
+  --error: 0 100% 44%;
+  --focus-ring: 35 92% 55%;
+  --table-header: 0 0% 78%;
+  --row-hover: 0 0% 95%;
+  --row-selected: 35 92% 55%;
+  --header-foreground: 0 0% 100%;
+  --header-muted: 0 0% 85%;
+
+  --terminal-background: 0 0% 0%;
+  --terminal-foreground: 0 0% 92%;
+  --terminal-cursor: 35 92% 55%;
+  --terminal-selection: rgba(245, 166, 35, 0.32);
+
+  --gradient-header: linear-gradient(180deg, #3d3d3d 0%, #343434 55%, #2b2b2b 100%);
+  --gradient-panel-title: linear-gradient(180deg, #3d3d3d 0%, #343434 55%, #2b2b2b 100%);
+  --gradient-button: linear-gradient(180deg, #fafafa 0%, #f0f0f0 55%, #e5e5e5 100%);
+  --gradient-button-hover: linear-gradient(180deg, #ffffff 0%, #f6f6f6 55%, #ececec 100%);
+  --gradient-button-primary: linear-gradient(180deg, #ececec 0%, #e0e0e0 55%, #d4d4d4 100%);
+  --gradient-field: linear-gradient(180deg, #ffffff 0%, #f8f8f8 60%, #efefef 100%);
+  --gradient-chrome: linear-gradient(180deg, #f5f5f5 0%, #ececec 55%, #e2e2e2 100%);
+  --gradient-selected: linear-gradient(180deg, #f8bd5c 0%, #eda11b 100%);
+
+  --radius: 6px;
+  --radius-sm: 5px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  --shadow-panel: 0 1px 3px rgba(0, 0, 0, 0.14);
+  --shadow-popup: 0 6px 18px rgba(0, 0, 0, 0.28);
+  --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-button-pressed: inset 0 2px 4px rgba(0, 0, 0, 0.22);
+
+  color-scheme: light;
+}
+
+[data-theme='eclair-dark'] {
+  --background: 0 0% 0%;
+  --background-alt: 0 0% 7%;
+  --surface: 0 0% 0%;
+  --surface-elevated: 0 0% 10%;
+  --surface-header: 0 0% 30%;
+  --surface-hover: 0 0% 11%;
+  --surface-active: 0 0% 20%;
+  --border: 0 0% 30%;
+  --border-muted: 0 0% 18%;
+  --border-strong: 0 0% 46%;
+  --foreground: 0 0% 100%;
+  --muted: 0 0% 72%;
+  --muted-foreground: 0 0% 52%;
+  --accent: 35 92% 55%;
+  --accent-strong: 32 92% 46%;
+  --accent-soft: 38 90% 68%;
+  --accent-foreground: 0 0% 0%;
+  --link: 35 92% 62%;
+  --link-hover: 35 92% 72%;
+  --success: 90 100% 42%;
+  --warning: 35 92% 58%;
+  --error: 0 100% 55%;
+  --focus-ring: 35 92% 55%;
+  --table-header: 0 0% 18%;
+  --row-hover: 0 0% 11%;
+  --row-selected: 35 92% 55%;
+  --header-foreground: 0 0% 100%;
+  --header-muted: 0 0% 80%;
+
+  --terminal-background: 0 0% 0%;
+  --terminal-foreground: 0 0% 100%;
+  --terminal-cursor: 35 92% 55%;
+  --terminal-selection: rgba(245, 166, 35, 0.32);
+
+  --gradient-header: linear-gradient(180deg, #383838 0%, #303030 55%, #292929 100%);
+  --gradient-panel-title: linear-gradient(180deg, #383838 0%, #303030 55%, #292929 100%);
+  --gradient-button: linear-gradient(180deg, #3b3b3b 0%, #333333 55%, #2b2b2b 100%);
+  --gradient-button-hover: linear-gradient(180deg, #454545 0%, #3b3b3b 55%, #323232 100%);
+  --gradient-button-primary: linear-gradient(180deg, #505050 0%, #454545 55%, #3a3a3a 100%);
+  --gradient-field: linear-gradient(180deg, #343434 0%, #2c2c2c 60%, #242424 100%);
+  --gradient-chrome: linear-gradient(180deg, #f5f5f5 0%, #ececec 55%, #e2e2e2 100%);
+  --gradient-selected: linear-gradient(180deg, #f8bd5c 0%, #eda11b 100%);
+
+  --radius: 6px;
+  --radius-sm: 5px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  --shadow-panel: 0 2px 6px rgba(0, 0, 0, 0.5);
+  --shadow-popup: 0 8px 24px rgba(0, 0, 0, 0.65);
+  --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-button-pressed: inset 0 2px 5px rgba(0, 0, 0, 0.6);
 
   color-scheme: dark;
 }

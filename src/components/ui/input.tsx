@@ -1,14 +1,30 @@
 import { forwardRef, type InputHTMLAttributes, type LabelHTMLAttributes } from 'react';
 import { cn } from '../../lib/cn';
 
-export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
-  ({ className, ...props }, ref) => (
+type InputSize = 'md' | 'compact' | 'sm';
+
+const inputSizes: Record<InputSize, string> = {
+  md: 'h-7 text-xs',
+  compact: 'h-7 text-[11px]',
+  sm: 'h-5 text-[11px]'
+};
+
+export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> {
+  size?: InputSize;
+  width?: string | number;
+}
+
+export const Input = forwardRef<HTMLInputElement, InputProps>(
+  ({ className, size = 'md', width, style, ...props }, ref) => (
     <input
       ref={ref}
       autoComplete="off"
       spellCheck={false}
+      style={{ width: typeof width === 'number' ? `${width}px` : width, ...style }}
       className={cn(
-        'h-7 w-full rounded-sm border border-border-strong bg-surface px-2 text-xs text-foreground shadow-inset',
+        'app-input rounded-sm border border-border-strong bg-surface px-2 text-foreground shadow-inset',
+        inputSizes[size],
+        width === undefined && 'w-full',
         'placeholder:text-muted-foreground',
         'focus-visible:border-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring',
         'disabled:cursor-not-allowed disabled:opacity-50',

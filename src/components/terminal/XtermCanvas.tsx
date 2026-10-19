@@ -3,7 +3,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Terminal, type IDisposable } from '@xterm/xterm';
 import { writeText as writeClipboardText } from '@tauri-apps/plugin-clipboard-manager';
 import { FitAddon } from '@xterm/addon-fit';
-import { SearchAddon } from '@xterm/addon-search';
+import type { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import {
@@ -138,13 +138,14 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
     const containerRef = useRef<HTMLDivElement | null>(null);
     const terminalRef = useRef<Terminal | null>(null);
     const searchRef = useRef<SearchAddon | null>(null);
+    const loadSearchRef = useRef<(() => Promise<SearchAddon | null>) | null>(null);
     const visibleRef = useRef(visible);
     const fontSizeRef = useRef(fontSize);
     const startRef = useRef<(() => void) | null>(null);
     const resumeRef = useRef<(() => void) | null>(null);
     const refitRef = useRef<(() => void) | null>(null);
     const flushResizeRef = useRef<(() => void) | null>(null);
-    const { resolved } = useTheme();
+    const { themeId } = useTheme();
 
     const terminalFontFamily = useSettingsStore((state) => state.terminalFontFamily);
     const terminalCursorStyle = useSettingsStore((state) => state.terminalCursorStyle);
@@ -225,6 +226,39 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       let maximized: boolean | null = null;
       let maximizeTimer: number | null = null;
       let unlistenWindowResize: (() => void) | undefined;
+
+      let searchAddonPromise: Promise<SearchAddon | null> | null = null;
+
+      const ensureSearchAddon = (): Promise<SearchAddon | null> => {
+        if (searchAddon) {
+          return Promise.resolve(searchAddon);
+        }
+        if (!terminal || disposed) {
+          return Promise.resolve(null);
+        }
+        if (!searchAddonPromise) {
+          searchAddonPromise = import('@xterm/addon-search')
+            .then(({ SearchAddon: SearchAddonImpl }) => {
+              const activeTerminal = terminal;
+              if (disposed || !activeTerminal) {
+                return null;
+              }
+              const addon = new SearchAddonImpl();
+              activeTerminal.loadAddon(addon);
+              searchAddon = addon;
+              searchRef.current = addon;
+              return addon;
+            })
+            .catch((error) => {
+              console.warn('[terminal] failed to load search addon', error);
+              searchAddonPromise = null;
+              return null;
+            });
+        }
+        return searchAddonPromise;
+      };
+
+      loadSearchRef.current = ensureSearchAddon;
 
       const cancelScheduledFlush = () => {
         if (flushTimer !== null) {
@@ -525,11 +559,8 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             terminal = instance;
 
             const fit = new FitAddon();
-            const search = new SearchAddon();
             instance.loadAddon(fit);
-            instance.loadAddon(search);
             fitAddon = fit;
-            searchAddon = search;
 
             instance.open(container);
 
@@ -559,7 +590,6 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             }
 
             terminalRef.current = instance;
-            searchRef.current = search;
 
             scheduleFlush();
             void run(instance);
@@ -941,6 +971,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
         terminalRef.current = null;
         searchRef.current = null;
+        loadSearchRef.current = null;
 
         fitAddon?.dispose();
         searchAddon?.dispose();
@@ -954,7 +985,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       if (terminalRef.current) {
         terminalRef.current.options.theme = getTerminalTheme();
       }
-    }, [resolved]);
+    }, [themeId]);
 
     useEffect(() => {
       const terminal = terminalRef.current;
@@ -1017,12 +1048,12 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         },
         findNext: (query: string) => {
           if (query) {
-            searchRef.current?.findNext(query);
+            void loadSearchRef.current?.().then((addon) => addon?.findNext(query));
           }
         },
         findPrevious: (query: string) => {
           if (query) {
-            searchRef.current?.findPrevious(query);
+            void loadSearchRef.current?.().then((addon) => addon?.findPrevious(query));
           }
         },
         focus: () => terminalRef.current?.focus(),

@@ -41,7 +41,7 @@ function GroupSection({ title, count, collapsed, onToggle, icon: Icon, children 
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-1 rounded-sm px-1.5 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
+        className="app-group-header flex w-full items-center gap-1 rounded-sm px-1.5 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
       >
         {collapsed ? (
           <ChevronRight className="h-3 w-3" />
@@ -52,7 +52,7 @@ function GroupSection({ title, count, collapsed, onToggle, icon: Icon, children 
         <span className="flex-1 truncate text-left">{title}</span>
         <span className="text-muted-foreground">{count}</span>
       </button>
-      {collapsed ? null : <div className="space-y-px">{children}</div>}
+      {collapsed ? null : <div className="app-list space-y-px">{children}</div>}
     </section>
   );
 }
@@ -146,12 +146,11 @@ export default function SessionSidebar() {
       style={{ width }}
       className="relative flex shrink-0 flex-col border-r border-border bg-surface"
     >
-      <div className="flex h-7 shrink-0 items-center justify-between border-b border-border bg-panel-title px-2">
+      <div className="app-panel-header flex h-7 shrink-0 items-center justify-between border-b border-border bg-panel-title px-2">
         <span className="text-xs font-semibold text-foreground">会话管理器</span>
         <Button
-          size="icon"
+          size="icon-sm"
           variant="ghost"
-          className="h-5 w-5"
           aria-label="新建会话"
           title="新建会话"
           onClick={() => openQuickConnect()}
@@ -183,7 +182,8 @@ export default function SessionSidebar() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索会话..."
-            className="h-7 pl-7 text-[11px]"
+            size="compact"
+            className="pl-7"
             aria-label="搜索会话"
           />
         </div>

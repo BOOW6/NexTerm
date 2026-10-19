@@ -187,10 +187,6 @@ russh = { version = "0.63.1", default-features = false, features = ["ring", "fla
 
 随后执行 `cargo update -p russh`（在 `src-tauri/` 目录下）并重新构建。
 
-### 前端提示 chunk 体积过大
-
-`vite build` 可能提示某些 chunk 超过 500 kB。这属于性能提示而非错误，可通过 `build.rollupOptions.output.manualChunks` 做代码分割优化。
-
 ### 不要启用 React StrictMode
 
 StrictMode 的开发期双调用会为每个终端创建两个 PTY 会话（`create_pty_session` 副作用不幂等）。`src/main.tsx` 已刻意不使用 StrictMode。

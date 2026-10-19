@@ -44,10 +44,12 @@ export default function SshConnectForm({ session }: { session: Session }) {
     <div className="flex h-full w-full items-center justify-center bg-background p-4">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-sm overflow-hidden rounded-sm border border-border-strong bg-surface shadow-panel"
+        className="w-full max-w-sm overflow-hidden rounded-sm border border-border-strong bg-surface-elevated shadow-panel"
       >
-        <div className="border-b border-border bg-panel-title px-3 py-2 text-xs font-semibold text-foreground">
-          {authMethod === 'password' ? 'SSH 登录' : 'SSH 密钥认证'}
+        <div className="app-dialog-header border-b border-border bg-panel-title px-3 py-2 text-xs font-semibold text-foreground">
+          <span className="app-dialog-title">
+            {authMethod === 'password' ? 'SSH 登录' : 'SSH 密钥认证'}
+          </span>
         </div>
 
         <div className="space-y-2.5 p-4">

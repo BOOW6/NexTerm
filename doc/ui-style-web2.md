@@ -387,7 +387,7 @@ src/theme/
   --dv-inactivegroup-hiddenpanel-tab-color: var(--muted-foreground);
   --dv-separator-border: var(--border);
   --dv-tabs-and-actions-container-font-size: 12px;
-  --dv-tabs-and-actions-container-height: 30px;
+  --dv-tabs-and-actions-container-height: 28px;
 }
 ```
 

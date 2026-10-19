@@ -45,7 +45,7 @@ function CommandWindow({ children, onClose }: { children: ReactNode; onClose: ()
         onClick={onClose}
         aria-hidden="true"
       />
-      <div className="relative z-10 w-full max-w-lg animate-zoom-in overflow-hidden rounded-md border border-border-strong bg-surface shadow-popup">
+      <div className="relative z-10 w-full max-w-lg animate-zoom-in overflow-hidden rounded-md border border-border-strong bg-surface-elevated shadow-popup">
         {children}
       </div>
     </div>,
@@ -61,7 +61,7 @@ export default function CommandPalette() {
   const sessions = useSessionStore((state) => state.sessions);
   const toggleFavorite = useSessionStore((state) => state.toggleFavorite);
   const activeSessionId = useWorkspaceStore((state) => state.activeSessionId);
-  const { resolved, cycle } = useTheme();
+  const { themeLabel, cycle } = useTheme();
   const {
     openSession,
     closeSessionPanel,
@@ -142,9 +142,9 @@ export default function CommandPalette() {
       {
         id: 'toggle-theme',
         group: '命令',
-        label: `切换主题（当前：${resolved === 'dark' ? '暗黑' : '明亮'}）`,
+        label: `切换主题策略（当前：${themeLabel}）`,
         icon: SunMoon,
-        keywords: 'theme 主题 明亮 暗黑 dark light',
+        keywords: 'theme 主题 Day Dim Aqua Holo 亮色 暗色 跟随系统 dark light',
         run: () => cycle()
       }
     ];
@@ -208,7 +208,7 @@ export default function CommandPalette() {
   }, [
     sessions,
     activeSession,
-    resolved,
+    themeLabel,
     cycle,
     openSession,
     splitSession,
@@ -256,8 +256,8 @@ export default function CommandPalette() {
 
   return (
     <CommandWindow onClose={closeCommandPalette}>
-      <div className="flex items-center justify-between border-b border-border bg-panel-title px-2 py-1">
-        <span className="text-xs font-semibold text-foreground">命令面板</span>
+      <div className="app-dialog-header flex items-center justify-between border-b border-border bg-panel-title px-2 py-1">
+        <span className="app-dialog-title text-xs font-semibold text-foreground">命令面板</span>
         <button
           type="button"
           onClick={closeCommandPalette}
@@ -341,7 +341,7 @@ export default function CommandPalette() {
         )}
       </div>
 
-      <div className="flex items-center justify-end gap-2 border-t border-border bg-background-alt px-2 py-1 text-[10px] text-muted">
+      <div className="app-dialog-footer flex items-center justify-end gap-2 border-t border-border bg-background-alt px-2 py-1 text-[10px] text-muted">
         <span className="inline-flex items-center gap-1">
           <CornerDownLeft className="h-3 w-3" /> 执行
         </span>

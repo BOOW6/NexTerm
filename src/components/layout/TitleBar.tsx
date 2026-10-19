@@ -92,7 +92,7 @@ export default function TitleBar() {
   const toggleSidebar = useWorkspaceStore((state) => state.toggleSidebar);
   const openCommandPalette = useUIStore((state) => state.openCommandPalette);
   const shortcuts = useSettingsStore((state) => state.shortcuts);
-  const { mode, setMode } = useTheme();
+  const { mode, setMode, lightThemeName, darkThemeName } = useTheme();
 
   const activeSession = sessions.find((session) => session.id === activeSessionId);
   const activePanel = getApi()?.activePanel;
@@ -184,8 +184,8 @@ export default function TitleBar() {
           onSelect: toggleSidebar
         },
         { separator: true },
-        themeItem('light', '明亮主题'),
-        themeItem('dark', '暗黑主题'),
+        themeItem('light', `亮色主题 · ${lightThemeName}`),
+        themeItem('dark', `暗色主题 · ${darkThemeName}`),
         themeItem('system', '跟随系统'),
         { separator: true },
         {
@@ -376,7 +376,7 @@ export default function TitleBar() {
         }
       }}
       className={cn(
-        'relative z-40 flex h-8 shrink-0 items-center border-b border-border bg-surface-header text-foreground',
+        'app-actionbar relative z-40 flex h-8 shrink-0 items-center border-b border-border bg-surface-header text-foreground',
         isMac ? 'pl-20' : 'pl-1 pr-[138px]'
       )}
     >
@@ -398,7 +398,7 @@ export default function TitleBar() {
           role="menu"
           aria-label={activeMenu.label}
           onKeyDown={handleDropdownKeyDown}
-          className="absolute left-0 top-full z-50 max-h-[70vh] w-64 animate-zoom-in overflow-y-auto rounded-b-sm border border-border-strong bg-surface p-0.5 shadow-popup"
+          className="app-popup absolute left-0 top-full z-50 max-h-[70vh] w-64 animate-zoom-in overflow-y-auto rounded-b-sm border border-border-strong bg-surface-elevated p-0.5 shadow-popup"
           style={{ left: `${(menuButtonRefs.current[openMenu!]?.offsetLeft ?? 0)}px` }}
         >
           {activeMenu.items.map((item, itemIndex) =>

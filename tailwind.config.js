@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  darkMode: ['class', '[data-theme="dark"]'],
+  darkMode: ['class', '[data-color-scheme="dark"]'],
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
@@ -10,6 +10,7 @@ export default {
         foreground: 'hsl(var(--foreground))',
         surface: {
           DEFAULT: 'hsl(var(--surface))',
+          elevated: 'hsl(var(--surface-elevated))',
           header: 'hsl(var(--surface-header))',
           hover: 'hsl(var(--surface-hover))',
           active: 'hsl(var(--surface-active))'

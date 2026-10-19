@@ -2,78 +2,127 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useLayoutEffect,
   useMemo,
-  useState,
+  useSyncExternalStore,
   type ReactNode
 } from 'react';
+import { useSettingsStore } from '../stores/settingsStore';
+import {
+  getTheme,
+  type ThemeId,
+  type ThemeMode,
+  type ThemeVariant
+} from './themes';
 
-export type ThemeMode = 'light' | 'dark' | 'system';
-export type ResolvedTheme = 'light' | 'dark';
+export type { ThemeId, ThemeMode, ThemeVariant } from './themes';
+export type ResolvedTheme = ThemeVariant;
 
-const STORAGE_KEY = 'nexterm.theme';
-
-function getSystemTheme(): ResolvedTheme {
+function getSystemTheme(): ThemeVariant {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
-function resolveTheme(mode: ThemeMode): ResolvedTheme {
-  return mode === 'system' ? getSystemTheme() : mode;
-}
-
-function readMode(): ThemeMode {
-  const saved = window.localStorage.getItem(STORAGE_KEY);
-  return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system';
+function subscribeSystemTheme(callback: () => void): () => void {
+  const media = window.matchMedia('(prefers-color-scheme: dark)');
+  media.addEventListener('change', callback);
+  return () => media.removeEventListener('change', callback);
 }
 
 interface ThemeContextValue {
   mode: ThemeMode;
-  resolved: ResolvedTheme;
+  resolved: ThemeVariant;
+  themeId: ThemeId;
+  themeName: string;
+  themeLabel: string;
+  lightTheme: ThemeId;
+  darkTheme: ThemeId;
+  lightThemeName: string;
+  darkThemeName: string;
   setMode: (mode: ThemeMode) => void;
+  setLightTheme: (theme: ThemeId) => void;
+  setDarkTheme: (theme: ThemeId) => void;
   cycle: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [mode, setModeState] = useState<ThemeMode>(readMode);
-  const [resolved, setResolved] = useState<ResolvedTheme>(() => resolveTheme(readMode()));
+  const mode = useSettingsStore((state) => state.themeMode);
+  const lightTheme = useSettingsStore((state) => state.lightTheme);
+  const darkTheme = useSettingsStore((state) => state.darkTheme);
+  const setThemeMode = useSettingsStore((state) => state.setThemeMode);
+  const setLightThemeValue = useSettingsStore((state) => state.setLightTheme);
+  const setDarkThemeValue = useSettingsStore((state) => state.setDarkTheme);
+  const systemTheme = useSyncExternalStore<ThemeVariant>(
+    subscribeSystemTheme,
+    getSystemTheme,
+    () => 'light'
+  );
+
+  const resolved: ThemeVariant = mode === 'system' ? systemTheme : mode;
+  const themeId = resolved === 'light' ? lightTheme : darkTheme;
+  const themeName = getTheme(themeId).name;
+  const themeLabel = `${themeName} · ${resolved === 'light' ? '亮色' : '暗色'}`;
+  const lightThemeName = getTheme(lightTheme).name;
+  const darkThemeName = getTheme(darkTheme).name;
 
   useLayoutEffect(() => {
-    const next = resolveTheme(mode);
-    setResolved(next);
-    document.documentElement.dataset.theme = next;
-    window.localStorage.setItem(STORAGE_KEY, mode);
-  }, [mode]);
+    const root = document.documentElement;
+    root.dataset.theme = themeId;
+    root.dataset.colorScheme = resolved;
+  }, [themeId, resolved]);
 
-  useEffect(() => {
-    if (mode !== 'system') {
-      return;
-    }
+  const setMode = useCallback(
+    (next: ThemeMode) => setThemeMode(next),
+    [setThemeMode]
+  );
 
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = () => {
-      const next: ResolvedTheme = media.matches ? 'dark' : 'light';
-      setResolved(next);
-      document.documentElement.dataset.theme = next;
-    };
+  const setLightTheme = useCallback(
+    (next: ThemeId) => setLightThemeValue(next),
+    [setLightThemeValue]
+  );
 
-    media.addEventListener('change', onChange);
-    return () => media.removeEventListener('change', onChange);
-  }, [mode]);
-
-  const setMode = useCallback((next: ThemeMode) => setModeState(next), []);
+  const setDarkTheme = useCallback(
+    (next: ThemeId) => setDarkThemeValue(next),
+    [setDarkThemeValue]
+  );
 
   const cycle = useCallback(() => {
-    setModeState((current) =>
-      current === 'light' ? 'dark' : current === 'dark' ? 'system' : 'light'
-    );
-  }, []);
+    const current = useSettingsStore.getState().themeMode;
+    setThemeMode(current === 'light' ? 'dark' : current === 'dark' ? 'system' : 'light');
+  }, [setThemeMode]);
 
   const value = useMemo<ThemeContextValue>(
-    () => ({ mode, resolved, setMode, cycle }),
-    [mode, resolved, setMode, cycle]
+    () => ({
+      mode,
+      resolved,
+      themeId,
+      themeName,
+      themeLabel,
+      lightTheme,
+      darkTheme,
+      lightThemeName,
+      darkThemeName,
+      setMode,
+      setLightTheme,
+      setDarkTheme,
+      cycle
+    }),
+    [
+      mode,
+      resolved,
+      themeId,
+      themeName,
+      themeLabel,
+      lightTheme,
+      darkTheme,
+      lightThemeName,
+      darkThemeName,
+      setMode,
+      setLightTheme,
+      setDarkTheme,
+      cycle
+    ]
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

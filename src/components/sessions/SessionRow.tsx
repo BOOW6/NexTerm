@@ -56,8 +56,9 @@ export default function SessionRow({
           onOpen(session.id);
         }
       }}
+      data-active={active}
       className={cn(
-        'group flex cursor-pointer items-center gap-1.5 rounded-sm border px-1.5 py-1 transition-colors',
+        'app-list-row group flex cursor-pointer items-center gap-1.5 rounded-sm border px-1.5 py-1 transition-colors',
         'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring',
         active
           ? 'border-accent/40 bg-row-selected'

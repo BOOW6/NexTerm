@@ -200,9 +200,8 @@ export default function TerminalTab(props: IDockviewPanelProps) {
       <div className="flex h-7 shrink-0 items-center gap-0.5 border-b border-border bg-surface px-1">
         <Tooltip label="查找">
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="h-5 w-5"
             aria-label="查找"
             onClick={() => setSearchOpen((value) => !value)}
           >
@@ -225,31 +224,29 @@ export default function TerminalTab(props: IDockviewPanelProps) {
                 }
               }}
               placeholder="查找..."
-              className="h-5 w-36 text-[11px]"
+              size="sm"
+              width={144}
               aria-label="查找内容"
             />
             <Button
-              size="icon"
+              size="icon-sm"
               variant="ghost"
-              className="h-5 w-5"
               aria-label="上一个"
               onClick={() => runSearch('previous')}
             >
               <ChevronUp className="h-3 w-3" />
             </Button>
             <Button
-              size="icon"
+              size="icon-sm"
               variant="ghost"
-              className="h-5 w-5"
               aria-label="下一个"
               onClick={() => runSearch('next')}
             >
               <ChevronDown className="h-3 w-3" />
             </Button>
             <Button
-              size="icon"
+              size="icon-sm"
               variant="ghost"
-              className="h-5 w-5"
               aria-label="关闭查找"
               onClick={() => setSearchOpen(false)}
             >
@@ -262,9 +259,8 @@ export default function TerminalTab(props: IDockviewPanelProps) {
 
         <Tooltip label="清屏">
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="h-5 w-5"
             aria-label="清屏"
             onClick={() => terminalRef.current?.clear()}
           >
@@ -274,9 +270,8 @@ export default function TerminalTab(props: IDockviewPanelProps) {
 
         <Tooltip label="复制选中">
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="h-5 w-5"
             aria-label="复制选中"
             onClick={() => void handleCopy()}
           >
@@ -288,9 +283,8 @@ export default function TerminalTab(props: IDockviewPanelProps) {
 
         <Tooltip label="缩小字号">
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="h-5 w-5"
             aria-label="缩小字号"
             onClick={() => adjustFont(-1)}
           >
@@ -300,9 +294,8 @@ export default function TerminalTab(props: IDockviewPanelProps) {
         <span className="w-7 text-center text-[10px] tabular-nums text-muted">{fontSize}px</span>
         <Tooltip label="放大字号">
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="h-5 w-5"
             aria-label="放大字号"
             onClick={() => adjustFont(1)}
           >
@@ -315,9 +308,8 @@ export default function TerminalTab(props: IDockviewPanelProps) {
         {!isLocal ? (
           <Tooltip label="重新认证">
             <Button
-              size="icon"
+              size="icon-sm"
               variant="ghost"
-              className="h-5 w-5"
               aria-label="重新认证"
               onClick={() => clearCredentials(session.id)}
             >
@@ -328,9 +320,8 @@ export default function TerminalTab(props: IDockviewPanelProps) {
 
         <Tooltip label="重连">
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="h-5 w-5"
             aria-label="重连"
             onClick={() => {
               reconnectSession(session.id);

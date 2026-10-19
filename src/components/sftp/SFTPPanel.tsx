@@ -364,9 +364,8 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
       <div className="flex h-7 shrink-0 items-center gap-1 border-b border-border px-1">
         <Tooltip label="上级目录">
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="h-5 w-5"
             aria-label="上级目录"
             disabled={!canBrowse || path === '/'}
             onClick={goUp}
@@ -376,9 +375,8 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         </Tooltip>
         <Tooltip label="刷新">
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="h-5 w-5"
             aria-label="刷新"
             disabled={!canBrowse}
             onClick={() => setReloadToken((value) => value + 1)}
@@ -390,7 +388,9 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
           aria-label="SFTP 会话"
           value={boundSessionId ?? ''}
           onChange={(event) => setBoundSessionId(event.target.value || undefined)}
-          className="h-5 w-32 shrink-0 text-[11px]"
+          size="sm"
+          width={128}
+          className="shrink-0"
         >
           <option value="">选择会话</option>
           {remoteSessions.map((item) => (
@@ -407,9 +407,8 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         </span>
         <Tooltip label="新建文件夹">
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="h-5 w-5"
             aria-label="新建文件夹"
             disabled={!canBrowse}
             onClick={() => void promptName('mkdir')}
@@ -419,9 +418,8 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         </Tooltip>
         <Tooltip label="上传文件">
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="h-5 w-5"
             aria-label="上传文件"
             disabled={!canBrowse}
             onClick={() => void handleUpload()}
@@ -431,9 +429,8 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         </Tooltip>
         <Tooltip label="传输队列">
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="h-5 w-5"
             aria-label="传输队列"
             onClick={openTransferPanel}
           >
@@ -442,7 +439,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         </Tooltip>
       </div>
 
-      <div className="grid shrink-0 grid-cols-[1fr_62px_104px_42px] border-b border-border bg-table-header px-2 py-1 text-[11px] font-semibold text-foreground">
+      <div className="app-table-header grid shrink-0 grid-cols-[1fr_62px_104px_42px] border-b border-border bg-table-header px-2 py-1 text-[11px] font-semibold text-foreground">
         <span>名称</span>
         <span className="text-right">大小</span>
         <span className="text-right">修改时间</span>

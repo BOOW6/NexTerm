@@ -77,7 +77,7 @@ export function DropdownMenu({
         <div
           role="menu"
           className={cn(
-            'absolute top-full z-40 mt-0.5 min-w-40 animate-zoom-in rounded-sm border border-border-strong bg-surface p-0.5 shadow-popup',
+            'app-popup absolute top-full z-40 mt-0.5 min-w-40 animate-zoom-in rounded-sm border border-border-strong bg-surface-elevated p-0.5 shadow-popup',
             align === 'end' ? 'right-0' : 'left-0'
           )}
         >

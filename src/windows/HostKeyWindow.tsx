@@ -41,7 +41,7 @@ export default function HostKeyWindow() {
 
   if (payload.mode === 'mismatch') {
     return (
-      <div className="flex h-full flex-col bg-background text-foreground">
+      <div className="app-dialog-window flex h-full flex-col bg-background text-foreground">
         <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
           <div className="flex items-center gap-2 rounded-sm border border-error/40 bg-error/10 px-2.5 py-2">
             <ShieldAlert className="h-4 w-4 shrink-0 text-error" />
@@ -66,7 +66,7 @@ export default function HostKeyWindow() {
             如确认服务器已重装或更换密钥，请在「设置 → 安全」中删除该记录后重新连接。
           </p>
         </div>
-        <div className="flex justify-end border-t border-border bg-background-alt px-5 py-3">
+        <div className="app-dialog-footer flex justify-end border-t border-border bg-background-alt px-5 py-3">
           <Button variant="secondary" onClick={() => void cancelModal()}>
             关闭
           </Button>
@@ -76,7 +76,7 @@ export default function HostKeyWindow() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-background text-foreground">
+    <div className="app-dialog-window flex h-full flex-col bg-background text-foreground">
       <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
         <div className="flex items-center gap-2 rounded-sm border border-border bg-background-alt px-2.5 py-2">
           <ShieldQuestion className="h-4 w-4 shrink-0 text-warning" />
@@ -94,7 +94,7 @@ export default function HostKeyWindow() {
           信任后会写入 known_hosts，后续连接将自动校验。
         </p>
       </div>
-      <div className="flex items-center justify-end gap-2 border-t border-border bg-background-alt px-5 py-3">
+      <div className="app-dialog-footer flex items-center justify-end gap-2 border-t border-border bg-background-alt px-5 py-3">
         <Button variant="ghost" onClick={() => void submitModal(false)}>
           取消连接
         </Button>

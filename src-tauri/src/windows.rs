@@ -206,7 +206,8 @@ pub async fn open_modal_window(
         .minimizable(false)
         .decorations(true)
         .center()
-        .focused(true);
+        .focused(true)
+        .disable_drag_drop_handler();
 
     #[cfg(target_os = "macos")]
     {
@@ -263,7 +264,8 @@ pub async fn open_settings_window(app: AppHandle, tab: Option<String>) -> Result
         .min_inner_size(760.0, 560.0)
         .resizable(true)
         .decorations(true)
-        .center();
+        .center()
+        .disable_drag_drop_handler();
 
     #[cfg(target_os = "macos")]
     {

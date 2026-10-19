@@ -43,7 +43,7 @@ export default function PromptWindow() {
   };
 
   return (
-    <div className="flex h-full flex-col bg-background text-foreground">
+    <div className="app-dialog-window flex h-full flex-col bg-background text-foreground">
       <div className="flex-1 px-5 py-4">
         <Label htmlFor="prompt-input">{payload?.label ?? '名称'}</Label>
         <Input
@@ -60,7 +60,7 @@ export default function PromptWindow() {
           }}
         />
       </div>
-      <div className="flex items-center justify-end gap-2 border-t border-border bg-background-alt px-5 py-3">
+      <div className="app-dialog-footer flex items-center justify-end gap-2 border-t border-border bg-background-alt px-5 py-3">
         <Button variant="ghost" onClick={() => void cancelModal()}>
           取消
         </Button>

@@ -38,7 +38,8 @@ export function ShortcutInput({ value, onChange }: ShortcutInputProps) {
           event.currentTarget.blur();
         }
       }}
-      className="h-7 w-40 text-[11px]"
+      size="compact"
+      width={160}
       aria-label="快捷键"
     />
   );

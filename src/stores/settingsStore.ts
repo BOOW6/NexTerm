@@ -1,6 +1,14 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { SessionAuthMethod } from '../types/session';
+import {
+  DEFAULT_DARK_THEME,
+  DEFAULT_LIGHT_THEME,
+  normalizeThemeId,
+  normalizeThemeMode,
+  type ThemeId,
+  type ThemeMode
+} from '../theme/themes';
 
 export type TerminalCursorStyle = 'block' | 'underline' | 'bar';
 
@@ -14,6 +22,9 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, string> = {
 };
 
 export interface SettingsSnapshot {
+  themeMode: ThemeMode;
+  lightTheme: ThemeId;
+  darkTheme: ThemeId;
   terminalFontSize: number;
   terminalFontFamily: string;
   terminalCursorStyle: TerminalCursorStyle;
@@ -27,6 +38,9 @@ export interface SettingsSnapshot {
 }
 
 export const DEFAULT_SETTINGS: SettingsSnapshot = {
+  themeMode: 'system',
+  lightTheme: DEFAULT_LIGHT_THEME,
+  darkTheme: DEFAULT_DARK_THEME,
   terminalFontSize: 13,
   terminalFontFamily: 'Consolas, "Courier New", "Sarasa Mono SC", monospace',
   terminalCursorStyle: 'block',
@@ -39,8 +53,22 @@ export const DEFAULT_SETTINGS: SettingsSnapshot = {
   shortcuts: DEFAULT_SHORTCUTS
 };
 
+const LEGACY_THEME_KEY = 'nexterm.theme';
+
+function readLegacyThemeMode(): ThemeMode | null {
+  try {
+    const value = window.localStorage.getItem(LEGACY_THEME_KEY);
+    return value === 'light' || value === 'dark' || value === 'system' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeSettings(input: SettingsSnapshot): SettingsSnapshot {
   return {
+    themeMode: normalizeThemeMode(input.themeMode),
+    lightTheme: normalizeThemeId(input.lightTheme, 'light'),
+    darkTheme: normalizeThemeId(input.darkTheme, 'dark'),
     terminalFontSize: Math.min(20, Math.max(10, Math.round(input.terminalFontSize) || 13)),
     terminalFontFamily:
       input.terminalFontFamily.trim() || DEFAULT_SETTINGS.terminalFontFamily,
@@ -66,26 +94,39 @@ function normalizeSettings(input: SettingsSnapshot): SettingsSnapshot {
 
 interface SettingsState extends SettingsSnapshot {
   applySettings: (snapshot: SettingsSnapshot) => void;
+  setThemeMode: (mode: ThemeMode) => void;
+  setLightTheme: (theme: ThemeId) => void;
+  setDarkTheme: (theme: ThemeId) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       ...DEFAULT_SETTINGS,
-      applySettings: (snapshot) => set(normalizeSettings(snapshot))
+      themeMode: readLegacyThemeMode() ?? DEFAULT_SETTINGS.themeMode,
+      applySettings: (snapshot) => set(normalizeSettings(snapshot)),
+      setThemeMode: (themeMode) => set({ themeMode: normalizeThemeMode(themeMode) }),
+      setLightTheme: (lightTheme) =>
+        set({ lightTheme: normalizeThemeId(lightTheme, 'light') }),
+      setDarkTheme: (darkTheme) => set({ darkTheme: normalizeThemeId(darkTheme, 'dark') })
     }),
     {
       name: 'nexterm.settings.v1',
       merge: (persisted, current) => {
         const saved = (persisted as Partial<SettingsState> | undefined) ?? {};
-        return {
+        const merged = {
           ...current,
           ...saved,
+          themeMode:
+            saved.themeMode === undefined
+              ? (readLegacyThemeMode() ?? DEFAULT_SETTINGS.themeMode)
+              : saved.themeMode,
           shortcuts: {
             ...DEFAULT_SHORTCUTS,
             ...(saved.shortcuts ?? {})
           }
         };
+        return { ...merged, ...normalizeSettings(merged as SettingsSnapshot) };
       }
     }
   )

@@ -1,24 +1,38 @@
-import App from '../App';
+import { lazy, Suspense } from 'react';
 import { currentWindowKind } from '../lib/appWindows';
 import { useContextMenuPolicy } from '../hooks/useContextMenuPolicy';
-import HostKeyWindow from './HostKeyWindow';
-import PromptWindow from './PromptWindow';
-import QuickConnectWindow from './QuickConnectWindow';
-import SettingsWindow from './SettingsWindow';
+
+const App = lazy(() => import('../App'));
+const HostKeyWindow = lazy(() => import('./HostKeyWindow'));
+const PromptWindow = lazy(() => import('./PromptWindow'));
+const QuickConnectWindow = lazy(() => import('./QuickConnectWindow'));
+const SettingsWindow = lazy(() => import('./SettingsWindow'));
+
+function WindowFallback() {
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-background text-xs text-muted">
+      加载中...
+    </div>
+  );
+}
 
 export default function WindowRoot() {
   useContextMenuPolicy();
 
-  switch (currentWindowKind()) {
-    case 'settings':
-      return <SettingsWindow />;
-    case 'quick-connect':
-      return <QuickConnectWindow />;
-    case 'host-key':
-      return <HostKeyWindow />;
-    case 'prompt':
-      return <PromptWindow />;
-    default:
-      return <App />;
-  }
+  const renderWindow = () => {
+    switch (currentWindowKind()) {
+      case 'settings':
+        return <SettingsWindow />;
+      case 'quick-connect':
+        return <QuickConnectWindow />;
+      case 'host-key':
+        return <HostKeyWindow />;
+      case 'prompt':
+        return <PromptWindow />;
+      default:
+        return <App />;
+    }
+  };
+
+  return <Suspense fallback={<WindowFallback />}>{renderWindow()}</Suspense>;
 }

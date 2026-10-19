@@ -80,7 +80,7 @@ export function Toaster() {
             key={item.id}
             role="status"
             className={cn(
-              'pointer-events-auto flex animate-slide-in items-start gap-2 rounded-sm border border-l-2 border-border-strong bg-surface p-2 shadow-popup',
+              'pointer-events-auto flex animate-slide-in items-start gap-2 rounded-sm border border-l-2 border-border-strong bg-surface-elevated p-2 shadow-popup',
               leftBorders[item.variant]
             )}
           >

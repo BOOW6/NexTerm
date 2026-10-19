@@ -33,7 +33,7 @@ export default function TerminalPreview({
   const fitRef = useRef<FitAddon | null>(null);
   const fontReadyRef = useRef(false);
   const fontFamilyRef = useRef(fontFamily);
-  const { resolved } = useTheme();
+  const { themeId } = useTheme();
 
   useEffect(() => {
     fontFamilyRef.current = fontFamily;
@@ -200,7 +200,7 @@ export default function TerminalPreview({
     if (terminalRef.current) {
       terminalRef.current.options.theme = getTerminalTheme();
     }
-  }, [resolved]);
+  }, [themeId]);
 
   useEffect(() => {
     if (!visible) {

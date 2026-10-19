@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { emit, listen } from '@tauri-apps/api/event';
 import {
+  Check,
   Keyboard,
   Monitor,
   Moon,
@@ -27,7 +28,13 @@ import {
   type ShortcutAction,
   type TerminalCursorStyle
 } from '../stores/settingsStore';
-import { useTheme, type ThemeMode } from '../theme/ThemeProvider';
+import {
+  DARK_THEMES,
+  LIGHT_THEMES,
+  type ThemeDefinition,
+  type ThemeId,
+  type ThemeMode
+} from '../theme/themes';
 import { confirmAction } from '../lib/appWindows';
 import {
   listKnownHosts,
@@ -65,8 +72,8 @@ const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
 };
 
 const THEME_OPTIONS: Array<{ mode: ThemeMode; label: string; icon: LucideIcon }> = [
-  { mode: 'light', label: '明亮', icon: Sun },
-  { mode: 'dark', label: '暗黑', icon: Moon },
+  { mode: 'light', label: '亮色', icon: Sun },
+  { mode: 'dark', label: '暗色', icon: Moon },
   { mode: 'system', label: '跟随系统', icon: Monitor }
 ];
 
@@ -75,6 +82,9 @@ const TerminalPreview = lazy(() => import('./settings/TerminalPreview'));
 function snapshotOf(): SettingsSnapshot {
   const state = useSettingsStore.getState();
   return {
+    themeMode: state.themeMode,
+    lightTheme: state.lightTheme,
+    darkTheme: state.darkTheme,
     terminalFontSize: state.terminalFontSize,
     terminalFontFamily: state.terminalFontFamily,
     terminalCursorStyle: state.terminalCursorStyle,
@@ -94,14 +104,12 @@ function initialTab(): SettingsTab {
 }
 
 export default function SettingsWindow() {
-  const { mode, setMode } = useTheme();
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   const [previewActivated, setPreviewActivated] = useState(() => initialTab() === 'terminal');
   const [draft, setDraft] = useState<SettingsSnapshot>(() => ({
     ...snapshotOf(),
     shortcuts: { ...useSettingsStore.getState().shortcuts }
   }));
-  const [draftTheme, setDraftTheme] = useState<ThemeMode>(mode);
   const [knownHosts, setKnownHosts] = useState<KnownHost[]>([]);
   const [removedHosts, setRemovedHosts] = useState<string[]>([]);
   const [loadingHosts, setLoadingHosts] = useState(false);
@@ -194,11 +202,10 @@ export default function SettingsWindow() {
     setApplying(true);
     try {
       useSettingsStore.getState().applySettings(draft);
-      setMode(draftTheme);
 
       const applied = snapshotOf();
       setDraft({ ...applied, shortcuts: { ...applied.shortcuts } });
-      await emit('nexterm-settings-applied', { settings: applied, theme: draftTheme });
+      await emit('nexterm-settings-applied', { settings: applied });
 
       const removed: string[] = [];
       for (const host of removedHosts) {
@@ -241,7 +248,6 @@ export default function SettingsWindow() {
     }
     setSavedAt(null);
     setDraft({ ...DEFAULT_SETTINGS, shortcuts: { ...DEFAULT_SETTINGS.shortcuts } });
-    setDraftTheme('system');
   };
 
   const close = () => {
@@ -259,10 +265,65 @@ export default function SettingsWindow() {
     }
   };
 
+  const renderThemeGroup = (
+    title: string,
+    hint: string,
+    themes: ThemeDefinition[],
+    value: ThemeId,
+    onSelect: (theme: ThemeId) => void
+  ) => (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold text-foreground">{title}</h3>
+        <span className="text-[10px] text-muted-foreground">{hint}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {themes.map((theme) => {
+          const selected = value === theme.id;
+          return (
+            <button
+              key={theme.id}
+              type="button"
+              onClick={() => onSelect(theme.id)}
+              className={cn(
+                'flex min-w-0 items-center gap-2 rounded-sm border px-2 py-2 text-left transition-colors',
+                selected
+                  ? 'border-accent bg-accent/10'
+                  : 'border-border bg-surface hover:bg-surface-hover'
+              )}
+            >
+              <span className="flex h-8 w-11 shrink-0 overflow-hidden rounded-sm border border-border-muted">
+                {theme.swatches.map((color, index) => (
+                  <span
+                    key={`${theme.id}-${index}`}
+                    className="h-full flex-1"
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[11px] font-medium text-foreground">
+                  {theme.name}
+                </span>
+                <span
+                  className="block truncate text-[10px] text-muted"
+                  title={theme.description}
+                >
+                  {theme.description}
+                </span>
+              </span>
+              {selected ? <Check className="h-3.5 w-3.5 shrink-0 text-accent" /> : null}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   const renderAppearance = () => (
-    <section className="space-y-4">
+    <section className="space-y-5">
       <div>
-        <h3 className="mb-2 text-xs font-semibold text-foreground">主题</h3>
+        <h3 className="mb-2 text-xs font-semibold text-foreground">主题策略</h3>
         <div className="grid grid-cols-3 gap-2">
           {THEME_OPTIONS.map((option) => {
             const Icon = option.icon;
@@ -270,13 +331,10 @@ export default function SettingsWindow() {
               <button
                 key={option.mode}
                 type="button"
-                onClick={() => {
-                  setDraftTheme(option.mode);
-                  setSavedAt(null);
-                }}
+                onClick={() => update('themeMode', option.mode)}
                 className={cn(
                   'flex flex-col items-center gap-1.5 rounded-sm border px-2 py-3 text-[11px] transition-colors',
-                  draftTheme === option.mode
+                  draft.themeMode === option.mode
                     ? 'border-accent bg-accent/10 text-foreground'
                     : 'border-border bg-surface text-muted hover:bg-surface-hover'
                 )}
@@ -288,9 +346,27 @@ export default function SettingsWindow() {
           })}
         </div>
         <p className="mt-1.5 text-[10px] text-muted-foreground">
-          主题将在点击「应用」后应用到主窗口。
+          亮色/暗色策略会使用对应的主题；跟随系统会根据系统外观自动切换。
         </p>
       </div>
+
+      {renderThemeGroup(
+        '亮色主题',
+        '亮色模式使用',
+        LIGHT_THEMES,
+        draft.lightTheme,
+        (theme) => update('lightTheme', theme)
+      )}
+
+      {renderThemeGroup(
+        '暗色主题',
+        '暗色模式使用',
+        DARK_THEMES,
+        draft.darkTheme,
+        (theme) => update('darkTheme', theme)
+      )}
+
+      <p className="text-[10px] text-muted-foreground">主题将在点击「应用」后生效。</p>
     </section>
   );
 
@@ -380,7 +456,7 @@ export default function SettingsWindow() {
       <label className="flex items-center gap-2 text-[11px] text-muted">
         <input
           type="checkbox"
-          className="h-3.5 w-3.5 accent-accent"
+          className="app-checkbox h-3.5 w-3.5 accent-accent"
           checked={draft.terminalCursorBlink}
           onChange={(event) => update('terminalCursorBlink', event.target.checked)}
         />
@@ -495,9 +571,8 @@ export default function SettingsWindow() {
                 </p>
               </div>
               <Button
-                size="icon"
+                size="icon-md"
                 variant="ghost"
-                className="h-6 w-6"
                 aria-label="删除主机记录"
                 title="删除主机记录"
                 onClick={() => void handleRemoveHost(entry.host)}
@@ -541,13 +616,14 @@ export default function SettingsWindow() {
 
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
-      <div className="flex h-10 shrink-0 items-end gap-0.5 border-b border-border bg-surface-header px-2">
+      <div className="app-tab-strip flex h-10 shrink-0 items-end gap-0.5 border-b border-border bg-surface-header px-2">
         {TABS.map((item) => {
           const Icon = item.icon;
           return (
             <button
               key={item.id}
               type="button"
+              data-active={tab === item.id}
               onClick={() => selectTab(item.id)}
               className={cn(
                 'flex h-9 items-center gap-1.5 rounded-t-sm border border-b-0 px-3 text-[11px] transition-colors',
