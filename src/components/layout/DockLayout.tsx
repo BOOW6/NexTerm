@@ -20,12 +20,11 @@ const LAYOUT_KEY = 'nexterm.workspace.layout.v1';
 
 const SFTPPanel = lazy(() => import('../sftp/SFTPPanel'));
 const TransferPanel = lazy(() => import('../transfers/TransferPanel'));
+const PortForwardPanel = lazy(() => import('../forward/PortForwardPanel'));
 
 function PanelFallback() {
   return (
-    <div className="flex h-full items-center justify-center text-xs text-muted">
-      加载中...
-    </div>
+    <div className="flex h-full items-center justify-center text-xs text-muted">加载中...</div>
   );
 }
 
@@ -39,6 +38,11 @@ const components = {
   transfers: () => (
     <Suspense fallback={<PanelFallback />}>
       <TransferPanel />
+    </Suspense>
+  ),
+  forwards: (props: IDockviewPanelProps) => (
+    <Suspense fallback={<PanelFallback />}>
+      <PortForwardPanel {...props} />
     </Suspense>
   )
 };
@@ -131,8 +135,7 @@ export default function DockLayout() {
 
       if (!restored || api.totalPanels === 0) {
         const sessions = useSessionStore.getState().sessions;
-        const target =
-          [...sessions].sort((a, b) => b.lastUsed - a.lastUsed)[0] ?? fallback;
+        const target = [...sessions].sort((a, b) => b.lastUsed - a.lastUsed)[0] ?? fallback;
         openSessionPanel(api, target.id);
       }
 
@@ -145,9 +148,7 @@ export default function DockLayout() {
         })
       );
 
-      disposablesRef.current.push(
-        api.onDidAddPanel(() => setPanelCount(api.totalPanels))
-      );
+      disposablesRef.current.push(api.onDidAddPanel(() => setPanelCount(api.totalPanels)));
 
       disposablesRef.current.push(
         api.onDidRemovePanel((panel) => {
@@ -171,9 +172,8 @@ export default function DockLayout() {
 
       disposablesRef.current.push(api.onDidLayoutChange(() => persist(api)));
 
-      const activeSessionId = (
-        api.activePanel?.params as { sessionId?: string } | undefined
-      )?.sessionId;
+      const activeSessionId = (api.activePanel?.params as { sessionId?: string } | undefined)
+        ?.sessionId;
       if (activeSessionId) {
         useWorkspaceStore.getState().setActiveSessionId(activeSessionId);
       }

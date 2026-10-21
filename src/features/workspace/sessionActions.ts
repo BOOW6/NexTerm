@@ -50,9 +50,7 @@ export function openSessionPanel(
     }
   }
 
-  const reference = options.referencePanelId
-    ? api.getPanel(options.referencePanelId)
-    : undefined;
+  const reference = options.referencePanelId ? api.getPanel(options.referencePanelId) : undefined;
 
   const panel = api.addPanel({
     id: newPanelId(),
@@ -134,14 +132,11 @@ export function closeSessionPanels(api: DockviewApi, sessionId: string): void {
 }
 
 export function closeOtherPanels(api: DockviewApi, keepPanelId: string): void {
-  api.panels
-    .filter((panel) => panel.id !== keepPanelId)
-    .forEach((panel) => panel.api.close());
+  api.panels.filter((panel) => panel.id !== keepPanelId).forEach((panel) => panel.api.close());
 }
 
 export function openSftpPanel(api: DockviewApi, sessionId?: string): void {
-  const targetSessionId =
-    sessionId ?? useWorkspaceStore.getState().activeSessionId ?? undefined;
+  const targetSessionId = sessionId ?? useWorkspaceStore.getState().activeSessionId ?? undefined;
   const session = targetSessionId
     ? useSessionStore.getState().getSession(targetSessionId)
     : undefined;
@@ -155,6 +150,26 @@ export function openSftpPanel(api: DockviewApi, sessionId?: string): void {
     id: panelId,
     component: 'sftp',
     title: session ? `SFTP · ${session.title}` : 'SFTP',
+    params: targetSessionId ? { sessionId: targetSessionId } : undefined
+  });
+}
+
+export function openPortForwardPanel(api: DockviewApi, sessionId?: string): void {
+  const targetSessionId = sessionId ?? useWorkspaceStore.getState().activeSessionId ?? undefined;
+  const session = targetSessionId
+    ? useSessionStore.getState().getSession(targetSessionId)
+    : undefined;
+  const panelId = targetSessionId ? `forwards-${targetSessionId}` : 'forwards-main';
+  const existing = api.getPanel(panelId);
+  if (existing) {
+    existing.api.setActive();
+    return;
+  }
+
+  api.addPanel({
+    id: panelId,
+    component: 'forwards',
+    title: session ? `端口转发 · ${session.title}` : '端口转发',
     params: targetSessionId ? { sessionId: targetSessionId } : undefined
   });
 }

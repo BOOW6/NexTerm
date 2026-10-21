@@ -141,7 +141,13 @@
   --gradient-panel-title: linear-gradient(180deg, #ffffff 0%, #edf4fb 50%, #dbe8f5 100%);
   --gradient-button: linear-gradient(180deg, #ffffff 0%, #f2f7fc 48%, #dce9f5 52%, #eef5fb 100%);
   --gradient-button-hover: linear-gradient(180deg, #ffffff, #e5f0fb 50%, #cfe2f3 100%);
-  --gradient-button-primary: linear-gradient(180deg, #78b4e6 0%, #2f7cbe 48%, #2166a6 52%, #17518a 100%);
+  --gradient-button-primary: linear-gradient(
+    180deg,
+    #78b4e6 0%,
+    #2f7cbe 48%,
+    #2166a6 52%,
+    #17518a 100%
+  );
 
   --radius: 4px;
   --radius-sm: 3px;
@@ -195,7 +201,13 @@
   --gradient-panel-title: linear-gradient(180deg, #34485a 0%, #22313f 100%);
   --gradient-button: linear-gradient(180deg, #3a4c5e 0%, #2d3d4d 48%, #263544 52%, #314353 100%);
   --gradient-button-hover: linear-gradient(180deg, #43586c, #304353);
-  --gradient-button-primary: linear-gradient(180deg, #5b9bd5 0%, #2d6b9f 48%, #235a86 52%, #173f61 100%);
+  --gradient-button-primary: linear-gradient(
+    180deg,
+    #5b9bd5 0%,
+    #2d6b9f 48%,
+    #235a86 52%,
+    #173f61 100%
+  );
 
   --radius: 4px;
   --radius-sm: 3px;

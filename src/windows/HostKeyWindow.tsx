@@ -2,10 +2,7 @@ import { useEffect, useState } from 'react';
 import { ShieldAlert, ShieldQuestion } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { cancelModal, getModalPayload, submitModal } from '../lib/appWindows';
-import type {
-  HostKeyMismatchPayload,
-  HostKeyPromptPayload
-} from '../hooks/useTauriSsh';
+import type { HostKeyMismatchPayload, HostKeyPromptPayload } from '../hooks/useTauriSsh';
 
 type HostKeyPayload =
   | { mode: 'prompt'; prompt: HostKeyPromptPayload }

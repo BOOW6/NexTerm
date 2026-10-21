@@ -28,10 +28,7 @@ export function useWindowState(storageKey = 'nexterm.window.main.v1'): void {
           const saved = window.localStorage.getItem(storageKey);
           if (saved) {
             const parsed = JSON.parse(saved) as SavedWindowState;
-            window.localStorage.setItem(
-              storageKey,
-              JSON.stringify({ ...parsed, maximized: true })
-            );
+            window.localStorage.setItem(storageKey, JSON.stringify({ ...parsed, maximized: true }));
           }
           return;
         }

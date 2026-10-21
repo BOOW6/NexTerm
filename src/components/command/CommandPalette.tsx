@@ -5,6 +5,7 @@ import {
   Columns2,
   CornerDownLeft,
   FolderTree,
+  Network,
   Plus,
   RotateCw,
   Rows2,
@@ -69,6 +70,7 @@ export default function CommandPalette() {
     splitSession,
     duplicateSession,
     openSftpPanel,
+    openPortForwardPanel,
     openTransferPanel,
     getApi
   } = useWorkspace();
@@ -130,6 +132,14 @@ export default function CommandPalette() {
         icon: ArrowUpDown,
         keywords: 'transfer upload download 传输 队列 上传 下载',
         run: () => openTransferPanel()
+      },
+      {
+        id: 'open-forwards',
+        group: '命令',
+        label: '打开端口转发',
+        icon: Network,
+        keywords: 'forward tunnel proxy socks 端口 转发 隧道',
+        run: () => openPortForwardPanel()
       },
       {
         id: 'open-settings',
@@ -217,6 +227,7 @@ export default function CommandPalette() {
     toggleFavorite,
     closeSessionPanel,
     openSftpPanel,
+    openPortForwardPanel,
     openTransferPanel,
     openQuickConnect,
     getApi

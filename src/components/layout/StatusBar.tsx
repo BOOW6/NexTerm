@@ -2,11 +2,7 @@ import { useEffect, useState } from 'react';
 import { cn } from '../../lib/cn';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
-import {
-  SESSION_KIND_LABEL,
-  sessionSubtitle,
-  type SessionStatus
-} from '../../types/session';
+import { SESSION_KIND_LABEL, sessionSubtitle, type SessionStatus } from '../../types/session';
 import { sessionStatusDot } from '../../lib/sessionVisuals';
 
 const statusLabels: Record<SessionStatus, string> = {
@@ -51,9 +47,7 @@ export default function StatusBar() {
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="tabular-nums">
-          {clock.toLocaleTimeString('zh-CN', { hour12: false })}
-        </span>
+        <span className="tabular-nums">{clock.toLocaleTimeString('zh-CN', { hour12: false })}</span>
       </div>
     </footer>
   );

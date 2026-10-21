@@ -3,6 +3,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Terminal, type IDisposable } from '@xterm/xterm';
 import { writeText as writeClipboardText } from '@tauri-apps/plugin-clipboard-manager';
 import { FitAddon } from '@xterm/addon-fit';
+import { LigaturesAddon } from '@xterm/addon-ligatures';
 import type { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
@@ -27,6 +28,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTheme } from '../../theme/ThemeProvider';
 import { getTerminalTheme } from '../../theme/terminalTheme';
+import { TERMINAL_LIGATURE_OPTIONS } from '../../theme/terminalLigatures';
 
 export interface XtermHandle {
   clear: () => void;
@@ -46,7 +48,7 @@ export interface SshTarget {
   host: string;
   port: number;
   username: string;
-  authMethod: 'password' | 'key';
+  authMethod: 'password' | 'key' | 'agent';
   password?: string;
   privateKeyPath?: string;
   passphrase?: string;
@@ -145,9 +147,12 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
     const resumeRef = useRef<(() => void) | null>(null);
     const refitRef = useRef<(() => void) | null>(null);
     const flushResizeRef = useRef<(() => void) | null>(null);
+    const ligaturesRef = useRef<((enabled: boolean) => void) | null>(null);
     const { themeId } = useTheme();
 
     const terminalFontFamily = useSettingsStore((state) => state.terminalFontFamily);
+    const terminalFontLigatures = useSettingsStore((state) => state.terminalFontLigatures);
+    const terminalColorScheme = useSettingsStore((state) => state.terminalColorScheme);
     const terminalCursorStyle = useSettingsStore((state) => state.terminalCursorStyle);
     const terminalCursorBlink = useSettingsStore((state) => state.terminalCursorBlink);
     const terminalScrollback = useSettingsStore((state) => state.terminalScrollback);
@@ -196,7 +201,65 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       let terminal: Terminal | null = null;
       let fitAddon: FitAddon | null = null;
       let searchAddon: SearchAddon | null = null;
+      let ligaturesAddon: LigaturesAddon | null = null;
+      let ligaturesEnabled = false;
       let webglAddon: WebglAddon | null = null;
+
+      const loadWebgl = () => {
+        const instance = terminal;
+        if (!instance || disposed || webglAddon) {
+          return;
+        }
+        try {
+          const webgl = new WebglAddon();
+          webgl.onContextLoss(() => {
+            webgl.dispose();
+            if (webglAddon === webgl) {
+              webglAddon = null;
+            }
+          });
+          instance.loadAddon(webgl);
+          webglAddon = webgl;
+        } catch {
+          webglAddon = null;
+        }
+      };
+
+      const applyLigatures = (enabled: boolean) => {
+        const instance = terminal;
+        if (!instance || disposed) {
+          ligaturesEnabled = enabled;
+          return;
+        }
+        if (enabled === ligaturesEnabled) {
+          return;
+        }
+
+        const hadWebgl = Boolean(webglAddon);
+        ligaturesEnabled = enabled;
+        webglAddon?.dispose();
+        webglAddon = null;
+        ligaturesAddon?.dispose();
+        ligaturesAddon = null;
+
+        if (enabled) {
+          try {
+            const addon = new LigaturesAddon(TERMINAL_LIGATURE_OPTIONS);
+            instance.loadAddon(addon);
+            ligaturesAddon = addon;
+          } catch {
+            ligaturesAddon = null;
+          }
+        }
+
+        // VS Code recreates WebGL after ligatures change so the texture atlas
+        // picks up the new font feature styles.
+        if (hadWebgl) {
+          loadWebgl();
+        }
+      };
+
+      ligaturesRef.current = applyLigatures;
 
       let initFrame: number | null = null;
       let initializing = false;
@@ -538,6 +601,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
             const settings = useSettingsStore.getState();
             const instance = new Terminal({
+              allowProposedApi: true,
               cursorBlink: settings.terminalCursorBlink,
               cursorStyle: settings.terminalCursorStyle,
               fontFamily: settings.terminalFontFamily,
@@ -554,7 +618,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
                     buildNumber: platform.buildNumber ?? undefined
                   }
                 : undefined,
-              theme: getTerminalTheme()
+              theme: getTerminalTheme(settings.terminalColorScheme)
             });
             terminal = instance;
 
@@ -564,19 +628,18 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
             instance.open(container);
 
-            try {
-              const webgl = new WebglAddon();
-              webgl.onContextLoss(() => {
-                webgl.dispose();
-                if (webglAddon === webgl) {
-                  webglAddon = null;
-                }
-              });
-              instance.loadAddon(webgl);
-              webglAddon = webgl;
-            } catch {
-              webglAddon = null;
+            ligaturesEnabled = settings.terminalFontLigatures;
+            if (ligaturesEnabled) {
+              try {
+                const addon = new LigaturesAddon(TERMINAL_LIGATURE_OPTIONS);
+                instance.loadAddon(addon);
+                ligaturesAddon = addon;
+              } catch {
+                ligaturesAddon = null;
+              }
             }
+
+            loadWebgl();
 
             try {
               fit.fit();
@@ -798,11 +861,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           return;
         }
         const dimensions = fitAddon.proposeDimensions();
-        if (
-          !dimensions ||
-          !Number.isFinite(dimensions.cols) ||
-          !Number.isFinite(dimensions.rows)
-        ) {
+        if (!dimensions || !Number.isFinite(dimensions.cols) || !Number.isFinite(dimensions.rows)) {
           return;
         }
         requestResize(dimensions.cols, dimensions.rows, immediate);
@@ -972,20 +1031,35 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         terminalRef.current = null;
         searchRef.current = null;
         loadSearchRef.current = null;
+        ligaturesRef.current = null;
 
         fitAddon?.dispose();
         searchAddon?.dispose();
+        ligaturesAddon?.dispose();
         webglAddon?.dispose();
         terminal?.dispose();
       };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sessionId, transport, host, port, username, authMethod, privateKeyPath, password, passphrase]);
+    }, [
+      sessionId,
+      transport,
+      host,
+      port,
+      username,
+      authMethod,
+      privateKeyPath,
+      password,
+      passphrase
+    ]);
 
     useEffect(() => {
       if (terminalRef.current) {
-        terminalRef.current.options.theme = getTerminalTheme();
+        terminalRef.current.options.theme = getTerminalTheme(terminalColorScheme);
       }
-    }, [themeId]);
+    }, [terminalColorScheme, themeId]);
+
+    useEffect(() => {
+      ligaturesRef.current?.(terminalFontLigatures);
+    }, [terminalFontLigatures]);
 
     useEffect(() => {
       const terminal = terminalRef.current;
@@ -1015,7 +1089,6 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       }
       terminal.options.fontSize = fontSize;
       refitRef.current?.();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [fontSize]);
 
     useImperativeHandle(

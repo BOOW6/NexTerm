@@ -12,9 +12,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
     return false;
   }
   return Boolean(
-    target.closest(
-      'input, textarea, select, [contenteditable="true"], [contenteditable=""]'
-    )
+    target.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]')
   );
 }
 
@@ -93,7 +91,12 @@ export function useGlobalShortcuts(): void {
         return;
       }
 
-      if (event.ctrlKey && !event.altKey && !event.shiftKey && (event.key === '=' || event.key === '+')) {
+      if (
+        event.ctrlKey &&
+        !event.altKey &&
+        !event.shiftKey &&
+        (event.key === '=' || event.key === '+')
+      ) {
         event.preventDefault();
         dispatchTerminalAction('zoom-in');
         return;

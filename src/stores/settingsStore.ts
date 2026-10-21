@@ -9,6 +9,10 @@ import {
   type ThemeId,
   type ThemeMode
 } from '../theme/themes';
+import {
+  DEFAULT_TERMINAL_COLOR_SCHEME,
+  normalizeTerminalColorSchemeId
+} from '../theme/terminalColorSchemes';
 
 export type TerminalCursorStyle = 'block' | 'underline' | 'bar';
 
@@ -25,8 +29,12 @@ export interface SettingsSnapshot {
   themeMode: ThemeMode;
   lightTheme: ThemeId;
   darkTheme: ThemeId;
-  terminalFontSize: number;
+  uiFontFamily: string;
+  uiFontLigatures: boolean;
   terminalFontFamily: string;
+  terminalFontLigatures: boolean;
+  terminalColorScheme: string;
+  terminalFontSize: number;
   terminalCursorStyle: TerminalCursorStyle;
   terminalCursorBlink: boolean;
   terminalScrollback: number;
@@ -37,12 +45,19 @@ export interface SettingsSnapshot {
   shortcuts: Record<ShortcutAction, string>;
 }
 
+const DEFAULT_UI_FONT_FAMILY =
+  "'Microsoft YaHei', '微软雅黑', Tahoma, Arial, 'PingFang SC', 'Hiragino Sans GB', sans-serif";
+
 export const DEFAULT_SETTINGS: SettingsSnapshot = {
   themeMode: 'system',
   lightTheme: DEFAULT_LIGHT_THEME,
   darkTheme: DEFAULT_DARK_THEME,
-  terminalFontSize: 13,
+  uiFontFamily: DEFAULT_UI_FONT_FAMILY,
+  uiFontLigatures: true,
   terminalFontFamily: 'Consolas, "Courier New", "Sarasa Mono SC", monospace',
+  terminalFontLigatures: false,
+  terminalColorScheme: DEFAULT_TERMINAL_COLOR_SCHEME,
+  terminalFontSize: 13,
   terminalCursorStyle: 'block',
   terminalCursorBlink: true,
   terminalScrollback: 10000,
@@ -69,9 +84,12 @@ function normalizeSettings(input: SettingsSnapshot): SettingsSnapshot {
     themeMode: normalizeThemeMode(input.themeMode),
     lightTheme: normalizeThemeId(input.lightTheme, 'light'),
     darkTheme: normalizeThemeId(input.darkTheme, 'dark'),
+    uiFontFamily: (input.uiFontFamily ?? '').trim() || DEFAULT_SETTINGS.uiFontFamily,
+    uiFontLigatures: Boolean(input.uiFontLigatures),
+    terminalFontFamily: input.terminalFontFamily.trim() || DEFAULT_SETTINGS.terminalFontFamily,
+    terminalFontLigatures: Boolean(input.terminalFontLigatures),
+    terminalColorScheme: normalizeTerminalColorSchemeId(input.terminalColorScheme),
     terminalFontSize: Math.min(20, Math.max(10, Math.round(input.terminalFontSize) || 13)),
-    terminalFontFamily:
-      input.terminalFontFamily.trim() || DEFAULT_SETTINGS.terminalFontFamily,
     terminalCursorStyle: input.terminalCursorStyle,
     terminalCursorBlink: Boolean(input.terminalCursorBlink),
     terminalScrollback: Math.min(
@@ -82,7 +100,12 @@ function normalizeSettings(input: SettingsSnapshot): SettingsSnapshot {
       1.6,
       Math.max(0.8, Math.round(input.terminalLineHeight * 10) / 10 || 1)
     ),
-    defaultAuthMethod: input.defaultAuthMethod === 'key' ? 'key' : 'password',
+    defaultAuthMethod:
+      input.defaultAuthMethod === 'key'
+        ? 'key'
+        : input.defaultAuthMethod === 'agent'
+          ? 'agent'
+          : 'password',
     defaultPort: Math.min(65535, Math.max(1, Math.round(input.defaultPort) || 22)),
     defaultUsername: input.defaultUsername.trim(),
     shortcuts: {
@@ -106,8 +129,7 @@ export const useSettingsStore = create<SettingsState>()(
       themeMode: readLegacyThemeMode() ?? DEFAULT_SETTINGS.themeMode,
       applySettings: (snapshot) => set(normalizeSettings(snapshot)),
       setThemeMode: (themeMode) => set({ themeMode: normalizeThemeMode(themeMode) }),
-      setLightTheme: (lightTheme) =>
-        set({ lightTheme: normalizeThemeId(lightTheme, 'light') }),
+      setLightTheme: (lightTheme) => set({ lightTheme: normalizeThemeId(lightTheme, 'light') }),
       setDarkTheme: (darkTheme) => set({ darkTheme: normalizeThemeId(darkTheme, 'dark') })
     }),
     {

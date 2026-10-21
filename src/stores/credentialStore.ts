@@ -11,7 +11,7 @@ interface CredentialState {
 }
 
 /**
- * Credentials live in memory only — never persisted to disk. Users are prompted
+ * Credentials live in memory only - never persisted to disk. Users are prompted
  * again after restarting the app.
  */
 export const useCredentialStore = create<CredentialState>((set) => ({

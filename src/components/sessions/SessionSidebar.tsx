@@ -1,11 +1,4 @@
-﻿import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type PointerEvent,
-  type ReactNode
-} from 'react';
+﻿import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -35,7 +28,14 @@ interface GroupSectionProps {
   children: ReactNode;
 }
 
-function GroupSection({ title, count, collapsed, onToggle, icon: Icon, children }: GroupSectionProps) {
+function GroupSection({
+  title,
+  count,
+  collapsed,
+  onToggle,
+  icon: Icon,
+  children
+}: GroupSectionProps) {
   return (
     <section className="mb-0.5">
       <button
@@ -43,11 +43,7 @@ function GroupSection({ title, count, collapsed, onToggle, icon: Icon, children 
         onClick={onToggle}
         className="app-group-header flex w-full items-center gap-1 rounded-sm px-1.5 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
       >
-        {collapsed ? (
-          <ChevronRight className="h-3 w-3" />
-        ) : (
-          <ChevronDown className="h-3 w-3" />
-        )}
+        {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
         {Icon ? <Icon className="h-3 w-3" /> : null}
         <span className="flex-1 truncate text-left">{title}</span>
         <span className="text-muted-foreground">{count}</span>
@@ -102,10 +98,7 @@ export default function SessionSidebar() {
     );
   }, [sessions, query]);
 
-  const favorites = useMemo(
-    () => filtered.filter((session) => session.favorite),
-    [filtered]
-  );
+  const favorites = useMemo(() => filtered.filter((session) => session.favorite), [filtered]);
 
   const groups = useMemo(() => {
     const map = new Map<string, typeof filtered>();

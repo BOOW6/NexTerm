@@ -29,7 +29,7 @@ function buildSession(draft: SessionDraft): Session {
     host: draft.kind === 'local' ? undefined : draft.host?.trim() || undefined,
     port: draft.kind === 'local' ? undefined : draft.port,
     username: draft.kind === 'local' ? undefined : draft.username?.trim() || undefined,
-    authMethod: draft.kind === 'local' ? undefined : draft.authMethod ?? 'password',
+    authMethod: draft.kind === 'local' ? undefined : (draft.authMethod ?? 'password'),
     keyPath: draft.kind === 'local' ? undefined : draft.keyPath?.trim() || undefined,
     group: draft.group.trim() || DEFAULT_GROUP,
     favorite: draft.favorite ?? false,
@@ -65,17 +65,14 @@ export const useSessionStore = create<SessionState>()(
                 patch.title !== undefined
                   ? patch.title.trim() || SESSION_KIND_LABEL[nextKind]
                   : session.title,
-              host:
-                nextKind === 'local' ? undefined : patch.host?.trim() || session.host,
+              host: nextKind === 'local' ? undefined : patch.host?.trim() || session.host,
               username:
-                nextKind === 'local'
-                  ? undefined
-                  : patch.username?.trim() || session.username,
-              port: nextKind === 'local' ? undefined : patch.port ?? session.port,
+                nextKind === 'local' ? undefined : patch.username?.trim() || session.username,
+              port: nextKind === 'local' ? undefined : (patch.port ?? session.port),
               authMethod:
                 nextKind === 'local'
                   ? undefined
-                  : patch.authMethod ?? session.authMethod ?? 'password',
+                  : (patch.authMethod ?? session.authMethod ?? 'password'),
               keyPath:
                 nextKind === 'local'
                   ? undefined

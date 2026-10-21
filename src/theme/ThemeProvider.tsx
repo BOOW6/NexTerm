@@ -8,12 +8,7 @@ import {
   type ReactNode
 } from 'react';
 import { useSettingsStore } from '../stores/settingsStore';
-import {
-  getTheme,
-  type ThemeId,
-  type ThemeMode,
-  type ThemeVariant
-} from './themes';
+import { getTheme, type ThemeId, type ThemeMode, type ThemeVariant } from './themes';
 
 export type { ThemeId, ThemeMode, ThemeVariant } from './themes';
 export type ResolvedTheme = ThemeVariant;
@@ -72,20 +67,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     root.dataset.colorScheme = resolved;
   }, [themeId, resolved]);
 
-  const setMode = useCallback(
-    (next: ThemeMode) => setThemeMode(next),
-    [setThemeMode]
-  );
+  const setMode = useCallback((next: ThemeMode) => setThemeMode(next), [setThemeMode]);
 
   const setLightTheme = useCallback(
     (next: ThemeId) => setLightThemeValue(next),
     [setLightThemeValue]
   );
 
-  const setDarkTheme = useCallback(
-    (next: ThemeId) => setDarkThemeValue(next),
-    [setDarkThemeValue]
-  );
+  const setDarkTheme = useCallback((next: ThemeId) => setDarkThemeValue(next), [setDarkThemeValue]);
 
   const cycle = useCallback(() => {
     const current = useSettingsStore.getState().themeMode;

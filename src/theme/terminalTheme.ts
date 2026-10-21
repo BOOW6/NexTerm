@@ -1,4 +1,5 @@
 import type { ITheme } from '@xterm/xterm';
+import { getTerminalColorScheme } from './terminalColorSchemes';
 
 function readHsl(styles: CSSStyleDeclaration, name: string, fallback: string): string {
   const raw = styles.getPropertyValue(name).trim();
@@ -13,7 +14,19 @@ function readHsl(styles: CSSStyleDeclaration, name: string, fallback: string): s
  * Build an xterm theme from the active CSS variables so the terminal follows
  * light/dark (and future custom themes) without hard-coded colors.
  */
-export function getTerminalTheme(): ITheme {
+export function getTerminalTheme(colorSchemeId = 'theme'): ITheme {
+  const scheme = getTerminalColorScheme(colorSchemeId);
+  if (scheme) {
+    return {
+      background: scheme.background,
+      foreground: scheme.foreground,
+      cursor: scheme.cursor,
+      cursorAccent: scheme.background,
+      selectionBackground: scheme.selectionBackground,
+      ...scheme.colors
+    };
+  }
+
   const styles = getComputedStyle(document.documentElement);
 
   return {

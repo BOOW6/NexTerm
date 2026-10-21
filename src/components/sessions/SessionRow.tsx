@@ -60,9 +60,7 @@ export default function SessionRow({
       className={cn(
         'app-list-row group flex cursor-pointer items-center gap-1.5 rounded-sm border px-1.5 py-1 transition-colors',
         'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring',
-        active
-          ? 'border-accent/40 bg-row-selected'
-          : 'border-transparent hover:bg-row-hover'
+        active ? 'border-accent/40 bg-row-selected' : 'border-transparent hover:bg-row-hover'
       )}
     >
       <span

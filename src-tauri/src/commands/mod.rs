@@ -1,7 +1,10 @@
 use tauri::{AppHandle, State};
 
 use crate::pty::{PtyPlatformInfo, PtySessionManager};
-use crate::ssh::{KnownHost, SftpEntry, SshManager};
+use crate::ssh::{
+    KnownHost, KnownHostsExportResult, KnownHostsImportResult, PortForwardInfo, SftpEntry,
+    SftpTransferOptions, SshManager,
+};
 
 #[tauri::command]
 pub fn pty_platform_info(state: State<'_, PtySessionManager>) -> PtyPlatformInfo {
@@ -26,7 +29,8 @@ pub fn write_pty(
     id: String,
     data: String,
 ) -> Result<(), String> {
-    state.write_session(&id, data.as_bytes())
+    state
+        .write_session(&id, data.as_bytes())
         .map_err(|err| err.to_string())
 }
 
@@ -91,7 +95,9 @@ pub fn known_hosts_list(state: State<'_, SshManager>) -> Result<Vec<KnownHost>, 
 
 #[tauri::command]
 pub fn known_hosts_remove(state: State<'_, SshManager>, host: String) -> Result<(), String> {
-    state.remove_known_host(&host).map_err(|err| err.to_string())
+    state
+        .remove_known_host(&host)
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -120,9 +126,13 @@ pub async fn ssh_resize(
 }
 
 #[tauri::command]
-pub async fn ssh_disconnect(state: State<'_, SshManager>, id: String) -> Result<(), String> {
+pub async fn ssh_disconnect(
+    app: AppHandle,
+    state: State<'_, SshManager>,
+    id: String,
+) -> Result<(), String> {
     state
-        .disconnect(&id)
+        .disconnect(app, &id)
         .await
         .map_err(|err| err.to_string())
 }
@@ -146,9 +156,10 @@ pub async fn sftp_download(
     id: String,
     remote_path: String,
     local_path: String,
+    options: SftpTransferOptions,
 ) -> Result<String, String> {
     state
-        .sftp_download(app, &id, remote_path, local_path)
+        .sftp_download(app, &id, remote_path, local_path, options)
         .await
         .map_err(|err| err.to_string())
 }
@@ -160,9 +171,95 @@ pub async fn sftp_upload(
     id: String,
     local_path: String,
     remote_path: String,
+    options: SftpTransferOptions,
 ) -> Result<String, String> {
     state
-        .sftp_upload(app, &id, local_path, remote_path)
+        .sftp_upload(app, &id, local_path, remote_path, options)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn sftp_pause_transfer(
+    state: State<'_, SshManager>,
+    transfer_id: String,
+    paused: bool,
+) -> Result<(), String> {
+    state
+        .set_transfer_paused(&transfer_id, paused)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn sftp_cancel_transfer(
+    state: State<'_, SshManager>,
+    transfer_id: String,
+) -> Result<(), String> {
+    state
+        .cancel_transfer(&transfer_id)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn known_hosts_import(
+    state: State<'_, SshManager>,
+    path: String,
+) -> Result<KnownHostsImportResult, String> {
+    state
+        .import_known_hosts(&path)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn known_hosts_export(
+    state: State<'_, SshManager>,
+    path: String,
+    hash_hosts: bool,
+) -> Result<KnownHostsExportResult, String> {
+    state
+        .export_known_hosts(&path, hash_hosts)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn port_forward_list(state: State<'_, SshManager>) -> Vec<PortForwardInfo> {
+    state.list_port_forwards()
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn port_forward_start(
+    app: AppHandle,
+    state: State<'_, SshManager>,
+    ssh_id: String,
+    kind: String,
+    bind_host: String,
+    bind_port: u16,
+    target_host: String,
+    target_port: u16,
+) -> Result<PortForwardInfo, String> {
+    state
+        .start_port_forward(
+            app,
+            ssh_id,
+            kind,
+            bind_host,
+            bind_port,
+            target_host,
+            target_port,
+        )
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn port_forward_stop(
+    app: AppHandle,
+    state: State<'_, SshManager>,
+    id: String,
+) -> Result<(), String> {
+    state
+        .stop_port_forward(app, &id)
         .await
         .map_err(|err| err.to_string())
 }

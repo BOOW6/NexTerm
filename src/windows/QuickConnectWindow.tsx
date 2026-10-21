@@ -182,9 +182,7 @@ export default function QuickConnectWindow() {
                   <Input
                     id="session-port"
                     value={form.port}
-                    onChange={(event) =>
-                      update('port', event.target.value.replace(/[^0-9]/g, ''))
-                    }
+                    onChange={(event) => update('port', event.target.value.replace(/[^0-9]/g, ''))}
                     placeholder="22"
                     inputMode="numeric"
                   />
@@ -213,10 +211,15 @@ export default function QuickConnectWindow() {
                 >
                   <option value="password">密码</option>
                   <option value="key">私钥</option>
+                  <option value="agent">SSH Agent</option>
                 </Select>
               </div>
 
-              {form.authMethod === 'password' ? (
+              {form.authMethod === 'agent' ? (
+                <div className="rounded-sm border border-border bg-background-alt px-2 py-2 text-[11px] text-muted">
+                  连接时使用系统 SSH Agent 中的密钥，无需在 NexTerm 中保存凭据。
+                </div>
+              ) : form.authMethod === 'password' ? (
                 <div>
                   <Label htmlFor="session-password">密码</Label>
                   <Input
@@ -224,9 +227,7 @@ export default function QuickConnectWindow() {
                     type="password"
                     value={form.password}
                     onChange={(event) => update('password', event.target.value)}
-                    placeholder={
-                      payload?.session ? '留空则沿用内存中的密码' : '仅保存在内存中'
-                    }
+                    placeholder={payload?.session ? '留空则沿用内存中的密码' : '仅保存在内存中'}
                     autoComplete="new-password"
                   />
                 </div>

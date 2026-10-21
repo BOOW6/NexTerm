@@ -1,17 +1,11 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useRef,
-  type ReactNode
-} from 'react';
+import { createContext, useCallback, useContext, useMemo, useRef, type ReactNode } from 'react';
 import type { DockviewApi } from 'dockview-react';
 import {
   closeSessionPanels,
   duplicateSessionPanel,
   findPanelForSession,
   openSessionPanel,
+  openPortForwardPanel,
   openSftpPanel,
   openTransferPanel,
   reconnectSessionPanels,
@@ -25,13 +19,10 @@ interface WorkspaceContextValue {
   openSession: (sessionId: string) => void;
   closeSessionPanel: (sessionId: string) => void;
   reconnectSession: (sessionId: string) => void;
-  splitSession: (
-    sessionId: string,
-    direction: SplitDirection,
-    referencePanelId?: string
-  ) => void;
+  splitSession: (sessionId: string, direction: SplitDirection, referencePanelId?: string) => void;
   duplicateSession: (sessionId: string, referencePanelId?: string) => void;
   openSftpPanel: (sessionId?: string) => void;
+  openPortForwardPanel: (sessionId?: string) => void;
   openTransferPanel: () => void;
   isSessionOpen: (sessionId: string) => boolean;
 }
@@ -99,6 +90,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const openForwards = useCallback((sessionId?: string) => {
+    const api = apiRef.current;
+    if (api) {
+      openPortForwardPanel(api, sessionId);
+    }
+  }, []);
+
   const isSessionOpen = useCallback((sessionId: string) => {
     const api = apiRef.current;
     return api ? Boolean(findPanelForSession(api, sessionId)) : false;
@@ -114,6 +112,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       splitSession,
       duplicateSession,
       openSftpPanel: openSftp,
+      openPortForwardPanel: openForwards,
       openTransferPanel: openTransfers,
       isSessionOpen
     }),
@@ -126,6 +125,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       splitSession,
       duplicateSession,
       openSftp,
+      openForwards,
       openTransfers,
       isSessionOpen
     ]

@@ -14,9 +14,7 @@ export function useContextMenuPolicy(): void {
 
       if (
         target instanceof Element &&
-        target.closest(
-          'input, textarea, select, [contenteditable="true"], .selectable'
-        )
+        target.closest('input, textarea, select, [contenteditable="true"], .selectable')
       ) {
         void showInputContextMenu();
       }

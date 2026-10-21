@@ -13,7 +13,12 @@ export interface ModalWindowOptions {
 
 export function currentWindowKind(): AppWindowKind {
   const value = new URLSearchParams(window.location.search).get('window');
-  if (value === 'settings' || value === 'quick-connect' || value === 'host-key' || value === 'prompt') {
+  if (
+    value === 'settings' ||
+    value === 'quick-connect' ||
+    value === 'host-key' ||
+    value === 'prompt'
+  ) {
     return value;
   }
   return 'main';

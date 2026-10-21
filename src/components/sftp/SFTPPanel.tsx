@@ -2,25 +2,26 @@ import { useEffect, useState } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import {
   ArrowUpDown,
-  ChevronUp,
   File,
   Folder,
   FolderPlus,
+  FolderUp,
+  ChevronUp,
   RefreshCw,
   Upload
 } from 'lucide-react';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { writeText as writeClipboardText } from '@tauri-apps/plugin-clipboard-manager';
 import {
-  downloadSftp,
   listSftp,
   listenSftpTransferDone,
   mkdirSftp,
   removeSftp,
   renameSftp,
-  uploadSftp,
+  type SftpConflictPolicy,
   type SftpEntry
 } from '../../hooks/useTauriSsh';
+import { startSftpTransfer } from '../../lib/sftpTransfer';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
@@ -31,23 +32,19 @@ import { Tooltip } from '../ui/tooltip';
 import { toast } from '../ui/toast';
 import { cn } from '../../lib/cn';
 import { formatBytes } from '../../lib/format';
-import {
-  confirmAction,
-  openModalWindow,
-  showNativeContextMenu
-} from '../../lib/appWindows';
+import { confirmAction, openModalWindow, showNativeContextMenu } from '../../lib/appWindows';
 import type { PromptPayload } from '../../windows/PromptWindow';
 
 function formatTime(mtime: number): string {
   if (!mtime) {
-    return '—';
+    return '-';
   }
   return new Date(mtime * 1000).toLocaleString('zh-CN', { hour12: false });
 }
 
 function formatPermissions(permissions: number | null): string {
   if (permissions === null || permissions === undefined) {
-    return '—';
+    return '-';
   }
   return (permissions & 0o777).toString(8).padStart(3, '0');
 }
@@ -58,6 +55,17 @@ function joinRemote(path: string, name: string): string {
 
 function baseName(path: string): string {
   return path.split(/[\\/]/).pop() ?? 'file';
+}
+
+const CONFLICT_KEY = 'nexterm.sftp.conflict.v1';
+
+function readConflict(): SftpConflictPolicy {
+  try {
+    const value = window.localStorage.getItem(CONFLICT_KEY);
+    return value === 'skip' || value === 'rename' ? value : 'overwrite';
+  } catch {
+    return 'overwrite';
+  }
 }
 
 export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
@@ -74,6 +82,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
   const { openTransferPanel } = useWorkspace();
 
   const sshId = connection?.status === 'connected' ? connection.sshId : undefined;
+  const sessionTitle = session?.title;
   const remoteSessions = sessions.filter((item) => item.kind !== 'local');
 
   const [path, setPath] = useState('/');
@@ -81,6 +90,15 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const [conflict, setConflict] = useState<SftpConflictPolicy>(readConflict);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CONFLICT_KEY, conflict);
+    } catch {
+      /* storage unavailable */
+    }
+  }, [conflict]);
 
   useEffect(() => {
     setPath('/');
@@ -95,8 +113,8 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
   }, [activeSessionId, boundSessionId, sessions]);
 
   useEffect(() => {
-    void api.setTitle(session ? `SFTP · ${session.title}` : 'SFTP');
-  }, [api, session?.title]);
+    void api.setTitle(sessionTitle ? `SFTP · ${sessionTitle}` : 'SFTP');
+  }, [api, sessionTitle]);
 
   useEffect(() => {
     if (!sshId) {
@@ -185,7 +203,14 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
 
       const paths = Array.isArray(selected) ? selected : [selected];
       for (const localPath of paths) {
-        await uploadSftp(sshId, localPath, joinRemote(path, baseName(localPath)));
+        await startSftpTransfer({
+          sshId,
+          direction: 'upload',
+          name: baseName(localPath),
+          localPath,
+          remotePath: joinRemote(path, baseName(localPath)),
+          conflict
+        });
       }
 
       toast({
@@ -202,21 +227,87 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
     }
   };
 
+  const handleUploadFolder = async () => {
+    if (!sshId) {
+      return;
+    }
+
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        directory: true,
+        title: '选择要上传的文件夹'
+      });
+      if (typeof selected !== 'string') {
+        return;
+      }
+
+      const name = baseName(selected);
+      await startSftpTransfer({
+        sshId,
+        direction: 'upload',
+        name,
+        localPath: selected,
+        remotePath: joinRemote(path, name),
+        recursive: true,
+        conflict
+      });
+
+      toast({ title: `已加入文件夹「${name}」上传任务`, variant: 'success' });
+      openTransferPanel();
+    } catch (reason) {
+      toast({
+        title: '上传失败',
+        description: String(reason),
+        variant: 'error'
+      });
+    }
+  };
+
   const handleDownload = async (entry: SftpEntry) => {
     if (!sshId) {
       return;
     }
 
     try {
-      const target = await saveDialog({
-        defaultPath: entry.name,
-        title: '保存文件'
-      });
-      if (!target) {
-        return;
+      if (entry.is_dir) {
+        const directory = await openDialog({
+          multiple: false,
+          directory: true,
+          title: '选择下载目录'
+        });
+        if (typeof directory !== 'string') {
+          return;
+        }
+
+        await startSftpTransfer({
+          sshId,
+          direction: 'download',
+          name: entry.name,
+          localPath: `${directory}/${entry.name}`,
+          remotePath: entry.path,
+          recursive: true,
+          conflict
+        });
+      } else {
+        const target = await saveDialog({
+          defaultPath: entry.name,
+          title: '保存文件'
+        });
+        if (!target) {
+          return;
+        }
+
+        await startSftpTransfer({
+          sshId,
+          direction: 'download',
+          name: entry.name,
+          localPath: target,
+          remotePath: entry.path,
+          conflict
+        });
       }
 
-      await downloadSftp(sshId, entry.path, target);
       toast({ title: '已加入下载任务', variant: 'success' });
       openTransferPanel();
     } catch (reason) {
@@ -296,7 +387,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
     const payload: PromptPayload = {
       title: mode === 'rename' ? '重命名' : '新建文件夹',
       label: mode === 'rename' ? '新名称' : '文件夹名称',
-      initialValue: mode === 'rename' ? entry?.name ?? '' : '',
+      initialValue: mode === 'rename' ? (entry?.name ?? '') : '',
       confirmLabel: mode === 'rename' ? '重命名' : '创建'
     };
     const value = await openModalWindow<string>('prompt', {
@@ -323,7 +414,10 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
     }> = [];
 
     if (entry.is_dir) {
-      actions.push({ label: '进入目录', run: () => openEntry(entry) });
+      actions.push(
+        { label: '进入目录', run: () => openEntry(entry) },
+        { label: '下载文件夹', run: () => void handleDownload(entry) }
+      );
     } else {
       actions.push({ label: '下载', run: () => void handleDownload(entry) });
     }
@@ -399,11 +493,24 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
             </option>
           ))}
         </Select>
+        <Select
+          aria-label="冲突处理"
+          title="目标已存在时的处理方式"
+          value={conflict}
+          onChange={(event) => setConflict(event.target.value as SftpConflictPolicy)}
+          size="sm"
+          width={78}
+          className="shrink-0"
+        >
+          <option value="overwrite">覆盖</option>
+          <option value="skip">跳过</option>
+          <option value="rename">重命名</option>
+        </Select>
         <span
           className="selectable min-w-0 flex-1 truncate font-mono text-[11px] text-muted"
           title={path}
         >
-          {canBrowse ? path : '—'}
+          {canBrowse ? path : '-'}
         </span>
         <Tooltip label="新建文件夹">
           <Button
@@ -427,13 +534,19 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
             <Upload className="h-3 w-3" />
           </Button>
         </Tooltip>
-        <Tooltip label="传输队列">
+        <Tooltip label="上传文件夹">
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="传输队列"
-            onClick={openTransferPanel}
+            aria-label="上传文件夹"
+            disabled={!canBrowse}
+            onClick={() => void handleUploadFolder()}
           >
+            <FolderUp className="h-3 w-3" />
+          </Button>
+        </Tooltip>
+        <Tooltip label="传输队列">
+          <Button size="icon-sm" variant="ghost" aria-label="传输队列" onClick={openTransferPanel}>
             <ArrowUpDown className="h-3 w-3" />
           </Button>
         </Tooltip>
@@ -470,18 +583,12 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
             <div
               key={entry.path}
               data-native-context-menu
-              onDoubleClick={() =>
-                entry.is_dir ? openEntry(entry) : void handleDownload(entry)
-              }
+              onDoubleClick={() => (entry.is_dir ? openEntry(entry) : void handleDownload(entry))}
               onContextMenu={(event) => {
                 event.preventDefault();
                 openMenu(entry);
               }}
-              title={
-                entry.is_dir
-                  ? '双击进入目录，右键更多操作'
-                  : '双击下载，右键更多操作'
-              }
+              title={entry.is_dir ? '双击进入目录，右键更多操作' : '双击下载，右键更多操作'}
               className={cn(
                 'grid h-7 grid-cols-[1fr_62px_104px_42px] items-center border-b border-border-muted/60 px-2 text-[11px]',
                 'hover:bg-row-hover',
@@ -497,7 +604,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
                 <span className="truncate text-foreground">{entry.name}</span>
               </span>
               <span className="text-right tabular-nums text-muted">
-                {entry.is_dir ? '—' : formatBytes(entry.size)}
+                {entry.is_dir ? '-' : formatBytes(entry.size)}
               </span>
               <span className="text-right tabular-nums text-muted">{formatTime(entry.mtime)}</span>
               <span className="text-right font-mono text-muted">
@@ -512,7 +619,6 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         <span>{canBrowse ? `${entries.length} 项` : '等待 SSH 连接'}</span>
         <span>双击目录进入 · 右键更多操作</span>
       </div>
-
     </div>
   );
 }

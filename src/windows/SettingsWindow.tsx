@@ -1,10 +1,9 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { emit, listen } from '@tauri-apps/api/event';
+import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import {
-  Check,
   Keyboard,
-  Monitor,
   Moon,
   Palette,
   Server,
@@ -16,6 +15,7 @@ import {
   type LucideIcon
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { EditableSelect } from '../components/ui/editable-select';
 import { Input, Label } from '../components/ui/input';
 import { Select } from '../components/ui/select';
 import { ShortcutInput } from '../components/settings/ShortcutInput';
@@ -28,15 +28,12 @@ import {
   type ShortcutAction,
   type TerminalCursorStyle
 } from '../stores/settingsStore';
-import {
-  DARK_THEMES,
-  LIGHT_THEMES,
-  type ThemeDefinition,
-  type ThemeId,
-  type ThemeMode
-} from '../theme/themes';
+import { THEME_FAMILIES, getTheme, type ThemeDefinition, type ThemeMode } from '../theme/themes';
+import { TERMINAL_COLOR_SCHEMES } from '../theme/terminalColorSchemes';
 import { confirmAction } from '../lib/appWindows';
 import {
+  exportKnownHosts,
+  importKnownHosts,
   listKnownHosts,
   removeKnownHost,
   type KnownHost
@@ -54,13 +51,51 @@ const TABS: Array<{ id: SettingsTab; label: string; icon: LucideIcon }> = [
   { id: 'about', label: '关于', icon: Info }
 ];
 
-const FONT_PRESETS = [
+const UI_FONT_PRESETS = [
+  {
+    label: '系统界面',
+    value: 'system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif'
+  },
+  {
+    label: 'Segoe UI / 微软雅黑',
+    value: '"Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif'
+  },
+  {
+    label: 'Noto Sans SC',
+    value: '"Noto Sans SC", "Noto Sans", "Microsoft YaHei", sans-serif'
+  },
+  {
+    label: 'Fira Code（连字）',
+    value: '"Fira Code", "Segoe UI", "Microsoft YaHei", sans-serif'
+  },
+  {
+    label: 'Cascadia Code（连字）',
+    value: '"Cascadia Code", "Segoe UI", "Microsoft YaHei", sans-serif'
+  },
+  {
+    label: 'JetBrains Mono（连字）',
+    value: '"JetBrains Mono", "Segoe UI", "Microsoft YaHei", sans-serif'
+  },
+  {
+    label: '苹方 / Hiragino',
+    value: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif'
+  },
+  {
+    label: '经典 Web',
+    value:
+      "'Microsoft YaHei', '微软雅黑', Tahoma, Arial, 'PingFang SC', 'Hiragino Sans GB', sans-serif"
+  }
+];
+
+const TERMINAL_FONT_PRESETS = [
   {
     label: 'Consolas / 等宽回退',
     value: 'Consolas, "Courier New", "Sarasa Mono SC", monospace'
   },
   { label: 'JetBrains Mono', value: '"JetBrains Mono", Consolas, monospace' },
   { label: 'Cascadia Code', value: '"Cascadia Code", Consolas, monospace' },
+  { label: 'Fira Code', value: '"Fira Code", Consolas, monospace' },
+  { label: 'Noto Sans Mono', value: '"Noto Sans Mono", Consolas, monospace' },
   { label: '系统等宽', value: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }
 ];
 
@@ -71,11 +106,16 @@ const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
   openSettings: '打开设置'
 };
 
-const THEME_OPTIONS: Array<{ mode: ThemeMode; label: string; icon: LucideIcon }> = [
-  { mode: 'light', label: '亮色', icon: Sun },
-  { mode: 'dark', label: '暗色', icon: Moon },
-  { mode: 'system', label: '跟随系统', icon: Monitor }
+const THEME_OPTIONS: Array<{ mode: ThemeMode; label: string; description: string }> = [
+  { mode: 'light', label: '亮色', description: '始终使用亮色主题' },
+  { mode: 'dark', label: '暗色', description: '始终使用暗色主题' },
+  { mode: 'system', label: '跟随系统', description: '根据系统外观自动切换' }
 ];
+
+const DARK_TERMINAL_SCHEMES = TERMINAL_COLOR_SCHEMES.filter((scheme) => scheme.variant === 'dark');
+const LIGHT_TERMINAL_SCHEMES = TERMINAL_COLOR_SCHEMES.filter(
+  (scheme) => scheme.variant === 'light'
+);
 
 const TerminalPreview = lazy(() => import('./settings/TerminalPreview'));
 
@@ -85,8 +125,12 @@ function snapshotOf(): SettingsSnapshot {
     themeMode: state.themeMode,
     lightTheme: state.lightTheme,
     darkTheme: state.darkTheme,
+    uiFontFamily: state.uiFontFamily,
+    uiFontLigatures: state.uiFontLigatures,
     terminalFontSize: state.terminalFontSize,
     terminalFontFamily: state.terminalFontFamily,
+    terminalFontLigatures: state.terminalFontLigatures,
+    terminalColorScheme: state.terminalColorScheme,
     terminalCursorStyle: state.terminalCursorStyle,
     terminalCursorBlink: state.terminalCursorBlink,
     terminalScrollback: state.terminalScrollback,
@@ -103,6 +147,34 @@ function initialTab(): SettingsTab {
   return TABS.some((item) => item.id === tab) ? (tab as SettingsTab) : 'appearance';
 }
 
+function ThemeSpecimen({ theme, className }: { theme: ThemeDefinition; className?: string }) {
+  return (
+    <div
+      data-theme={theme.id}
+      className={cn(
+        'pointer-events-none overflow-hidden rounded-sm border border-border bg-background text-foreground shadow-panel',
+        className
+      )}
+    >
+      <div className="flex h-4 items-center gap-1 border-b border-border bg-panel-title px-1">
+        <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+        <span className="h-1 w-6 rounded-sm bg-foreground/30" />
+      </div>
+      <div className="space-y-1 p-1.5">
+        <div className="flex items-center gap-1">
+          <span className="h-1.5 w-1.5 rounded-full bg-success" />
+          <span className="h-1 w-2/3 rounded-sm bg-foreground/70" />
+        </div>
+        <div className="h-1 w-full rounded-sm bg-border-muted" />
+        <div className="flex gap-1 pt-0.5">
+          <span className="h-2.5 flex-1 rounded-sm border border-accent-strong bg-button-primary" />
+          <span className="h-2.5 flex-1 rounded-sm border border-border bg-surface" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsWindow() {
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   const [previewActivated, setPreviewActivated] = useState(() => initialTab() === 'terminal');
@@ -114,6 +186,7 @@ export default function SettingsWindow() {
   const [removedHosts, setRemovedHosts] = useState<string[]>([]);
   const [loadingHosts, setLoadingHosts] = useState(false);
   const [hostsError, setHostsError] = useState<string | null>(null);
+  const [hashHosts, setHashHosts] = useState(false);
   const [applying, setApplying] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
@@ -195,6 +268,53 @@ export default function SettingsWindow() {
     [knownHosts, removedHosts]
   );
 
+  const handleImportHosts = async () => {
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        title: '导入 OpenSSH known_hosts'
+      });
+      if (typeof selected !== 'string') {
+        return;
+      }
+
+      const result = await importKnownHosts(selected);
+      setKnownHosts(await listKnownHosts());
+      setRemovedHosts([]);
+      toast({
+        title: `已导入 ${result.imported} 条主机记录`,
+        description:
+          result.skipped > 0 || result.invalid > 0
+            ? `跳过 ${result.skipped} 条（哈希/通配符），无效 ${result.invalid} 条`
+            : undefined,
+        variant: result.imported > 0 ? 'success' : 'default'
+      });
+    } catch (reason) {
+      toast({ title: '导入失败', description: String(reason), variant: 'error' });
+    }
+  };
+
+  const handleExportHosts = async () => {
+    try {
+      const target = await saveDialog({
+        defaultPath: 'known_hosts',
+        title: '导出 OpenSSH known_hosts'
+      });
+      if (!target) {
+        return;
+      }
+
+      const result = await exportKnownHosts(target, hashHosts);
+      toast({
+        title: `已导出 ${result.exported} 条主机记录`,
+        description: result.skipped > 0 ? `跳过 ${result.skipped} 条（缺少公钥）` : undefined,
+        variant: result.exported > 0 ? 'success' : 'default'
+      });
+    } catch (reason) {
+      toast({ title: '导出失败', description: String(reason), variant: 'error' });
+    }
+  };
+
   const apply = async (): Promise<boolean> => {
     if (applying) {
       return false;
@@ -265,126 +385,202 @@ export default function SettingsWindow() {
     }
   };
 
-  const renderThemeGroup = (
-    title: string,
-    hint: string,
-    themes: ThemeDefinition[],
-    value: ThemeId,
-    onSelect: (theme: ThemeId) => void
-  ) => (
-    <div>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold text-foreground">{title}</h3>
-        <span className="text-[10px] text-muted-foreground">{hint}</span>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        {themes.map((theme) => {
-          const selected = value === theme.id;
-          return (
-            <button
-              key={theme.id}
-              type="button"
-              onClick={() => onSelect(theme.id)}
-              className={cn(
-                'flex min-w-0 items-center gap-2 rounded-sm border px-2 py-2 text-left transition-colors',
-                selected
-                  ? 'border-accent bg-accent/10'
-                  : 'border-border bg-surface hover:bg-surface-hover'
-              )}
-            >
-              <span className="flex h-8 w-11 shrink-0 overflow-hidden rounded-sm border border-border-muted">
-                {theme.swatches.map((color, index) => (
-                  <span
-                    key={`${theme.id}-${index}`}
-                    className="h-full flex-1"
-                    style={{ backgroundColor: color }}
-                  />
-                ))}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[11px] font-medium text-foreground">
-                  {theme.name}
-                </span>
-                <span
-                  className="block truncate text-[10px] text-muted"
-                  title={theme.description}
-                >
-                  {theme.description}
-                </span>
-              </span>
-              {selected ? <Check className="h-3.5 w-3.5 shrink-0 text-accent" /> : null}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
+  const renderAppearance = () => {
+    const activeDarkTheme = getTheme(draft.darkTheme);
+    const activeLightTheme = getTheme(draft.lightTheme);
+    const activeMode = THEME_OPTIONS.find((option) => option.mode === draft.themeMode);
 
-  const renderAppearance = () => (
-    <section className="space-y-5">
-      <div>
-        <h3 className="mb-2 text-xs font-semibold text-foreground">主题策略</h3>
-        <div className="grid grid-cols-3 gap-2">
-          {THEME_OPTIONS.map((option) => {
-            const Icon = option.icon;
-            return (
-              <button
-                key={option.mode}
-                type="button"
-                onClick={() => update('themeMode', option.mode)}
-                className={cn(
-                  'flex flex-col items-center gap-1.5 rounded-sm border px-2 py-3 text-[11px] transition-colors',
-                  draft.themeMode === option.mode
-                    ? 'border-accent bg-accent/10 text-foreground'
-                    : 'border-border bg-surface text-muted hover:bg-surface-hover'
-                )}
+    return (
+      <section className="space-y-5">
+        <div className="rounded-sm border border-border bg-surface p-3">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,240px)_1fr]">
+            <div>
+              <Label htmlFor="theme-mode">主题策略</Label>
+              <Select
+                id="theme-mode"
+                value={draft.themeMode}
+                onChange={(event) => update('themeMode', event.target.value as ThemeMode)}
               >
-                <Icon className="h-4 w-4" />
-                {option.label}
-              </button>
-            );
-          })}
+                {THEME_OPTIONS.map((option) => (
+                  <option key={option.mode} value={option.mode}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-1 text-[10px] text-muted-foreground">{activeMode?.description}</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-sm border border-border bg-background-alt p-2">
+                <div className="flex items-center gap-1.5 text-[10px] text-muted">
+                  <Moon className="h-3 w-3" />
+                  暗色主题
+                </div>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <ThemeSpecimen theme={activeDarkTheme} className="h-10 w-16" />
+                  <span className="min-w-0 truncate text-xs font-semibold text-foreground">
+                    {activeDarkTheme.name}
+                  </span>
+                </div>
+              </div>
+              <div className="rounded-sm border border-border bg-background-alt p-2">
+                <div className="flex items-center gap-1.5 text-[10px] text-muted">
+                  <Sun className="h-3 w-3" />
+                  亮色主题
+                </div>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <ThemeSpecimen theme={activeLightTheme} className="h-10 w-16" />
+                  <span className="min-w-0 truncate text-xs font-semibold text-foreground">
+                    {activeLightTheme.name}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        <p className="mt-1.5 text-[10px] text-muted-foreground">
-          亮色/暗色策略会使用对应的主题；跟随系统会根据系统外观自动切换。
-        </p>
-      </div>
 
-      {renderThemeGroup(
-        '亮色主题',
-        '亮色模式使用',
-        LIGHT_THEMES,
-        draft.lightTheme,
-        (theme) => update('lightTheme', theme)
-      )}
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h3 className="text-xs font-semibold text-foreground">主题</h3>
+            <span className="text-[10px] text-muted-foreground">按家族选择暗色 / 亮色</span>
+          </div>
+          <div className="space-y-2">
+            {THEME_FAMILIES.map((family) => {
+              const darkTheme = getTheme(family.dark);
+              const lightTheme = getTheme(family.light);
+              const darkSelected = draft.darkTheme === family.dark;
+              const lightSelected = draft.lightTheme === family.light;
 
-      {renderThemeGroup(
-        '暗色主题',
-        '暗色模式使用',
-        DARK_THEMES,
-        draft.darkTheme,
-        (theme) => update('darkTheme', theme)
-      )}
+              return (
+                <div
+                  key={family.id}
+                  className={cn(
+                    'flex flex-wrap items-center gap-3 rounded-sm border p-2 transition-colors',
+                    darkSelected || lightSelected
+                      ? 'border-accent/60 bg-accent/5'
+                      : 'border-border bg-surface'
+                  )}
+                >
+                  <div className="flex shrink-0 gap-1">
+                    <ThemeSpecimen theme={darkTheme} className="h-14 w-20" />
+                    <ThemeSpecimen theme={lightTheme} className="h-14 w-20" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-semibold text-foreground">{family.name}</div>
+                    <div className="text-[10px] text-muted">{family.description}</div>
+                    <div className="mt-1 text-[10px] text-muted-foreground">
+                      {darkTheme.name} / {lightTheme.name}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <Button
+                      size="xs"
+                      variant={darkSelected ? 'primary' : 'secondary'}
+                      onClick={() => update('darkTheme', darkTheme.id)}
+                    >
+                      <Moon className="h-3 w-3" />
+                      暗色
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant={lightSelected ? 'primary' : 'secondary'}
+                      onClick={() => update('lightTheme', lightTheme.id)}
+                    >
+                      <Sun className="h-3 w-3" />
+                      亮色
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
-      <p className="text-[10px] text-muted-foreground">主题将在点击「应用」后生效。</p>
-    </section>
-  );
+        <div className="rounded-sm border border-border bg-surface p-3">
+          <h3 className="mb-2 text-xs font-semibold text-foreground">界面字体</h3>
+          <div className="grid items-end gap-3 md:grid-cols-[1fr_auto]">
+            <div>
+              <Label htmlFor="ui-font">Font Family</Label>
+              <EditableSelect
+                id="ui-font"
+                value={draft.uiFontFamily}
+                options={UI_FONT_PRESETS}
+                onChange={(value) => update('uiFontFamily', value)}
+                ariaLabel="界面字体"
+              />
+            </div>
+            <label className="flex items-center gap-2 pb-1 text-[11px] text-muted">
+              <input
+                type="checkbox"
+                className="app-checkbox h-3.5 w-3.5 accent-accent"
+                checked={draft.uiFontLigatures}
+                onChange={(event) => update('uiFontLigatures', event.target.checked)}
+              />
+              Font Ligatures
+            </label>
+          </div>
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            可直接编辑字体字符串；连字需要字体本身支持（如 Fira Code、Cascadia Code）。
+          </p>
+          <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0 text-[10px] text-muted-foreground">连字示例</span>
+            <span
+              className="selectable truncate text-[11px] text-foreground"
+              style={{
+                fontFamily: draft.uiFontFamily,
+                fontVariantLigatures: draft.uiFontLigatures ? 'normal' : 'none',
+                fontFeatureSettings: draft.uiFontLigatures
+                  ? '"liga" 1, "calt" 1'
+                  : '"liga" 0, "calt" 0'
+              }}
+            >
+              {'-> => != === >= <= <> :::'}
+            </span>
+          </div>
+        </div>
+
+        <p className="text-[10px] text-muted-foreground">主题与字体将在点击「应用」后生效。</p>
+      </section>
+    );
+  };
 
   const renderTerminal = () => (
     <section className="space-y-3">
-      <div>
-        <Label htmlFor="terminal-font">字体</Label>
-        <Select
-          id="terminal-font"
-          value={draft.terminalFontFamily}
-          onChange={(event) => update('terminalFontFamily', event.target.value)}
-        >
-          {FONT_PRESETS.map((preset) => (
-            <option key={preset.label} value={preset.value}>
-              {preset.label}
-            </option>
-          ))}
-        </Select>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label htmlFor="terminal-font">Font Family</Label>
+          <EditableSelect
+            id="terminal-font"
+            value={draft.terminalFontFamily}
+            options={TERMINAL_FONT_PRESETS}
+            onChange={(value) => update('terminalFontFamily', value)}
+            ariaLabel="终端字体"
+          />
+        </div>
+        <div>
+          <Label htmlFor="terminal-color-scheme">配色方案</Label>
+          <Select
+            id="terminal-color-scheme"
+            value={draft.terminalColorScheme}
+            onChange={(event) => update('terminalColorScheme', event.target.value)}
+          >
+            <option value="theme">跟随界面主题</option>
+            <optgroup label="QTerminal 暗色">
+              {DARK_TERMINAL_SCHEMES.map((scheme) => (
+                <option key={scheme.id} value={scheme.id}>
+                  {scheme.name}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="QTerminal 亮色">
+              {LIGHT_TERMINAL_SCHEMES.map((scheme) => (
+                <option key={scheme.id} value={scheme.id}>
+                  {scheme.name}
+                </option>
+              ))}
+            </optgroup>
+          </Select>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -453,15 +649,29 @@ export default function SettingsWindow() {
         </div>
       </div>
 
-      <label className="flex items-center gap-2 text-[11px] text-muted">
-        <input
-          type="checkbox"
-          className="app-checkbox h-3.5 w-3.5 accent-accent"
-          checked={draft.terminalCursorBlink}
-          onChange={(event) => update('terminalCursorBlink', event.target.checked)}
-        />
-        光标闪烁
-      </label>
+      <div className="flex flex-wrap items-center gap-4">
+        <label className="flex items-center gap-2 text-[11px] text-muted">
+          <input
+            type="checkbox"
+            className="app-checkbox h-3.5 w-3.5 accent-accent"
+            checked={draft.terminalCursorBlink}
+            onChange={(event) => update('terminalCursorBlink', event.target.checked)}
+          />
+          光标闪烁
+        </label>
+        <label className="flex items-center gap-2 text-[11px] text-muted">
+          <input
+            type="checkbox"
+            className="app-checkbox h-3.5 w-3.5 accent-accent"
+            checked={draft.terminalFontLigatures}
+            onChange={(event) => update('terminalFontLigatures', event.target.checked)}
+          />
+          Font Ligatures
+        </label>
+      </div>
+      <p className="-mt-1 text-[10px] text-muted-foreground">
+        连字需要等宽字体支持（如 Fira Code、Cascadia Code），WebGL 渲染下同样生效。
+      </p>
 
       <div>
         <p className="mb-1 text-[10px] text-muted">预览</p>
@@ -475,6 +685,8 @@ export default function SettingsWindow() {
           <TerminalPreview
             visible={tab === 'terminal'}
             fontFamily={draft.terminalFontFamily}
+            fontLigatures={draft.terminalFontLigatures}
+            colorScheme={draft.terminalColorScheme}
             fontSize={draft.terminalFontSize}
             lineHeight={draft.terminalLineHeight}
             cursorStyle={draft.terminalCursorStyle}
@@ -493,12 +705,11 @@ export default function SettingsWindow() {
         <Select
           id="default-auth"
           value={draft.defaultAuthMethod}
-          onChange={(event) =>
-            update('defaultAuthMethod', event.target.value as SessionAuthMethod)
-          }
+          onChange={(event) => update('defaultAuthMethod', event.target.value as SessionAuthMethod)}
         >
           <option value="password">密码</option>
           <option value="key">私钥</option>
+          <option value="agent">SSH Agent</option>
         </Select>
       </div>
       <div>
@@ -545,7 +756,25 @@ export default function SettingsWindow() {
 
   const renderSecurity = () => (
     <section>
-      <h3 className="mb-2 text-xs font-semibold text-foreground">已知主机（known_hosts）</h3>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold text-foreground">已知主机（known_hosts）</h3>
+        <div className="flex items-center gap-1.5">
+          <label className="flex items-center gap-1 text-[10px] text-muted">
+            <input
+              type="checkbox"
+              checked={hashHosts}
+              onChange={(event) => setHashHosts(event.target.checked)}
+            />
+            哈希主机名
+          </label>
+          <Button size="xs" variant="secondary" onClick={() => void handleImportHosts()}>
+            导入
+          </Button>
+          <Button size="xs" variant="secondary" onClick={() => void handleExportHosts()}>
+            导出
+          </Button>
+        </div>
+      </div>
       {loadingHosts ? (
         <p className="text-[11px] text-muted">加载中…</p>
       ) : hostsError ? (
@@ -563,10 +792,7 @@ export default function SettingsWindow() {
                 <p className="selectable truncate font-mono text-[11px] text-foreground">
                   {entry.host}
                 </p>
-                <p
-                  className="selectable truncate text-[10px] text-muted"
-                  title={entry.fingerprint}
-                >
+                <p className="selectable truncate text-[10px] text-muted" title={entry.fingerprint}>
                   {entry.algorithm} · {entry.fingerprint}
                 </p>
               </div>

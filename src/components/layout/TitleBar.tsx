@@ -2,10 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Check } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import {
-  openSettingsWindow,
-  showAboutDialog
-} from '../../lib/appWindows';
+import { openSettingsWindow } from '../../lib/appWindows';
 import { dispatchTerminalAction } from '../../lib/terminalCommands';
 import { useWorkspace } from '../../features/workspace/WorkspaceContext';
 import { useQuickConnectLauncher } from '../../features/workspace/useQuickConnectLauncher';
@@ -68,9 +65,7 @@ function MenuRow({
         {checked ? <Check className="h-3.5 w-3.5" /> : null}
       </span>
       <span className="flex-1 whitespace-nowrap">{label}</span>
-      {shortcut ? (
-        <span className="ml-6 shrink-0 text-[10px] opacity-65">{shortcut}</span>
-      ) : null}
+      {shortcut ? <span className="ml-6 shrink-0 text-[10px] opacity-65">{shortcut}</span> : null}
     </button>
   );
 }
@@ -81,8 +76,14 @@ export default function TitleBar() {
   const menuButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const { getApi, openSftpPanel, openTransferPanel, splitSession, duplicateSession, reconnectSession } =
-    useWorkspace();
+  const {
+    getApi,
+    openSftpPanel,
+    openTransferPanel,
+    splitSession,
+    duplicateSession,
+    reconnectSession
+  } = useWorkspace();
   const openQuickConnect = useQuickConnectLauncher();
 
   const sessions = useSessionStore((state) => state.sessions);
@@ -128,7 +129,12 @@ export default function TitleBar() {
         { label: '打开 SFTP 面板', onSelect: () => openSftpPanel() },
         { label: '传输队列', onSelect: () => openTransferPanel() },
         { separator: true },
-        { label: '关闭标签页', shortcut: 'Ctrl+Shift+W', disabled: !activePanel, onSelect: closeCurrentTab },
+        {
+          label: '关闭标签页',
+          shortcut: 'Ctrl+Shift+W',
+          disabled: !activePanel,
+          onSelect: closeCurrentTab
+        },
         { label: '关闭其他标签页', disabled: !activePanel, onSelect: closeOthers },
         { separator: true },
         {
@@ -148,7 +154,11 @@ export default function TitleBar() {
       label: '编辑',
       items: [
         { label: '复制', shortcut: 'Ctrl+Shift+C', onSelect: () => dispatchTerminalAction('copy') },
-        { label: '粘贴', shortcut: 'Ctrl+Shift+V', onSelect: () => dispatchTerminalAction('paste') },
+        {
+          label: '粘贴',
+          shortcut: 'Ctrl+Shift+V',
+          onSelect: () => dispatchTerminalAction('paste')
+        },
         {
           label: '全选',
           shortcut: 'Ctrl+Shift+A',
@@ -239,7 +249,7 @@ export default function TitleBar() {
       label: '帮助',
       items: [
         { label: '已知主机…', onSelect: () => void openSettingsWindow('security') },
-        { label: '关于 NexTerm', onSelect: () => void showAboutDialog() }
+        { label: '关于 NexTerm', onSelect: () => void openSettingsWindow('about') }
       ]
     }
   ];
@@ -251,10 +261,7 @@ export default function TitleBar() {
 
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target as Node;
-      if (
-        !menuBarRef.current?.contains(target) &&
-        !dropdownRef.current?.contains(target)
-      ) {
+      if (!menuBarRef.current?.contains(target) && !dropdownRef.current?.contains(target)) {
         setOpenMenu(null);
       }
     };
@@ -399,7 +406,7 @@ export default function TitleBar() {
           aria-label={activeMenu.label}
           onKeyDown={handleDropdownKeyDown}
           className="app-popup absolute left-0 top-full z-50 max-h-[70vh] w-64 animate-zoom-in overflow-y-auto rounded-b-sm border border-border-strong bg-surface-elevated p-0.5 shadow-popup"
-          style={{ left: `${(menuButtonRefs.current[openMenu!]?.offsetLeft ?? 0)}px` }}
+          style={{ left: `${menuButtonRefs.current[openMenu!]?.offsetLeft ?? 0}px` }}
         >
           {activeMenu.items.map((item, itemIndex) =>
             item.separator ? (
@@ -417,7 +424,6 @@ export default function TitleBar() {
           )}
         </div>
       ) : null}
-
     </header>
   );
 }

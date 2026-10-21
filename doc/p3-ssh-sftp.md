@@ -54,20 +54,20 @@
 ## 2. 安全说明（重要）
 
 - **主机密钥已校验**：首次连接需人工确认指纹，后续连接自动比对；不匹配会直接中止。
-- **known_hosts 为本项目自有格式**：保存在应用配置目录的 `known_hosts.json`，**不与 OpenSSH 的 `~/.ssh/known_hosts` 互通**。
+- **known_hosts 为本项目自有 JSON 格式**：保存在应用配置目录的 `known_hosts.json`，并支持 OpenSSH `known_hosts` 格式导入/导出（导入跳过 hashed host，导出可选 hashed host）。
 - **密码 / passphrase 仅内存保存**：关闭应用即丢失。
-- **支持私钥认证**：暂不支持 SSH agent 与 OpenSSH 证书登录。
+- **支持密码、私钥与 SSH Agent 认证**：Agent 通过 `SSH_AUTH_SOCK`（Windows 为 OpenSSH named pipe / Pageant）读取身份；暂不支持加载 OpenSSH 证书文件。
 - **本地路径来自系统对话框**：上传/下载路径由 `tauri-plugin-dialog` 提供，避免前端伪造任意本地路径。
 
 ## 3. 已知限制与后续工作
 
-1. **OpenSSH known_hosts 兼容**：读取/写入 `~/.ssh/known_hosts`（含 hashed host 格式）。
-2. **SSH agent / 证书**：支持 `SSH_AUTH_SOCK`、OpenSSH 证书与多密钥尝试。
-3. **传输增强**：递归目录上传/下载、暂停/继续、取消、重试、冲突覆盖策略、并发数限制。
-4. **SFTP 独立会话**：当前 SFTP 面板跟随活动 SSH 连接；后续可为 `sftp` 类型会话建立「仅 SFTP」连接。
-5. **连接复用与多面板**：同一会话分屏会建立多个 SSH 连接；后续可按会话复用连接。
+1. **OpenSSH known_hosts 兼容**：已支持导入/导出；导入 hashed host 条目仍需人工处理。
+2. **SSH 证书**：Agent 已支持证书身份；仍需支持从文件加载 OpenSSH 证书与 CA 校验。
+3. **传输增强**：已支持递归、断点续传、暂停/继续、取消、重试与冲突策略；待加入并发数限制与带宽限速。
+4. **SFTP 独立会话**：当前 SFTP 面板跟随活动 SSH 连接，并在连接内复用一条 SFTP 子系统通道。
+5. **连接复用与多面板**：同一会话分屏仍会建立多个 SSH 连接；后续可按会话复用连接。
 6. **断线重连策略**：当前需手动重连；后续加入自动重连与退避。
-7. **端口转发**：本地/远程/动态转发尚未实现。
+7. **端口转发**：已支持本地/远程/动态 SOCKS5；规则当前仅保存在内存中，重启后需重建。
 8. **输入校验**：DNS、IPv6、端口范围等。
 
 ## 4. 验证记录

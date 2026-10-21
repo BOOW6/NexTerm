@@ -6,14 +6,7 @@ export interface ParsedShortcut {
   key: string;
 }
 
-const MODIFIER_KEYS = new Set([
-  'control',
-  'shift',
-  'alt',
-  'meta',
-  'os',
-  'altgraph'
-]);
+const MODIFIER_KEYS = new Set(['control', 'shift', 'alt', 'meta', 'os', 'altgraph']);
 
 function normalizeKey(key: string): string {
   if (key === ' ') {
@@ -82,8 +75,7 @@ export function formatShortcutFromEvent(event: KeyboardEvent): string | null {
     parts.push('Meta');
   }
 
-  const displayKey =
-    key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key;
+  const displayKey = key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key;
   parts.push(displayKey);
 
   return parts.join('+');

@@ -83,6 +83,45 @@ export const DARK_THEMES: ThemeDefinition[] = [
 
 export const THEMES: ThemeDefinition[] = [...LIGHT_THEMES, ...DARK_THEMES];
 
+export interface ThemeFamily {
+  id: string;
+  name: string;
+  description: string;
+  light: ThemeId;
+  dark: ThemeId;
+}
+
+export const THEME_FAMILIES: ThemeFamily[] = [
+  {
+    id: 'day-dim',
+    name: 'Day / Dim',
+    description: '经典 Web 2.0 明暗配色',
+    light: 'day',
+    dark: 'dim'
+  },
+  {
+    id: 'aqua',
+    name: 'Aqua',
+    description: 'Mac OS X 10.6 Aqua 玻璃质感',
+    light: 'aqua-light',
+    dark: 'aqua-dark'
+  },
+  {
+    id: 'holo',
+    name: 'Holo',
+    description: 'Android 4.4 Holo 扁平高对比',
+    light: 'holo-light',
+    dark: 'holo-dark'
+  },
+  {
+    id: 'eclair',
+    name: 'Eclair',
+    description: 'Android 2.2 Eclair 哑光质感',
+    light: 'eclair-light',
+    dark: 'eclair-dark'
+  }
+];
+
 export const DEFAULT_LIGHT_THEME: ThemeId = 'day';
 export const DEFAULT_DARK_THEME: ThemeId = 'dim';
 

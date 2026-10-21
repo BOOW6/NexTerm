@@ -39,14 +39,16 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 
 ### SSH 与 SFTP（第三阶段）
 
-- 基于 `russh` 实现**密码认证**与**私钥认证**（可选 passphrase）的交互式 SSH 终端。
-- **主机密钥校验（TOFU）**：首次连接弹出 SHA256 指纹确认，写入应用配置目录的 `known_hosts.json`；后续自动比对，不匹配则中止。
-- 后端命令：`ssh_connect` / `ssh_write` / `ssh_resize` / `ssh_disconnect` / `ssh_host_key_response` / `known_hosts_list` / `known_hosts_remove`。
+- 基于 `russh` 实现**密码认证**、**私钥认证**（可选 passphrase）与 **SSH Agent 认证**的交互式 SSH 终端。
+- **主机密钥校验（TOFU）**：首次连接弹出 SHA256 指纹确认，写入应用配置目录的 `known_hosts.json`；后续自动比对，不匹配则中止。支持 OpenSSH `known_hosts` 导入/导出（导出可选 hashed host 格式；导入会跳过哈希与通配符条目）。
+- 后端命令：`ssh_connect` / `ssh_write` / `ssh_resize` / `ssh_disconnect` / `ssh_host_key_response` / `known_hosts_list` / `known_hosts_remove` / `known_hosts_import` / `known_hosts_export`。
 - 输出事件：`ssh-output-{id}`、`ssh-closed-{id}`；主机密钥事件：`ssh-host-key`、`ssh-host-key-mismatch`。
+- **端口转发**：命令 `port_forward_list` / `port_forward_start` / `port_forward_stop`，事件 `port-forwards-changed`；支持本地（`-L`）、远程（`-R`）与动态 SOCKS5（`-D`）。UI 为独立「端口转发」面板。
 - SFTP：
-  - 命令：`sftp_list` / `sftp_download` / `sftp_upload` / `sftp_remove` / `sftp_rename` / `sftp_mkdir`
+  - 命令：`sftp_list` / `sftp_download` / `sftp_upload` / `sftp_remove` / `sftp_rename` / `sftp_mkdir` / `sftp_pause_transfer` / `sftp_cancel_transfer`
   - 事件：`sftp-progress`、`sftp-transfer-done`
-  - UI：目录浏览、上传/下载、新建文件夹、重命名、删除、传输队列。
+  - 每个 SSH 会话复用一条 SFTP 子系统通道；传输支持递归目录、聚合进度、断点续传（下载使用 `.part`）、暂停/取消/重试与冲突策略（覆盖/跳过/重命名）。
+  - UI：目录浏览、文件/文件夹上传、文件/文件夹下载、新建文件夹、重命名、删除、传输队列。
 
 ### 设置与主题（P4）
 
@@ -73,6 +75,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 │   ├── components/
 │   │   ├── command/          # 命令面板
 │   │   ├── layout/           # TitleBar / DockLayout / SessionTab / StatusBar
+│   │   ├── forward/          # 端口转发面板
 │   │   ├── sessions/         # 会话侧栏、会话行
 │   │   ├── settings/         # 设置面板与快捷键输入
 │   │   ├── sftp/             # SFTP 文件面板
@@ -115,7 +118,11 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 
 环境准备、构建步骤、IPC 接口与常见问题统一维护在 [`doc/build.md`](doc/build.md)，此处不再重复。
 
-- 前端类型检查：`npx tsc --noEmit`
+- 前端类型检查：`npm run typecheck`
+- 前端代码规范：`npm run lint` / `npm run format:check`（CI 会校验）
+- 前端测试：`npm run test:run`（Vitest + jsdom）
+- Rust 检查：`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`
+- 一键前端校验：`npm run check`
 - **不要重新启用 React StrictMode**：其开发期双调用会为每个终端创建两个 PTY 会话。
 
 ## 开发约定
@@ -169,10 +176,12 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - [x] 会话管理、分屏、命令面板与布局持久化
 - [x] Web 2.0 主题系统（明亮 / 暗黑 / 跟随系统）
 - [x] SSH 密码 / 私钥认证
-- [x] known_hosts 校验与首次指纹确认
-- [ ] SSH agent、OpenSSH 证书与端口转发
+- [x] known_hosts 校验与首次指纹确认、OpenSSH 格式导入/导出
+- [x] SSH Agent 认证
+- [x] 端口转发（本地 / 远程 / 动态 SOCKS5）
 - [x] SFTP 目录浏览、上传/下载与传输队列
 - [x] SFTP 新建 / 重命名 / 删除
 - [x] 设置面板（主题 / 终端外观 / SSH 默认值 / 快捷键 / known_hosts）
-- [ ] 递归传输、暂停/重试、自动重连
+- [x] 递归传输、断点续传、暂停/取消/重试、冲突策略
+- [ ] OpenSSH 证书认证、自动重连
 - [ ] 国际化、可访问性增强、配置导入导出

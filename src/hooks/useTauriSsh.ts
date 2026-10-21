@@ -10,7 +10,7 @@ export interface SshConnectOptions {
   host: string;
   port: number;
   username: string;
-  authMethod: 'password' | 'key';
+  authMethod: 'password' | 'key' | 'agent';
   password?: string;
   privateKeyPath?: string;
   passphrase?: string;
@@ -37,6 +37,39 @@ export interface KnownHost {
   algorithm: string;
   fingerprint: string;
   added_at: number;
+  public_key?: string | null;
+}
+
+export interface KnownHostsImportResult {
+  imported: number;
+  skipped: number;
+  invalid: number;
+}
+
+export interface KnownHostsExportResult {
+  exported: number;
+  skipped: number;
+}
+
+export type PortForwardKind = 'local' | 'remote' | 'dynamic';
+
+export interface PortForwardInfo {
+  id: string;
+  ssh_id: string;
+  kind: PortForwardKind;
+  bind_host: string;
+  bind_port: number;
+  target_host: string;
+  target_port: number;
+}
+
+export interface StartPortForwardOptions {
+  sshId: string;
+  kind: PortForwardKind;
+  bindHost: string;
+  bindPort: number;
+  targetHost: string;
+  targetPort: number;
 }
 
 export interface SftpEntry {
@@ -48,12 +81,22 @@ export interface SftpEntry {
   permissions: number | null;
 }
 
+export type SftpConflictPolicy = 'overwrite' | 'skip' | 'rename';
+
+export interface SftpTransferOptions {
+  recursive: boolean;
+  resume: boolean;
+  conflict: SftpConflictPolicy;
+}
+
 export interface SftpProgressPayload {
   transfer_id: string;
   direction: string;
   name: string;
   transferred: number;
   total: number;
+  files_done: number;
+  files_total: number;
 }
 
 export interface SftpTransferDonePayload {
@@ -61,9 +104,12 @@ export interface SftpTransferDonePayload {
   direction: string;
   name: string;
   success: boolean;
+  cancelled: boolean;
   error: string | null;
   transferred: number;
   total: number;
+  files_done: number;
+  files_total: number;
 }
 
 export async function connectSsh(options: SshConnectOptions): Promise<string> {
@@ -117,10 +163,7 @@ export async function listenSshOutput(
   });
 }
 
-export async function listenSshClosed(
-  id: string,
-  onClosed: () => void
-): Promise<() => void> {
+export async function listenSshClosed(id: string, onClosed: () => void): Promise<() => void> {
   return listen(`ssh-closed-${id}`, () => {
     onClosed();
   });
@@ -129,32 +172,63 @@ export async function listenSshClosed(
 export async function uploadSftp(
   id: string,
   localPath: string,
-  remotePath: string
+  remotePath: string,
+  options: SftpTransferOptions
 ): Promise<string> {
-  return invoke<string>('sftp_upload', { id, localPath, remotePath });
+  return invoke<string>('sftp_upload', { id, localPath, remotePath, options });
 }
 
 export async function downloadSftp(
   id: string,
   remotePath: string,
-  localPath: string
+  localPath: string,
+  options: SftpTransferOptions
 ): Promise<string> {
-  return invoke<string>('sftp_download', { id, remotePath, localPath });
+  return invoke<string>('sftp_download', { id, remotePath, localPath, options });
 }
 
-export async function removeSftp(
-  id: string,
+export async function pauseSftpTransfer(transferId: string, paused: boolean): Promise<void> {
+  await invoke('sftp_pause_transfer', { transferId, paused });
+}
+
+export async function cancelSftpTransfer(transferId: string): Promise<void> {
+  await invoke('sftp_cancel_transfer', { transferId });
+}
+
+export async function importKnownHosts(path: string): Promise<KnownHostsImportResult> {
+  return invoke<KnownHostsImportResult>('known_hosts_import', { path });
+}
+
+export async function exportKnownHosts(
   path: string,
-  isDir: boolean
-): Promise<void> {
+  hashHosts: boolean
+): Promise<KnownHostsExportResult> {
+  return invoke<KnownHostsExportResult>('known_hosts_export', { path, hashHosts });
+}
+
+export async function listPortForwards(): Promise<PortForwardInfo[]> {
+  return invoke<PortForwardInfo[]>('port_forward_list');
+}
+
+export async function startPortForward(options: StartPortForwardOptions): Promise<PortForwardInfo> {
+  return invoke<PortForwardInfo>('port_forward_start', { ...options });
+}
+
+export async function stopPortForward(id: string): Promise<void> {
+  await invoke('port_forward_stop', { id });
+}
+
+export async function listenPortForwardsChanged(onChange: () => void): Promise<() => void> {
+  return listen('port-forwards-changed', () => {
+    onChange();
+  });
+}
+
+export async function removeSftp(id: string, path: string, isDir: boolean): Promise<void> {
   await invoke('sftp_remove', { id, path, isDir });
 }
 
-export async function renameSftp(
-  id: string,
-  from: string,
-  to: string
-): Promise<void> {
+export async function renameSftp(id: string, from: string, to: string): Promise<void> {
   await invoke('sftp_rename', { id, from, to });
 }
 

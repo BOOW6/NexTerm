@@ -1,15 +1,19 @@
 import { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { LigaturesAddon } from '@xterm/addon-ligatures';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { getTerminalTheme } from '../../theme/terminalTheme';
+import { TERMINAL_LIGATURE_OPTIONS } from '../../theme/terminalLigatures';
 import { useTheme } from '../../theme/ThemeProvider';
 import type { TerminalCursorStyle } from '../../stores/settingsStore';
 
 interface TerminalPreviewProps {
   visible: boolean;
   fontFamily: string;
+  fontLigatures: boolean;
+  colorScheme: string;
   fontSize: number;
   lineHeight: number;
   cursorStyle: TerminalCursorStyle;
@@ -22,6 +26,8 @@ const SAFE_FONT = 'ui-monospace, monospace';
 export default function TerminalPreview({
   visible,
   fontFamily,
+  fontLigatures,
+  colorScheme,
   fontSize,
   lineHeight,
   cursorStyle,
@@ -52,6 +58,7 @@ export default function TerminalPreview({
     let disposed = false;
     let terminal: Terminal | null = null;
     let fitAddon: FitAddon | null = null;
+    let ligaturesAddon: LigaturesAddon | null = null;
     let webglAddon: WebglAddon | null = null;
     let initFrame: number | null = null;
     let resizeFrame: number | null = null;
@@ -84,6 +91,7 @@ export default function TerminalPreview({
       fontReadyRef.current = false;
 
       const instance = new Terminal({
+        allowProposedApi: true,
         cursorBlink,
         cursorStyle,
         fontFamily: SAFE_FONT,
@@ -91,7 +99,7 @@ export default function TerminalPreview({
         lineHeight,
         scrollback,
         disableStdin: true,
-        theme: getTerminalTheme()
+        theme: getTerminalTheme(colorScheme)
       });
       terminal = instance;
 
@@ -100,6 +108,16 @@ export default function TerminalPreview({
       fitAddon = fit;
 
       instance.open(container);
+
+      if (fontLigatures) {
+        try {
+          const addon = new LigaturesAddon(TERMINAL_LIGATURE_OPTIONS);
+          instance.loadAddon(addon);
+          ligaturesAddon = addon;
+        } catch {
+          ligaturesAddon = null;
+        }
+      }
 
       try {
         const webgl = new WebglAddon();
@@ -116,7 +134,7 @@ export default function TerminalPreview({
       }
 
       instance.write(
-        'NexTerm 终端预览\r\n$ git status\r\nOn branch main\r\nnothing to commit, working tree clean\r\n$ '
+        'NexTerm 终端预览\r\n$ git status\r\nOn branch main\r\nnothing to commit, working tree clean\r\n$ echo "-> => != === >= <="\r\n-> => != === >= <=\r\n$ '
       );
 
       terminalRef.current = instance;
@@ -168,13 +186,15 @@ export default function TerminalPreview({
       terminalRef.current = null;
       fitRef.current = null;
       fitAddon?.dispose();
+      ligaturesAddon?.dispose();
       webglAddon?.dispose();
       terminal?.dispose();
     };
     // The terminal is only mounted while the preview tab is visible; option
-    // changes are applied by the effects below.
+    // changes are applied by the effects below. Ligatures require a fresh
+    // renderer, so toggling them remounts the preview terminal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+  }, [visible, fontLigatures]);
 
   useEffect(() => {
     const terminal = terminalRef.current;
@@ -198,9 +218,9 @@ export default function TerminalPreview({
 
   useEffect(() => {
     if (terminalRef.current) {
-      terminalRef.current.options.theme = getTerminalTheme();
+      terminalRef.current.options.theme = getTerminalTheme(colorScheme);
     }
-  }, [themeId]);
+  }, [colorScheme, themeId]);
 
   useEffect(() => {
     if (!visible) {

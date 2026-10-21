@@ -24,10 +24,7 @@ import { Tooltip } from '../ui/tooltip';
 import { toast } from '../ui/toast';
 import { showNativeContextMenu } from '../../lib/appWindows';
 import { readText as readClipboardText } from '@tauri-apps/plugin-clipboard-manager';
-import {
-  TERMINAL_ACTION_EVENT,
-  type TerminalAction
-} from '../../lib/terminalCommands';
+import { TERMINAL_ACTION_EVENT, type TerminalAction } from '../../lib/terminalCommands';
 
 const PANEL_PREFIX = 'session-';
 const MIN_FONT_SIZE = 10;
@@ -37,14 +34,12 @@ export default function TerminalTab(props: IDockviewPanelProps) {
   const params = props.params as { sessionId?: string } | undefined;
   const sessionId = params?.sessionId ?? props.api.id.replace(PANEL_PREFIX, '');
 
-  const session = useSessionStore((state) =>
-    state.sessions.find((item) => item.id === sessionId)
-  );
+  const session = useSessionStore((state) => state.sessions.find((item) => item.id === sessionId));
   const password = useCredentialStore((state) =>
-    session ? state.passwords[session.id] ?? '' : ''
+    session ? (state.passwords[session.id] ?? '') : ''
   );
   const passphrase = useCredentialStore((state) =>
-    session ? state.passphrases[session.id] ?? '' : ''
+    session ? (state.passphrases[session.id] ?? '') : ''
   );
   const authorized = useCredentialStore((state) =>
     session ? Boolean(state.authorizations[session.id]) : false
@@ -130,8 +125,7 @@ export default function TerminalTab(props: IDockviewPanelProps) {
   const isLocal = session.kind === 'local';
   const authMethod = session.authMethod ?? 'password';
   const keyPath = session.keyPath ?? '';
-  const needsAuth =
-    !isLocal && (authMethod === 'password' ? !password : !authorized);
+  const needsAuth = !isLocal && (authMethod === 'password' ? !password : !authorized);
 
   if (needsAuth) {
     return <SshConnectForm session={session} />;
@@ -157,9 +151,7 @@ export default function TerminalTab(props: IDockviewPanelProps) {
   };
 
   const adjustFont = (delta: number) => {
-    setFontSize((current) =>
-      Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, current + delta))
-    );
+    setFontSize((current) => Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, current + delta)));
   };
 
   const openTerminalMenu = async () => {

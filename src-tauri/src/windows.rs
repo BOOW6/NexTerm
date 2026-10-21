@@ -1,7 +1,4 @@
-﻿use std::{
-    collections::HashMap,
-    sync::Mutex,
-};
+use std::{collections::HashMap, sync::Mutex};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -123,8 +120,9 @@ pub async fn show_context_menu(
             builder = builder.separator();
         }
         let id = format!("ctx|{request_id}|{index}");
-        let menu_item = MenuItem::with_id(&window, id, item.label.clone(), item.enabled, None::<&str>)
-            .map_err(|err| err.to_string())?;
+        let menu_item =
+            MenuItem::with_id(&window, id, item.label.clone(), item.enabled, None::<&str>)
+                .map_err(|err| err.to_string())?;
         builder = builder.item(&menu_item);
     }
 
@@ -146,10 +144,7 @@ pub async fn show_input_context_menu(window: WebviewWindow) -> Result<(), String
 }
 
 #[tauri::command]
-pub async fn get_modal_payload(
-    app: AppHandle,
-    id: String,
-) -> Result<Value, String> {
+pub async fn get_modal_payload(app: AppHandle, id: String) -> Result<Value, String> {
     app.state::<ModalManager>()
         .payload(&id)
         .ok_or_else(|| "窗口数据不存在".to_string())

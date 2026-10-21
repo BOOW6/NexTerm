@@ -1,12 +1,5 @@
 import { create } from 'zustand';
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Info,
-  X,
-  XCircle,
-  type LucideIcon
-} from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info, X, XCircle, type LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
 export type ToastVariant = 'default' | 'success' | 'error' | 'warning';

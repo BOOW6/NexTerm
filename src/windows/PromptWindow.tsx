@@ -64,11 +64,7 @@ export default function PromptWindow() {
         <Button variant="ghost" onClick={() => void cancelModal()}>
           取消
         </Button>
-        <Button
-          variant="primary"
-          disabled={!value.trim() || busy}
-          onClick={() => void submit()}
-        >
+        <Button variant="primary" disabled={!value.trim() || busy} onClick={() => void submit()}>
           {payload?.confirmLabel ?? '确定'}
         </Button>
       </div>

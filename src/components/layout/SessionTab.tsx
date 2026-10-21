@@ -5,6 +5,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import {
   closeOtherPanels,
   duplicateSessionPanel,
+  openPortForwardPanel,
   reconnectSessionPanels,
   splitSessionPanel
 } from '../../features/workspace/sessionActions';
@@ -40,12 +41,20 @@ export default function SessionTab({ api, params, containerApi }: IDockviewPanel
         {
           label: '复制会话',
           run: () => duplicateSessionPanel(containerApi, sessionId, 'right', api.id)
-        },
-        {
-          label: '重连',
-          run: () => reconnectSessionPanels(containerApi, sessionId)
         }
       );
+
+      if (session && session.kind !== 'local') {
+        actions.push({
+          label: '端口转发',
+          run: () => openPortForwardPanel(containerApi, sessionId)
+        });
+      }
+
+      actions.push({
+        label: '重连',
+        run: () => reconnectSessionPanels(containerApi, sessionId)
+      });
     }
 
     actions.push(

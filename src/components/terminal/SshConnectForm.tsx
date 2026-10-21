@@ -28,7 +28,7 @@ export default function SshConnectForm({ session }: { session: Session }) {
         return;
       }
       setPassword(session.id, password);
-    } else {
+    } else if (authMethod === 'key') {
       if (!keyPath) {
         setError('请先在「编辑连接」中选择私钥文件');
         return;
@@ -48,7 +48,11 @@ export default function SshConnectForm({ session }: { session: Session }) {
       >
         <div className="app-dialog-header border-b border-border bg-panel-title px-3 py-2 text-xs font-semibold text-foreground">
           <span className="app-dialog-title">
-            {authMethod === 'password' ? 'SSH 登录' : 'SSH 密钥认证'}
+            {authMethod === 'password'
+              ? 'SSH 登录'
+              : authMethod === 'agent'
+                ? 'SSH Agent 认证'
+                : 'SSH 密钥认证'}
           </span>
         </div>
 
@@ -70,6 +74,12 @@ export default function SshConnectForm({ session }: { session: Session }) {
                 placeholder="输入登录密码"
                 autoComplete="new-password"
               />
+            </div>
+          ) : authMethod === 'agent' ? (
+            <div className="rounded-sm border border-border bg-background px-2 py-6 text-center text-[11px] text-muted">
+              将使用系统 SSH Agent 中已加载的密钥完成认证。
+              <br />
+              请确保 Agent 正在运行且包含目标主机的密钥。
             </div>
           ) : (
             <>
@@ -95,7 +105,9 @@ export default function SshConnectForm({ session }: { session: Session }) {
           {error ? <p className="text-[11px] text-error">{error}</p> : null}
 
           <p className="text-[10px] text-muted-foreground">
-            凭据仅保存在内存中，退出应用后需重新输入。
+            {authMethod === 'agent'
+              ? '密钥由系统 SSH Agent 管理，NexTerm 不会读取私钥内容。'
+              : '凭据仅保存在内存中，退出应用后需重新输入。'}
           </p>
         </div>
 

@@ -38,7 +38,7 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
       const sessionState = useSessionStore.getState();
       const settings = useSettingsStore.getState();
       const session = options?.sessionId
-        ? sessionState.sessions.find((item) => item.id === options.sessionId) ?? null
+        ? (sessionState.sessions.find((item) => item.id === options.sessionId) ?? null)
         : null;
 
       const result = await openModalWindow<QuickConnectResult>('quick-connect', {
@@ -63,13 +63,19 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
       const isRemote = result.draft.kind !== 'local';
 
       if (session) {
+        const previousAuthMethod = session.authMethod ?? 'password';
         sessionState.updateSession(session.id, result.draft);
+        if (isRemote && previousAuthMethod !== result.draft.authMethod) {
+          useCredentialStore.getState().clearCredentials(session.id);
+        }
         if (isRemote) {
           if (result.password?.trim()) {
             useCredentialStore.getState().setPassword(session.id, result.password);
           }
           if (result.draft.authMethod === 'key') {
             useCredentialStore.getState().setPassphrase(session.id, result.passphrase ?? '');
+            useCredentialStore.getState().authorize(session.id);
+          } else if (result.draft.authMethod === 'agent') {
             useCredentialStore.getState().authorize(session.id);
           }
         }
@@ -84,10 +90,10 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
           if (result.password?.trim()) {
             useCredentialStore.getState().setPassword(created.id, result.password);
           }
+        } else if (result.draft.authMethod === 'key') {
+          useCredentialStore.getState().setPassphrase(created.id, result.passphrase ?? '');
+          useCredentialStore.getState().authorize(created.id);
         } else {
-          useCredentialStore
-            .getState()
-            .setPassphrase(created.id, result.passphrase ?? '');
           useCredentialStore.getState().authorize(created.id);
         }
       }
@@ -96,10 +102,12 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
         title: `已创建「${created.title}」`,
         description: isRemote
           ? result.draft.authMethod === 'key'
-            ? '正在使用私钥建立 SSH 连接…'
-            : result.password?.trim()
-              ? '正在建立 SSH 连接…'
-              : '连接时请输入密码。'
+            ? '正在使用私钥建立 SSH 连接。'
+            : result.draft.authMethod === 'agent'
+              ? '正在使用 SSH Agent 建立连接。'
+              : result.password?.trim()
+                ? '正在建立 SSH 连接。'
+                : '连接时将请求输入密码。'
           : undefined,
         variant: 'success'
       });

@@ -2,7 +2,7 @@ export type SessionKind = 'local' | 'ssh' | 'sftp';
 
 export type SessionStatus = 'idle' | 'connecting' | 'connected' | 'error';
 
-export type SessionAuthMethod = 'password' | 'key';
+export type SessionAuthMethod = 'password' | 'key' | 'agent';
 
 export interface Session {
   id: string;
@@ -44,6 +44,8 @@ export function sessionSubtitle(session: Session): string {
   if (session.kind === 'local') {
     return '本地 Shell';
   }
-  const target = session.username ? `${session.username}@${session.host ?? ''}` : session.host ?? '';
+  const target = session.username
+    ? `${session.username}@${session.host ?? ''}`
+    : (session.host ?? '');
   return session.port ? `${target}:${session.port}` : target;
 }

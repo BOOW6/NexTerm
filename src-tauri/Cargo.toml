@@ -14,17 +14,25 @@ tauri-build = { version = "2.0.0", features = [] }
 
 [dependencies]
 anyhow = "1"
+base64 = "0.22"
+hmac = "0.12"
 portable-pty = "0.8"
+rand = "0.8"
 russh = "0.63.1"
 russh-sftp = "3.0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha1 = "0.10"
 tauri = { version = "2.0.0", features = [] }
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-decorum = "1"
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }
+walkdir = "2"
+
+[dev-dependencies]
+tempfile = "3"
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39"
