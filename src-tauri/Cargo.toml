@@ -15,6 +15,8 @@ tauri-build = { version = "2.0.0", features = [] }
 [dependencies]
 anyhow = "1"
 base64 = "0.22"
+fontdb = "0.24"
+font-kit = "0.14"
 hmac = "0.12"
 portable-pty = "0.8"
 rand = "0.8"

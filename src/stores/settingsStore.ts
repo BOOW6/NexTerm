@@ -31,8 +31,10 @@ export interface SettingsSnapshot {
   darkTheme: ThemeId;
   uiFontFamily: string;
   uiFontLigatures: boolean;
+  uiFontFeatureSettings: string;
   terminalFontFamily: string;
   terminalFontLigatures: boolean;
+  terminalFontFeatureSettings: string;
   terminalColorScheme: string;
   terminalFontSize: number;
   terminalCursorStyle: TerminalCursorStyle;
@@ -54,8 +56,10 @@ export const DEFAULT_SETTINGS: SettingsSnapshot = {
   darkTheme: DEFAULT_DARK_THEME,
   uiFontFamily: DEFAULT_UI_FONT_FAMILY,
   uiFontLigatures: true,
+  uiFontFeatureSettings: '"liga" 1, "calt" 1',
   terminalFontFamily: 'Consolas, "Courier New", "Sarasa Mono SC", monospace',
   terminalFontLigatures: false,
+  terminalFontFeatureSettings: '"calt" on',
   terminalColorScheme: DEFAULT_TERMINAL_COLOR_SCHEME,
   terminalFontSize: 13,
   terminalCursorStyle: 'block',
@@ -86,8 +90,13 @@ function normalizeSettings(input: SettingsSnapshot): SettingsSnapshot {
     darkTheme: normalizeThemeId(input.darkTheme, 'dark'),
     uiFontFamily: (input.uiFontFamily ?? '').trim() || DEFAULT_SETTINGS.uiFontFamily,
     uiFontLigatures: Boolean(input.uiFontLigatures),
+    uiFontFeatureSettings:
+      (input.uiFontFeatureSettings ?? '').trim() || DEFAULT_SETTINGS.uiFontFeatureSettings,
     terminalFontFamily: input.terminalFontFamily.trim() || DEFAULT_SETTINGS.terminalFontFamily,
     terminalFontLigatures: Boolean(input.terminalFontLigatures),
+    terminalFontFeatureSettings:
+      (input.terminalFontFeatureSettings ?? '').trim() ||
+      DEFAULT_SETTINGS.terminalFontFeatureSettings,
     terminalColorScheme: normalizeTerminalColorSchemeId(input.terminalColorScheme),
     terminalFontSize: Math.min(20, Math.max(10, Math.round(input.terminalFontSize) || 13)),
     terminalCursorStyle: input.terminalCursorStyle,

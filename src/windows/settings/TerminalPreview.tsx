@@ -1,11 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { LigaturesAddon } from '@xterm/addon-ligatures';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { getTerminalTheme } from '../../theme/terminalTheme';
-import { TERMINAL_LIGATURE_OPTIONS } from '../../theme/terminalLigatures';
+import { NativeLigaturesAddon } from '../../theme/nativeLigaturesAddon';
 import { useTheme } from '../../theme/ThemeProvider';
 import type { TerminalCursorStyle } from '../../stores/settingsStore';
 
@@ -13,6 +12,7 @@ interface TerminalPreviewProps {
   visible: boolean;
   fontFamily: string;
   fontLigatures: boolean;
+  fontFeatureSettings: string;
   colorScheme: string;
   fontSize: number;
   lineHeight: number;
@@ -27,6 +27,7 @@ export default function TerminalPreview({
   visible,
   fontFamily,
   fontLigatures,
+  fontFeatureSettings,
   colorScheme,
   fontSize,
   lineHeight,
@@ -58,7 +59,7 @@ export default function TerminalPreview({
     let disposed = false;
     let terminal: Terminal | null = null;
     let fitAddon: FitAddon | null = null;
-    let ligaturesAddon: LigaturesAddon | null = null;
+    let ligaturesAddon: NativeLigaturesAddon | null = null;
     let webglAddon: WebglAddon | null = null;
     let initFrame: number | null = null;
     let resizeFrame: number | null = null;
@@ -111,7 +112,7 @@ export default function TerminalPreview({
 
       if (fontLigatures) {
         try {
-          const addon = new LigaturesAddon(TERMINAL_LIGATURE_OPTIONS);
+          const addon = new NativeLigaturesAddon({ featureSettings: fontFeatureSettings });
           instance.loadAddon(addon);
           ligaturesAddon = addon;
         } catch {
@@ -194,7 +195,7 @@ export default function TerminalPreview({
     // changes are applied by the effects below. Ligatures require a fresh
     // renderer, so toggling them remounts the preview terminal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, fontLigatures]);
+  }, [visible, fontLigatures, fontFeatureSettings]);
 
   useEffect(() => {
     const terminal = terminalRef.current;

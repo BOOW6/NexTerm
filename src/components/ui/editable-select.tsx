@@ -1,4 +1,12 @@
-import { useEffect, useId, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent
+} from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/cn';
@@ -39,6 +47,25 @@ export function EditableSelect({
     openUp: boolean;
   } | null>(null);
   const listId = useId();
+
+  const visibleOptions = useMemo(() => {
+    // A complete CSS font stack is not a useful search term, but a plain
+    // family name is. This keeps the picker usable with hundreds of fonts.
+    if (value.includes(',') || value.includes('"') || value.includes("'")) {
+      return options;
+    }
+    const query = value.trim().toLowerCase();
+    if (!query) {
+      return options;
+    }
+    const matches = options.filter(
+      (option) =>
+        option.label.toLowerCase().includes(query) || option.value.toLowerCase().includes(query)
+    );
+    return matches.length > 0 ? matches : options;
+  }, [options, value]);
+
+  const activeIndex = Math.min(highlight, Math.max(0, visibleOptions.length - 1));
 
   const updatePosition = () => {
     const input = inputRef.current;
@@ -110,19 +137,19 @@ export function EditableSelect({
       if (!open) {
         openMenu();
       } else {
-        setHighlight((current) => Math.min(options.length - 1, current + 1));
+        setHighlight(Math.min(visibleOptions.length - 1, activeIndex + 1));
       }
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
       if (!open) {
         openMenu();
       } else {
-        setHighlight((current) => Math.max(0, current - 1));
+        setHighlight(Math.max(0, activeIndex - 1));
       }
     } else if (event.key === 'Enter') {
-      if (open && options[highlight]) {
+      if (open && visibleOptions[activeIndex]) {
         event.preventDefault();
-        choose(options[highlight].value);
+        choose(visibleOptions[activeIndex].value);
       }
     } else if (event.key === 'Escape') {
       setOpen(false);
@@ -183,18 +210,18 @@ export function EditableSelect({
               }}
               className="app-popup fixed z-[80] max-h-56 overflow-y-auto rounded-sm border border-border-strong bg-surface-elevated p-1 shadow-popup"
             >
-              {options.map((option, index) => (
+              {visibleOptions.map((option, index) => (
                 <button
                   key={option.value}
                   type="button"
                   role="option"
-                  aria-selected={index === highlight}
+                  aria-selected={index === activeIndex}
                   onMouseDown={(event) => event.preventDefault()}
                   onMouseEnter={() => setHighlight(index)}
                   onClick={() => choose(option.value)}
                   className={cn(
                     'flex w-full flex-col items-start gap-0.5 rounded-sm px-2 py-1 text-left',
-                    index === highlight
+                    index === activeIndex
                       ? 'bg-accent text-accent-foreground'
                       : 'text-foreground hover:bg-surface-hover'
                   )}
@@ -203,7 +230,7 @@ export function EditableSelect({
                   <span
                     className={cn(
                       'w-full truncate text-[10px]',
-                      index === highlight ? 'opacity-75' : 'text-muted-foreground'
+                      index === activeIndex ? 'opacity-75' : 'text-muted-foreground'
                     )}
                   >
                     {option.value}

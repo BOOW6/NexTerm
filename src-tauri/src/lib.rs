@@ -1,9 +1,11 @@
 pub mod commands;
+pub mod fonts;
 pub mod pty;
 pub mod ssh;
 pub mod windows;
 pub mod windows_ext;
 
+use fonts::FontManager;
 use pty::PtySessionManager;
 use ssh::SshManager;
 use tauri::{Manager, WindowEvent};
@@ -17,6 +19,7 @@ pub fn run() {
         .plugin(tauri_plugin_decorum::init())
         .manage(PtySessionManager::default())
         .manage(ModalManager::default())
+        .manage(FontManager::default())
         .setup(|app| {
             // Load the bundled ConPTY before the first PTY session is created.
             pty::conpty_bundle::install(app.handle());
@@ -57,6 +60,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::fonts_list,
+            commands::font_lookup,
+            commands::font_data,
             commands::pty_platform_info,
             commands::create_pty_session,
             commands::write_pty,

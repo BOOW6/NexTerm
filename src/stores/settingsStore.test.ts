@@ -67,20 +67,30 @@ describe('applySettings', () => {
       snapshot({
         uiFontFamily: '   ',
         uiFontLigatures: false,
+        uiFontFeatureSettings: '   ',
         terminalFontLigatures: true,
+        terminalFontFeatureSettings: '  ',
         terminalColorScheme: 'dark-pastels'
       })
     );
     expect(useSettingsStore.getState().uiFontFamily).toBe(DEFAULT_SETTINGS.uiFontFamily);
     expect(useSettingsStore.getState().uiFontLigatures).toBe(false);
+    expect(useSettingsStore.getState().uiFontFeatureSettings).toBe(
+      DEFAULT_SETTINGS.uiFontFeatureSettings
+    );
     expect(useSettingsStore.getState().terminalFontLigatures).toBe(true);
+    expect(useSettingsStore.getState().terminalFontFeatureSettings).toBe(
+      DEFAULT_SETTINGS.terminalFontFeatureSettings
+    );
     expect(useSettingsStore.getState().terminalColorScheme).toBe('dark-pastels');
 
     useSettingsStore.getState().applySettings(
       snapshot({
+        terminalFontFeatureSettings: '"ss03" 1',
         terminalColorScheme: 'not-a-scheme'
       })
     );
+    expect(useSettingsStore.getState().terminalFontFeatureSettings).toBe('"ss03" 1');
     expect(useSettingsStore.getState().terminalColorScheme).toBe(
       DEFAULT_SETTINGS.terminalColorScheme
     );

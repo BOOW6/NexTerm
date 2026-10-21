@@ -3,7 +3,6 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Terminal, type IDisposable } from '@xterm/xterm';
 import { writeText as writeClipboardText } from '@tauri-apps/plugin-clipboard-manager';
 import { FitAddon } from '@xterm/addon-fit';
-import { LigaturesAddon } from '@xterm/addon-ligatures';
 import type { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
@@ -28,7 +27,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTheme } from '../../theme/ThemeProvider';
 import { getTerminalTheme } from '../../theme/terminalTheme';
-import { TERMINAL_LIGATURE_OPTIONS } from '../../theme/terminalLigatures';
+import { NativeLigaturesAddon } from '../../theme/nativeLigaturesAddon';
 
 export interface XtermHandle {
   clear: () => void;
@@ -147,11 +146,14 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
     const resumeRef = useRef<(() => void) | null>(null);
     const refitRef = useRef<(() => void) | null>(null);
     const flushResizeRef = useRef<(() => void) | null>(null);
-    const ligaturesRef = useRef<((enabled: boolean) => void) | null>(null);
+    const ligaturesRef = useRef<((enabled: boolean, featureSettings: string) => void) | null>(null);
     const { themeId } = useTheme();
 
     const terminalFontFamily = useSettingsStore((state) => state.terminalFontFamily);
     const terminalFontLigatures = useSettingsStore((state) => state.terminalFontLigatures);
+    const terminalFontFeatureSettings = useSettingsStore(
+      (state) => state.terminalFontFeatureSettings
+    );
     const terminalColorScheme = useSettingsStore((state) => state.terminalColorScheme);
     const terminalCursorStyle = useSettingsStore((state) => state.terminalCursorStyle);
     const terminalCursorBlink = useSettingsStore((state) => state.terminalCursorBlink);
@@ -201,8 +203,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       let terminal: Terminal | null = null;
       let fitAddon: FitAddon | null = null;
       let searchAddon: SearchAddon | null = null;
-      let ligaturesAddon: LigaturesAddon | null = null;
+      let ligaturesAddon: NativeLigaturesAddon | null = null;
       let ligaturesEnabled = false;
+      let ligatureFeatureSettings = '';
       let webglAddon: WebglAddon | null = null;
 
       const loadWebgl = () => {
@@ -225,18 +228,23 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         }
       };
 
-      const applyLigatures = (enabled: boolean) => {
+      const applyLigatures = (enabled: boolean, featureSettings: string) => {
         const instance = terminal;
         if (!instance || disposed) {
           ligaturesEnabled = enabled;
+          ligatureFeatureSettings = featureSettings;
           return;
         }
-        if (enabled === ligaturesEnabled) {
+        if (
+          enabled === ligaturesEnabled &&
+          (!enabled || featureSettings === ligatureFeatureSettings)
+        ) {
           return;
         }
 
         const hadWebgl = Boolean(webglAddon);
         ligaturesEnabled = enabled;
+        ligatureFeatureSettings = featureSettings;
         webglAddon?.dispose();
         webglAddon = null;
         ligaturesAddon?.dispose();
@@ -244,7 +252,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
         if (enabled) {
           try {
-            const addon = new LigaturesAddon(TERMINAL_LIGATURE_OPTIONS);
+            const addon = new NativeLigaturesAddon({ featureSettings });
             instance.loadAddon(addon);
             ligaturesAddon = addon;
           } catch {
@@ -629,9 +637,12 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             instance.open(container);
 
             ligaturesEnabled = settings.terminalFontLigatures;
+            ligatureFeatureSettings = settings.terminalFontFeatureSettings;
             if (ligaturesEnabled) {
               try {
-                const addon = new LigaturesAddon(TERMINAL_LIGATURE_OPTIONS);
+                const addon = new NativeLigaturesAddon({
+                  featureSettings: settings.terminalFontFeatureSettings
+                });
                 instance.loadAddon(addon);
                 ligaturesAddon = addon;
               } catch {
@@ -1058,8 +1069,8 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
     }, [terminalColorScheme, themeId]);
 
     useEffect(() => {
-      ligaturesRef.current?.(terminalFontLigatures);
-    }, [terminalFontLigatures]);
+      ligaturesRef.current?.(terminalFontLigatures, terminalFontFeatureSettings);
+    }, [terminalFontLigatures, terminalFontFeatureSettings]);
 
     useEffect(() => {
       const terminal = terminalRef.current;

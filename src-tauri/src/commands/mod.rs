@@ -1,10 +1,36 @@
-use tauri::{AppHandle, State};
+use tauri::{ipc::Response, AppHandle, State};
 
+use crate::fonts::{FontManager, SystemFontFace, SystemFontFamily};
 use crate::pty::{PtyPlatformInfo, PtySessionManager};
 use crate::ssh::{
     KnownHost, KnownHostsExportResult, KnownHostsImportResult, PortForwardInfo, SftpEntry,
     SftpTransferOptions, SshManager,
 };
+
+#[tauri::command]
+pub async fn fonts_list(state: State<'_, FontManager>) -> Result<Vec<SystemFontFamily>, String> {
+    state.list_families().await
+}
+
+#[tauri::command]
+pub async fn font_lookup(
+    state: State<'_, FontManager>,
+    family: String,
+    style: Option<String>,
+    weight: Option<u16>,
+) -> Result<SystemFontFace, String> {
+    state.lookup(&family, style.as_deref(), weight).await
+}
+
+#[tauri::command]
+pub async fn font_data(
+    state: State<'_, FontManager>,
+    family: String,
+    style: Option<String>,
+    weight: Option<u16>,
+) -> Result<Response, String> {
+    state.font_data(&family, style.as_deref(), weight).await
+}
 
 #[tauri::command]
 pub fn pty_platform_info(state: State<'_, PtySessionManager>) -> PtyPlatformInfo {

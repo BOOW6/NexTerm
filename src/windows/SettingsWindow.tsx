@@ -31,6 +31,9 @@ import {
 import { THEME_FAMILIES, getTheme, type ThemeDefinition, type ThemeMode } from '../theme/themes';
 import { TERMINAL_COLOR_SCHEMES } from '../theme/terminalColorSchemes';
 import { confirmAction } from '../lib/appWindows';
+import { firstFontFamily, fontFamilyStack, type FontFamilyTarget } from '../lib/fontFamily';
+import type { SystemFontFamily } from '../lib/systemFonts';
+import { useFontCatalogStore } from '../stores/fontCatalogStore';
 import {
   exportKnownHosts,
   importKnownHosts,
@@ -117,6 +120,29 @@ const LIGHT_TERMINAL_SCHEMES = TERMINAL_COLOR_SCHEMES.filter(
   (scheme) => scheme.variant === 'light'
 );
 
+function buildFontOptions(
+  presets: Array<{ label: string; value: string }>,
+  families: SystemFontFamily[],
+  target: FontFamilyTarget
+): Array<{ label: string; value: string }> {
+  const options = presets.map((preset) => ({ ...preset }));
+  const seen = new Set(presets.map((preset) => firstFontFamily(preset.value).toLowerCase()));
+
+  for (const family of families) {
+    const key = family.name.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    options.push({
+      label: family.name,
+      value: fontFamilyStack(family.name, target)
+    });
+  }
+
+  return options;
+}
+
 const TerminalPreview = lazy(() => import('./settings/TerminalPreview'));
 
 function snapshotOf(): SettingsSnapshot {
@@ -127,9 +153,11 @@ function snapshotOf(): SettingsSnapshot {
     darkTheme: state.darkTheme,
     uiFontFamily: state.uiFontFamily,
     uiFontLigatures: state.uiFontLigatures,
+    uiFontFeatureSettings: state.uiFontFeatureSettings,
     terminalFontSize: state.terminalFontSize,
     terminalFontFamily: state.terminalFontFamily,
     terminalFontLigatures: state.terminalFontLigatures,
+    terminalFontFeatureSettings: state.terminalFontFeatureSettings,
     terminalColorScheme: state.terminalColorScheme,
     terminalCursorStyle: state.terminalCursorStyle,
     terminalCursorBlink: state.terminalCursorBlink,
@@ -189,6 +217,29 @@ export default function SettingsWindow() {
   const [hashHosts, setHashHosts] = useState(false);
   const [applying, setApplying] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  const systemFonts = useFontCatalogStore((state) => state.families);
+  const systemFontsLoading = useFontCatalogStore((state) => state.loading);
+  const systemFontsError = useFontCatalogStore((state) => state.error);
+  const loadSystemFonts = useFontCatalogStore((state) => state.load);
+  const refreshSystemFonts = useFontCatalogStore((state) => state.refresh);
+
+  useEffect(() => {
+    void loadSystemFonts();
+  }, [loadSystemFonts]);
+
+  const monospaceFonts = useMemo(
+    () => systemFonts.filter((family) => family.monospaced),
+    [systemFonts]
+  );
+  const uiFontOptions = useMemo(
+    () => buildFontOptions(UI_FONT_PRESETS, systemFonts, 'ui'),
+    [systemFonts]
+  );
+  const terminalFontOptions = useMemo(
+    () => buildFontOptions(TERMINAL_FONT_PRESETS, monospaceFonts, 'terminal'),
+    [monospaceFonts]
+  );
 
   useEffect(() => {
     // Warm up the lazy preview chunk while the user is on the first tab.
@@ -504,10 +555,27 @@ export default function SettingsWindow() {
               <EditableSelect
                 id="ui-font"
                 value={draft.uiFontFamily}
-                options={UI_FONT_PRESETS}
+                options={uiFontOptions}
                 onChange={(value) => update('uiFontFamily', value)}
                 ariaLabel="界面字体"
               />
+              <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
+                <span className="truncate">
+                  {systemFontsLoading
+                    ? '正在加载系统字体…'
+                    : systemFontsError
+                      ? `系统字体加载失败：${systemFontsError}`
+                      : `已加载 ${systemFonts.length} 个系统字体`}
+                </span>
+                <button
+                  type="button"
+                  disabled={systemFontsLoading}
+                  onClick={() => void refreshSystemFonts()}
+                  className="shrink-0 underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
+                >
+                  刷新
+                </button>
+              </div>
             </div>
             <label className="flex items-center gap-2 pb-1 text-[11px] text-muted">
               <input
@@ -522,7 +590,19 @@ export default function SettingsWindow() {
           <p className="mt-1 text-[10px] text-muted-foreground">
             可直接编辑字体字符串；连字需要字体本身支持（如 Fira Code、Cascadia Code）。
           </p>
-          <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
+          <div className="mt-2">
+            <Label htmlFor="ui-font-feature-settings">Font Feature Settings</Label>
+            <Input
+              id="ui-font-feature-settings"
+              value={draft.uiFontFeatureSettings}
+              onChange={(event) => update('uiFontFeatureSettings', event.target.value)}
+              placeholder={'"liga" 1, "calt" 1'}
+            />
+            <p className="mt-1 text-[10px] text-muted-foreground">
+              仅在 Font Ligatures 开启时生效，可填写如 "ss03" 1 的 OpenType 特性。
+            </p>
+          </div>
+          <div className="mt-2 flex min-w-0 items-center gap-1.5">
             <span className="shrink-0 text-[10px] text-muted-foreground">连字示例</span>
             <span
               className="selectable truncate text-[11px] text-foreground"
@@ -530,7 +610,7 @@ export default function SettingsWindow() {
                 fontFamily: draft.uiFontFamily,
                 fontVariantLigatures: draft.uiFontLigatures ? 'normal' : 'none',
                 fontFeatureSettings: draft.uiFontLigatures
-                  ? '"liga" 1, "calt" 1'
+                  ? draft.uiFontFeatureSettings
                   : '"liga" 0, "calt" 0'
               }}
             >
@@ -552,10 +632,27 @@ export default function SettingsWindow() {
           <EditableSelect
             id="terminal-font"
             value={draft.terminalFontFamily}
-            options={TERMINAL_FONT_PRESETS}
+            options={terminalFontOptions}
             onChange={(value) => update('terminalFontFamily', value)}
             ariaLabel="终端字体"
           />
+          <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
+            <span className="truncate">
+              {systemFontsLoading
+                ? '正在加载系统字体…'
+                : systemFontsError
+                  ? `系统字体加载失败：${systemFontsError}`
+                  : `可用等宽字体 ${monospaceFonts.length} 个`}
+            </span>
+            <button
+              type="button"
+              disabled={systemFontsLoading}
+              onClick={() => void refreshSystemFonts()}
+              className="shrink-0 underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
+            >
+              刷新
+            </button>
+          </div>
         </div>
         <div>
           <Label htmlFor="terminal-color-scheme">配色方案</Label>
@@ -674,6 +771,19 @@ export default function SettingsWindow() {
       </p>
 
       <div>
+        <Label htmlFor="terminal-font-feature-settings">Font Feature Settings</Label>
+        <Input
+          id="terminal-font-feature-settings"
+          value={draft.terminalFontFeatureSettings}
+          onChange={(event) => update('terminalFontFeatureSettings', event.target.value)}
+          placeholder={'"calt" on'}
+        />
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          仅在 Font Ligatures 开启时生效，例如 "calt" off, "ss03"。
+        </p>
+      </div>
+
+      <div>
         <p className="mb-1 text-[10px] text-muted">预览</p>
         <Suspense
           fallback={
@@ -686,6 +796,7 @@ export default function SettingsWindow() {
             visible={tab === 'terminal'}
             fontFamily={draft.terminalFontFamily}
             fontLigatures={draft.terminalFontLigatures}
+            fontFeatureSettings={draft.terminalFontFeatureSettings}
             colorScheme={draft.terminalColorScheme}
             fontSize={draft.terminalFontSize}
             lineHeight={draft.terminalLineHeight}
