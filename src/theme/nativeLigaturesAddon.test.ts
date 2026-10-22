@@ -88,6 +88,25 @@ describe('NativeLigaturesAddon', () => {
     expect(terminal.element?.style.fontFeatureSettings).toBe('');
   });
 
+  it('falls back when font data cannot be parsed', async () => {
+    const ttcHeader = new Uint8Array([0x74, 0x74, 0x63, 0x66, 0, 0, 0, 0]);
+    readSystemFontMock.mockResolvedValue(ttcHeader.buffer);
+    const { terminal, getJoiner } = createTerminal('"TTC Font", monospace');
+    const addon = new NativeLigaturesAddon();
+
+    addon.activate(terminal);
+    expect(getJoiner()?.('-> =>')).toEqual([
+      [0, 2],
+      [3, 5]
+    ]);
+
+    await vi.waitFor(() => expect(terminal.refresh).toHaveBeenCalled());
+    expect(getJoiner()?.('-> =>')).toEqual([
+      [0, 2],
+      [3, 5]
+    ]);
+  });
+
   it.skipIf(!existsSync(cascadiaPath))(
     'parses ligature ranges from native font bytes',
     async () => {

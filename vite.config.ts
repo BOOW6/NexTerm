@@ -1,8 +1,40 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
+const EMPTY_MODULE_ID = '\0empty-node-module';
+const nodeOnlyFontPackages = new Set([
+  'font-finder',
+  'get-system-fonts',
+  'promise-stream-reader'
+]);
+const nodeBuiltins = new Set(['fs', 'os', 'path', 'stream', 'util']);
+
+function stubFontLigaturesNodeBranches(): Plugin {
+  return {
+    name: 'stub-font-ligatures-node-branches',
+    enforce: 'pre',
+    resolveId(source, importer) {
+      if (nodeOnlyFontPackages.has(source)) {
+        return EMPTY_MODULE_ID;
+      }
+      if (
+        importer &&
+        importer.replace(/\\/g, '/').includes('/node_modules/font-ligatures/') &&
+        nodeBuiltins.has(source)
+      ) {
+        return EMPTY_MODULE_ID;
+      }
+    },
+    load(id) {
+      if (id === EMPTY_MODULE_ID) {
+        return 'export default {};';
+      }
+    }
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [stubFontLigaturesNodeBranches(), react()],
   build: {
     rollupOptions: {
       output: {
