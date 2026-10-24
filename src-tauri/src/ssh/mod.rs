@@ -49,6 +49,23 @@ fn now_unix() -> u64 {
         .unwrap_or(0)
 }
 
+/// Expand `~/` (and `~\` on Windows) so imported OpenSSH configs work as-is.
+fn expand_path(path: &str) -> PathBuf {
+    if let Some(rest) = path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")) {
+        if let Some(home) = home_dir() {
+            return home.join(rest);
+        }
+    }
+    PathBuf::from(path)
+}
+
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .filter(|value| !value.is_empty())
+        .or_else(|| std::env::var_os("USERPROFILE").filter(|value| !value.is_empty()))
+        .map(PathBuf::from)
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct KnownHost {
     pub host: String,
@@ -190,6 +207,7 @@ pub struct SshManager {
     host_keys: Arc<HostKeyState>,
     forwards: Mutex<HashMap<String, ForwardHandle>>,
     transfers: Arc<Mutex<HashMap<String, Arc<TransferControl>>>>,
+    conflicts: Arc<ConflictPendingMap>,
 }
 
 struct SshConnection {
@@ -210,6 +228,9 @@ struct ForwardHandle {
 struct TransferControl {
     cancelled: AtomicBool,
     paused: AtomicBool,
+    /// Decision picked with "apply to all" in the conflict dialog, reused for
+    /// the remaining files of this transfer.
+    decision: Mutex<Option<ConflictDecision>>,
 }
 
 pub struct Client {
@@ -376,11 +397,26 @@ struct SftpTransferDonePayload {
     name: String,
     success: bool,
     cancelled: bool,
+    /// The transfer failed because the SSH connection itself dropped; the
+    /// frontend keeps such entries resumable instead of plain failures.
+    disconnected: bool,
     error: Option<String>,
     transferred: u64,
     total: u64,
     files_done: usize,
     files_total: usize,
+}
+
+#[derive(Clone, Serialize)]
+struct SftpConflictPayload {
+    request_id: String,
+    transfer_id: String,
+    direction: String,
+    name: String,
+    source_size: u64,
+    source_mtime: u64,
+    target_size: u64,
+    target_mtime: u64,
 }
 
 fn basename(path: &str) -> String {
@@ -402,6 +438,7 @@ impl SshManager {
             host_keys: Arc::new(HostKeyState::new(known_hosts_path)),
             forwards: Mutex::new(HashMap::new()),
             transfers: Arc::new(Mutex::new(HashMap::new())),
+            conflicts: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -426,10 +463,21 @@ impl SshManager {
         }
     }
 
+    pub fn resolve_sftp_conflict(&self, request_id: &str, action: &str, apply_to_all: bool) {
+        let sender = lock(&self.conflicts).remove(request_id);
+        if let Some(sender) = sender {
+            let _ = sender.send(ConflictResponse {
+                action: parse_conflict_action(action),
+                apply_to_all,
+            });
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub async fn connect(
         &self,
         app: AppHandle,
+        id: String,
         host: String,
         port: u16,
         username: String,
@@ -440,8 +488,24 @@ impl SshManager {
         cols: u16,
         rows: u16,
     ) -> anyhow::Result<String> {
+        // The frontend generates the id so it can attach output/close
+        // listeners before the shell starts and never lose the first prompt.
+        if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+            return Err(anyhow!("invalid SSH session id"));
+        }
+        if self
+            .sessions
+            .lock()
+            .map_err(|_| anyhow!("failed to lock SSH sessions"))?
+            .contains_key(&id)
+        {
+            return Err(anyhow!("SSH session id already exists"));
+        }
+
         let config = Arc::new(client::Config {
             inactivity_timeout: None,
+            keepalive_interval: Some(Duration::from_secs(30)),
+            keepalive_max: 3,
             ..Default::default()
         });
 
@@ -464,8 +528,11 @@ impl SshManager {
                 let key_path = private_key_path
                     .as_deref()
                     .ok_or_else(|| anyhow!("请选择私钥文件"))?;
-                let key_pair = russh::keys::load_secret_key(key_path, passphrase.as_deref())
-                    .with_context(|| format!("failed to load private key: {key_path}"))?;
+                let key_path = expand_path(key_path);
+                let key_pair = russh::keys::load_secret_key(&key_path, passphrase.as_deref())
+                    .with_context(|| {
+                        format!("failed to load private key: {}", key_path.display())
+                    })?;
                 let hash = handle
                     .best_supported_rsa_hash()
                     .await
@@ -515,7 +582,6 @@ impl SshManager {
             .context("failed to request shell")?;
 
         let (mut read_half, write_half) = channel.split();
-        let id = Uuid::new_v4().to_string();
         let writer = Arc::new(write_half);
         let handle = Arc::new(handle);
 
@@ -646,12 +712,14 @@ impl SshManager {
         local_path: String,
         options: SftpTransferOptions,
     ) -> anyhow::Result<String> {
+        let weak_handle = Arc::downgrade(&self.connection(id)?.handle);
         let sftp = self.open_sftp(id).await?;
         let (transfer_id, control) = self.register_transfer()?;
         let event_id = transfer_id.clone();
         let name = basename(&remote_path);
         let app_handle = app.clone();
         let controls = self.transfers.clone();
+        let conflicts = self.conflicts.clone();
 
         tokio::spawn(async move {
             let direction = "download".to_string();
@@ -664,9 +732,16 @@ impl SshManager {
                 &local_path,
                 options,
                 control.clone(),
+                conflicts,
             )
             .await;
             let cancelled = control.cancelled.load(Ordering::SeqCst);
+            let disconnected = result.is_err()
+                && !cancelled
+                && weak_handle
+                    .upgrade()
+                    .map(|handle| handle.is_closed())
+                    .unwrap_or(true);
 
             let payload = match result {
                 Ok(report) => SftpTransferDonePayload {
@@ -675,6 +750,7 @@ impl SshManager {
                     name,
                     success: true,
                     cancelled: false,
+                    disconnected: false,
                     error: None,
                     transferred: report.transferred,
                     total: report.total,
@@ -687,6 +763,7 @@ impl SshManager {
                     name,
                     success: false,
                     cancelled,
+                    disconnected,
                     error: Some(failure.error.to_string()),
                     transferred: failure.report.transferred,
                     total: failure.report.total,
@@ -709,12 +786,14 @@ impl SshManager {
         remote_path: String,
         options: SftpTransferOptions,
     ) -> anyhow::Result<String> {
+        let weak_handle = Arc::downgrade(&self.connection(id)?.handle);
         let sftp = self.open_sftp(id).await?;
         let (transfer_id, control) = self.register_transfer()?;
         let event_id = transfer_id.clone();
         let name = basename(&local_path);
         let app_handle = app.clone();
         let controls = self.transfers.clone();
+        let conflicts = self.conflicts.clone();
 
         tokio::spawn(async move {
             let direction = "upload".to_string();
@@ -727,9 +806,16 @@ impl SshManager {
                 &remote_path,
                 options,
                 control.clone(),
+                conflicts,
             )
             .await;
             let cancelled = control.cancelled.load(Ordering::SeqCst);
+            let disconnected = result.is_err()
+                && !cancelled
+                && weak_handle
+                    .upgrade()
+                    .map(|handle| handle.is_closed())
+                    .unwrap_or(true);
 
             let payload = match result {
                 Ok(report) => SftpTransferDonePayload {
@@ -738,6 +824,7 @@ impl SshManager {
                     name,
                     success: true,
                     cancelled: false,
+                    disconnected: false,
                     error: None,
                     transferred: report.transferred,
                     total: report.total,
@@ -750,6 +837,7 @@ impl SshManager {
                     name,
                     success: false,
                     cancelled,
+                    disconnected,
                     error: Some(failure.error.to_string()),
                     transferred: failure.report.transferred,
                     total: failure.report.total,
@@ -1128,11 +1216,15 @@ impl TransferProgress {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum ConflictPolicy {
     Overwrite,
     Skip,
     Rename,
+    /// Ask the user for every conflicting file (with an apply-to-all option).
+    Ask,
+    /// Overwrite only when the source is newer or the size differs.
+    Newer,
 }
 
 impl ConflictPolicy {
@@ -1140,10 +1232,36 @@ impl ConflictPolicy {
         match value {
             "skip" => Self::Skip,
             "rename" => Self::Rename,
+            "ask" => Self::Ask,
+            "newer" => Self::Newer,
             _ => Self::Overwrite,
         }
     }
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ConflictDecision {
+    Overwrite,
+    Skip,
+    Rename,
+    Cancel,
+}
+
+fn parse_conflict_action(value: &str) -> ConflictDecision {
+    match value {
+        "overwrite" => ConflictDecision::Overwrite,
+        "skip" => ConflictDecision::Skip,
+        "rename" => ConflictDecision::Rename,
+        _ => ConflictDecision::Cancel,
+    }
+}
+
+struct ConflictResponse {
+    action: ConflictDecision,
+    apply_to_all: bool,
+}
+
+type ConflictPendingMap = Mutex<HashMap<String, oneshot::Sender<ConflictResponse>>>;
 
 fn split_file_name(name: &str) -> (&str, Option<&str>) {
     match name.rsplit_once('.') {
@@ -1325,6 +1443,7 @@ async fn run_download(
     local_path: &str,
     options: SftpTransferOptions,
     control: Arc<TransferControl>,
+    conflicts: Arc<ConflictPendingMap>,
 ) -> Result<TransferReport, TransferFailure> {
     let metadata = sftp
         .metadata(remote_path)
@@ -1376,16 +1495,24 @@ async fn run_download(
                 tokio::fs::create_dir_all(parent).await?;
             }
 
-            let target = match policy {
-                ConflictPolicy::Skip if target.exists() => {
-                    progress.add(file.size);
-                    progress.file_done();
-                    progress.emit(false);
-                    continue;
-                }
-                ConflictPolicy::Rename => unique_local_path(&target),
-                _ => target,
-            };
+            let mut target = target;
+            if !resolve_download_conflict(
+                &sftp,
+                app,
+                transfer_id,
+                name,
+                &mut target,
+                policy,
+                &control,
+                &mut progress,
+                file,
+                &conflicts,
+            )
+            .await
+            .map_err(|failure| failure.error)?
+            {
+                continue;
+            }
 
             download_file(
                 &sftp,
@@ -1420,6 +1547,7 @@ async fn run_upload(
     remote_path: &str,
     options: SftpTransferOptions,
     control: Arc<TransferControl>,
+    conflicts: Arc<ConflictPendingMap>,
 ) -> Result<TransferReport, TransferFailure> {
     let root = PathBuf::from(local_path);
     let metadata = tokio::fs::symlink_metadata(&root)
@@ -1457,16 +1585,24 @@ async fn run_upload(
                 ensure_remote_dir(&sftp, parent).await?;
             }
 
-            let target = match policy {
-                ConflictPolicy::Skip if sftp.try_exists(&target).await.unwrap_or(false) => {
-                    progress.add(file.size);
-                    progress.file_done();
-                    progress.emit(false);
-                    continue;
-                }
-                ConflictPolicy::Rename => unique_remote_path(&sftp, &target).await,
-                _ => target,
-            };
+            let mut target = target;
+            if !resolve_upload_conflict(
+                &sftp,
+                app,
+                transfer_id,
+                name,
+                &mut target,
+                policy,
+                &control,
+                &mut progress,
+                file,
+                &conflicts,
+            )
+            .await
+            .map_err(|failure| failure.error)?
+            {
+                continue;
+            }
 
             upload_file(
                 &sftp,
@@ -1491,6 +1627,454 @@ async fn run_upload(
     }
 }
 
+#[derive(Serialize, Deserialize)]
+struct UploadResumeMeta {
+    size: u64,
+    mtime_ms: Option<u64>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DownloadResumeMeta {
+    source: String,
+    size: u64,
+    mtime: Option<u32>,
+}
+
+fn local_mtime_millis(metadata: &std::fs::Metadata) -> Option<u64> {
+    metadata
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|elapsed| elapsed.as_millis() as u64)
+}
+
+/// A partial upload may only be resumed when its sidecar proves the partial
+/// data came from the exact same local file (size + mtime); anything else
+/// restarts from zero so a stale prefix can never be spliced onto changed
+/// source content. A missing local mtime disables resuming entirely.
+fn upload_resume_offset_from(
+    meta: Option<UploadResumeMeta>,
+    part_len: Option<u64>,
+    expected_size: u64,
+    mtime_ms: Option<u64>,
+) -> u64 {
+    let Some(meta) = meta else {
+        return 0;
+    };
+    if meta.size != expected_size {
+        return 0;
+    }
+    match (meta.mtime_ms, mtime_ms) {
+        (Some(stored), Some(current)) if stored == current => {}
+        _ => return 0,
+    }
+    match part_len {
+        Some(len) if len <= expected_size => len,
+        _ => 0,
+    }
+}
+
+/// Same rule for downloads against the remote source. Servers that report no
+/// mtime fall back to source path + size matching.
+fn download_resume_offset_from(
+    meta: Option<DownloadResumeMeta>,
+    part_len: Option<u64>,
+    source: &str,
+    expected_size: u64,
+    mtime: Option<u32>,
+) -> u64 {
+    let Some(meta) = meta else {
+        return 0;
+    };
+    if meta.source != source || meta.size != expected_size || meta.mtime != mtime {
+        return 0;
+    }
+    match part_len {
+        Some(len) if len <= expected_size => len,
+        _ => 0,
+    }
+}
+
+async fn read_remote_file(sftp: &SftpSession, path: &str) -> anyhow::Result<Vec<u8>> {
+    let mut remote = sftp
+        .open_with_flags(path, OpenFlags::READ)
+        .await
+        .with_context(|| format!("failed to open remote file: {path}"))?;
+    let mut buffer = Vec::new();
+    remote
+        .read_to_end(&mut buffer)
+        .await
+        .with_context(|| format!("failed to read remote file: {path}"))?;
+    Ok(buffer)
+}
+
+async fn write_remote_file(sftp: &SftpSession, path: &str, data: &[u8]) -> anyhow::Result<()> {
+    let flags = OpenFlags::CREATE | OpenFlags::WRITE | OpenFlags::TRUNCATE;
+    let mut remote = sftp
+        .open_with_flags(path, flags)
+        .await
+        .with_context(|| format!("failed to create remote file: {path}"))?;
+    remote
+        .write_all(data)
+        .await
+        .with_context(|| format!("failed to write remote file: {path}"))?;
+    remote
+        .flush()
+        .await
+        .with_context(|| format!("failed to flush remote file: {path}"))?;
+    remote
+        .close()
+        .await
+        .with_context(|| format!("failed to close remote file: {path}"))?;
+    Ok(())
+}
+
+async fn upload_resume_offset(
+    sftp: &SftpSession,
+    part_path: &str,
+    meta_path: &str,
+    expected_size: u64,
+    mtime_ms: Option<u64>,
+) -> u64 {
+    let meta = read_remote_file(sftp, meta_path)
+        .await
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<UploadResumeMeta>(&bytes).ok());
+    let part_len = sftp
+        .metadata(part_path)
+        .await
+        .ok()
+        .and_then(|metadata| metadata.size);
+    upload_resume_offset_from(meta, part_len, expected_size, mtime_ms)
+}
+
+/// Move a finished upload from its part file onto the final path.
+///
+/// Plain `SSH_FXP_RENAME` fails on servers that reject renaming over an
+/// existing file (OpenSSH), so the old file is swapped out through a backup
+/// name and only deleted once the new content is in place; on failure the
+/// previous file is restored and the target stays intact.
+async fn finalize_remote_upload(
+    sftp: &SftpSession,
+    part_path: &str,
+    target: &str,
+) -> anyhow::Result<()> {
+    if sftp
+        .rename(part_path.to_string(), target.to_string())
+        .await
+        .is_ok()
+    {
+        return Ok(());
+    }
+
+    if let Ok(metadata) = sftp.metadata(target).await {
+        if metadata.is_dir() {
+            anyhow::bail!("远端目标位置是目录，无法用文件覆盖: {target}");
+        }
+    }
+
+    let backup = format!("{target}.nexterm-bak");
+    let _ = sftp.remove_file(backup.as_str()).await;
+    sftp.rename(target.to_string(), backup.clone())
+        .await
+        .context("failed to back up existing remote file")?;
+    match sftp.rename(part_path.to_string(), target.to_string()).await {
+        Ok(()) => {
+            let _ = sftp.remove_file(backup.as_str()).await;
+            Ok(())
+        }
+        Err(error) => {
+            let _ = sftp.rename(backup, target.to_string()).await;
+            Err(anyhow::Error::new(error).context("failed to finalize remote upload"))
+        }
+    }
+}
+
+fn record_skipped(progress: &mut TransferProgress, size: u64) {
+    progress.add(size);
+    progress.file_done();
+    progress.emit(false);
+}
+
+/// FileZilla-style "overwrite if newer": replace unless the target already
+/// matches the source size and is not older than it. Mtimes are in seconds.
+fn overwrite_if_newer(
+    source_size: u64,
+    source_mtime: u64,
+    target_size: u64,
+    target_mtime: u64,
+) -> bool {
+    source_size != target_size || source_mtime > target_mtime
+}
+
+fn mtime_secs(metadata: &std::fs::Metadata) -> u64 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
+/// Ask the user how to handle one conflicting file. Resolves through the
+/// pending map once the frontend answers; reuses an earlier "apply to all"
+/// decision, falls back to skip if the dialog is lost, and honours cancel.
+#[allow(clippy::too_many_arguments)]
+async fn wait_for_conflict_decision(
+    app: &AppHandle,
+    transfer_id: &str,
+    direction: &str,
+    name: &str,
+    control: &TransferControl,
+    conflicts: &ConflictPendingMap,
+    source_size: u64,
+    source_mtime: u64,
+    target_size: u64,
+    target_mtime: u64,
+) -> Result<ConflictDecision, TransferFailure> {
+    if let Some(decision) = *lock(&control.decision) {
+        return Ok(decision);
+    }
+
+    let request_id = Uuid::new_v4().to_string();
+    let (sender, mut receiver) = oneshot::channel();
+    lock(conflicts).insert(request_id.clone(), sender);
+
+    let _ = app.emit(
+        "sftp-conflict",
+        SftpConflictPayload {
+            request_id: request_id.clone(),
+            transfer_id: transfer_id.to_string(),
+            direction: direction.to_string(),
+            name: name.to_string(),
+            source_size,
+            source_mtime,
+            target_size,
+            target_mtime,
+        },
+    );
+
+    // Unanswered dialogs fall back to skipping after ten minutes so a lost
+    // frontend can never wedge the transfer queue permanently.
+    let deadline = Instant::now() + Duration::from_secs(600);
+    let decision = loop {
+        tokio::select! {
+            response = &mut receiver => {
+                break match response {
+                    Ok(response) => response,
+                    Err(_) => ConflictResponse {
+                        action: ConflictDecision::Skip,
+                        apply_to_all: false,
+                    },
+                };
+            }
+            _ = tokio::time::sleep(Duration::from_millis(200)) => {
+                if control.cancelled.load(Ordering::SeqCst) {
+                    lock(conflicts).remove(&request_id);
+                    return Err(TransferFailure::new(TransferCancelled));
+                }
+                if Instant::now() >= deadline {
+                    lock(conflicts).remove(&request_id);
+                    return Ok(ConflictDecision::Skip);
+                }
+            }
+        }
+    };
+    lock(conflicts).remove(&request_id);
+
+    if decision.apply_to_all && decision.action != ConflictDecision::Cancel {
+        *lock(&control.decision) = Some(decision.action);
+    }
+
+    Ok(decision.action)
+}
+
+/// Decide how to proceed when the upload target already exists. Returns
+/// `false` when the file is skipped (bookkeeping already recorded).
+#[allow(clippy::too_many_arguments)]
+async fn resolve_upload_conflict(
+    sftp: &SftpSession,
+    app: &AppHandle,
+    transfer_id: &str,
+    name: &str,
+    target: &mut String,
+    policy: ConflictPolicy,
+    control: &TransferControl,
+    progress: &mut TransferProgress,
+    source: &LocalFile,
+    conflicts: &ConflictPendingMap,
+) -> Result<bool, TransferFailure> {
+    let target_metadata = sftp.metadata(target.as_str()).await.ok();
+    if policy == ConflictPolicy::Overwrite || target_metadata.is_none() {
+        return Ok(true);
+    }
+
+    let source_metadata = tokio::fs::metadata(&source.local)
+        .await
+        .map_err(TransferFailure::new)?;
+
+    match policy {
+        ConflictPolicy::Overwrite => Ok(true),
+        ConflictPolicy::Skip => {
+            record_skipped(progress, source.size);
+            Ok(false)
+        }
+        ConflictPolicy::Rename => {
+            *target = unique_remote_path(sftp, target.as_str()).await;
+            Ok(true)
+        }
+        ConflictPolicy::Newer => {
+            let overwrite = overwrite_if_newer(
+                source_metadata.len(),
+                mtime_secs(&source_metadata),
+                target_metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.size)
+                    .unwrap_or(0),
+                target_metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.mtime)
+                    .map(|value| value as u64)
+                    .unwrap_or(0),
+            );
+            if overwrite {
+                Ok(true)
+            } else {
+                record_skipped(progress, source.size);
+                Ok(false)
+            }
+        }
+        ConflictPolicy::Ask => {
+            let decision = wait_for_conflict_decision(
+                app,
+                transfer_id,
+                "upload",
+                name,
+                control,
+                conflicts,
+                source_metadata.len(),
+                mtime_secs(&source_metadata),
+                target_metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.size)
+                    .unwrap_or(0),
+                target_metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.mtime)
+                    .map(|value| value as u64)
+                    .unwrap_or(0),
+            )
+            .await?;
+            match decision {
+                ConflictDecision::Overwrite => Ok(true),
+                ConflictDecision::Rename => {
+                    *target = unique_remote_path(sftp, target.as_str()).await;
+                    Ok(true)
+                }
+                ConflictDecision::Skip => {
+                    record_skipped(progress, source.size);
+                    Ok(false)
+                }
+                ConflictDecision::Cancel => {
+                    control.cancelled.store(true, Ordering::SeqCst);
+                    Err(TransferFailure::new(TransferCancelled))
+                }
+            }
+        }
+    }
+}
+
+/// Same decision for downloads against a local target. Returns `false` when
+/// the file is skipped (bookkeeping already recorded).
+#[allow(clippy::too_many_arguments)]
+async fn resolve_download_conflict(
+    sftp: &SftpSession,
+    app: &AppHandle,
+    transfer_id: &str,
+    name: &str,
+    target: &mut PathBuf,
+    policy: ConflictPolicy,
+    control: &TransferControl,
+    progress: &mut TransferProgress,
+    source: &RemoteFile,
+    conflicts: &ConflictPendingMap,
+) -> Result<bool, TransferFailure> {
+    let target_metadata = tokio::fs::metadata(target.as_path()).await.ok();
+    if policy == ConflictPolicy::Overwrite || target_metadata.is_none() {
+        return Ok(true);
+    }
+
+    let source_metadata = sftp
+        .metadata(source.remote.as_str())
+        .await
+        .map_err(TransferFailure::new)?;
+    let source_size = source_metadata.size.unwrap_or(0);
+    let source_mtime = source_metadata.mtime.map(|value| value as u64).unwrap_or(0);
+
+    match policy {
+        ConflictPolicy::Overwrite => Ok(true),
+        ConflictPolicy::Skip => {
+            record_skipped(progress, source.size);
+            Ok(false)
+        }
+        ConflictPolicy::Rename => {
+            *target = unique_local_path(target);
+            Ok(true)
+        }
+        ConflictPolicy::Newer => {
+            let overwrite = overwrite_if_newer(
+                source_size,
+                source_mtime,
+                target_metadata
+                    .as_ref()
+                    .map(|metadata| metadata.len())
+                    .unwrap_or(0),
+                target_metadata.as_ref().map(mtime_secs).unwrap_or(0),
+            );
+            if overwrite {
+                Ok(true)
+            } else {
+                record_skipped(progress, source.size);
+                Ok(false)
+            }
+        }
+        ConflictPolicy::Ask => {
+            let decision = wait_for_conflict_decision(
+                app,
+                transfer_id,
+                "download",
+                name,
+                control,
+                conflicts,
+                source_size,
+                source_mtime,
+                target_metadata
+                    .as_ref()
+                    .map(|metadata| metadata.len())
+                    .unwrap_or(0),
+                target_metadata.as_ref().map(mtime_secs).unwrap_or(0),
+            )
+            .await?;
+            match decision {
+                ConflictDecision::Overwrite => Ok(true),
+                ConflictDecision::Rename => {
+                    *target = unique_local_path(target);
+                    Ok(true)
+                }
+                ConflictDecision::Skip => {
+                    record_skipped(progress, source.size);
+                    Ok(false)
+                }
+                ConflictDecision::Cancel => {
+                    control.cancelled.store(true, Ordering::SeqCst);
+                    Err(TransferFailure::new(TransferCancelled))
+                }
+            }
+        }
+    }
+}
+
 async fn download_file(
     sftp: &SftpSession,
     remote_path: &str,
@@ -1506,20 +2090,26 @@ async fn download_file(
         .await
         .context("failed to read remote file metadata")?;
     let size = metadata.size.unwrap_or(0);
+    let mtime = metadata.mtime;
     let part_path = PathBuf::from(format!("{}.part", local_path.display()));
+    let meta_path = PathBuf::from(format!("{}.part.meta", local_path.display()));
 
     let mut offset = 0u64;
     if resume {
-        if let Ok(metadata) = tokio::fs::metadata(&part_path).await {
-            let length = metadata.len();
-            if length <= size {
-                offset = length;
-            }
-        }
+        let meta = tokio::fs::read(&meta_path)
+            .await
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<DownloadResumeMeta>(&bytes).ok());
+        let part_len = tokio::fs::metadata(&part_path)
+            .await
+            .ok()
+            .map(|part_metadata| part_metadata.len());
+        offset = download_resume_offset_from(meta, part_len, remote_path, size, mtime);
     }
 
     if offset == 0 {
         let _ = tokio::fs::remove_file(&part_path).await;
+        let _ = tokio::fs::remove_file(&meta_path).await;
     }
 
     let mut remote = sftp
@@ -1541,6 +2131,17 @@ async fn download_file(
         .open(&part_path)
         .await
         .with_context(|| format!("failed to create local file: {}", part_path.display()))?;
+
+    let meta = DownloadResumeMeta {
+        source: remote_path.to_string(),
+        size,
+        mtime,
+    };
+    let meta_json =
+        serde_json::to_vec(&meta).context("failed to serialize download resume meta")?;
+    tokio::fs::write(&meta_path, meta_json)
+        .await
+        .context("failed to write download resume meta")?;
 
     progress.add(offset);
 
@@ -1572,6 +2173,7 @@ async fn download_file(
     tokio::fs::rename(&part_path, local_path)
         .await
         .context("failed to finalize local file")?;
+    let _ = tokio::fs::remove_file(&meta_path).await;
 
     progress.file_done();
     progress.emit(false);
@@ -1594,25 +2196,26 @@ async fn upload_file(
         .with_context(|| format!("failed to read local file: {}", local_path.display()))?;
     let size = metadata.len();
 
-    let remote_size = sftp
-        .metadata(remote_path)
-        .await
-        .ok()
-        .and_then(|metadata| metadata.size)
-        .unwrap_or(0);
+    // The upload goes to a sidecar-marked part file and is renamed into place
+    // on completion, so the final path only ever holds complete content and a
+    // remote file is never modified in place by an interrupted transfer.
+    let part_path = format!("{remote_path}.nexterm-part");
+    let meta_path = format!("{part_path}.meta");
 
-    if resume && size > 0 && remote_size == size {
-        progress.add(size);
-        progress.file_done();
-        progress.emit(false);
-        return Ok(());
+    let mtime_ms = local_mtime_millis(&metadata);
+    let mut offset = 0u64;
+    if resume && size > 0 {
+        offset = upload_resume_offset(sftp, part_path.as_str(), meta_path.as_str(), size, mtime_ms)
+            .await;
+    }
+    if offset == 0 {
+        let _ = sftp.remove_file(part_path.as_str()).await;
+        let _ = sftp.remove_file(meta_path.as_str()).await;
     }
 
-    let offset = if resume && remote_size > 0 && remote_size < size {
-        remote_size
-    } else {
-        0
-    };
+    let meta = UploadResumeMeta { size, mtime_ms };
+    let meta_json = serde_json::to_vec(&meta).context("failed to serialize upload resume meta")?;
+    write_remote_file(sftp, meta_path.as_str(), &meta_json).await?;
 
     let mut local = tokio::fs::File::open(local_path)
         .await
@@ -1630,7 +2233,7 @@ async fn upload_file(
     }
 
     let mut remote = sftp
-        .open_with_flags(remote_path, flags)
+        .open_with_flags(part_path.as_str(), flags)
         .await
         .context("failed to open remote file for writing")?;
     if offset > 0 {
@@ -1670,6 +2273,10 @@ async fn upload_file(
         .close()
         .await
         .context("failed to close remote file")?;
+    drop(local);
+
+    finalize_remote_upload(sftp, part_path.as_str(), remote_path).await?;
+    let _ = sftp.remove_file(meta_path.as_str()).await;
 
     progress.file_done();
     progress.emit(false);
@@ -2312,5 +2919,138 @@ mod tests {
                 .expect("checkpoint should return once cancelled")
                 .is_err()
         );
+    }
+
+    #[test]
+    fn upload_resume_requires_matching_provenance() {
+        let mtime: u64 = 1_700_000_000_000;
+        let meta = |size: u64, mtime_ms: Option<u64>| UploadResumeMeta { size, mtime_ms };
+
+        // Matching size + mtime resumes at the recorded part length.
+        assert_eq!(
+            upload_resume_offset_from(Some(meta(100, Some(mtime))), Some(40), 100, Some(mtime)),
+            40
+        );
+
+        // A changed source file (new mtime, same size) must restart from zero.
+        assert_eq!(
+            upload_resume_offset_from(Some(meta(100, Some(mtime))), Some(40), 100, Some(mtime + 1)),
+            0
+        );
+
+        // No sidecar, no part file, or a part longer than the source never resumes.
+        assert_eq!(
+            upload_resume_offset_from(None, Some(40), 100, Some(mtime)),
+            0
+        );
+        assert_eq!(
+            upload_resume_offset_from(Some(meta(100, Some(mtime))), None, 100, Some(mtime)),
+            0
+        );
+        assert_eq!(
+            upload_resume_offset_from(Some(meta(100, Some(mtime))), Some(120), 100, Some(mtime)),
+            0
+        );
+
+        // A source without mtime cannot be proven fresh, so never resume.
+        assert_eq!(
+            upload_resume_offset_from(Some(meta(100, None)), Some(40), 100, None),
+            0
+        );
+    }
+
+    #[test]
+    fn download_resume_requires_matching_source() {
+        let meta = |source: &str, size: u64, mtime: Option<u32>| DownloadResumeMeta {
+            source: source.to_string(),
+            size,
+            mtime,
+        };
+
+        assert_eq!(
+            download_resume_offset_from(
+                Some(meta("/remote/a.bin", 100, Some(123))),
+                Some(40),
+                "/remote/a.bin",
+                100,
+                Some(123)
+            ),
+            40
+        );
+
+        // A .part left by a different remote file, or by an updated one, must
+        // be discarded instead of spliced onto new content.
+        assert_eq!(
+            download_resume_offset_from(
+                Some(meta("/remote/a.bin", 100, Some(123))),
+                Some(40),
+                "/remote/b.bin",
+                100,
+                Some(123)
+            ),
+            0
+        );
+        assert_eq!(
+            download_resume_offset_from(
+                Some(meta("/remote/a.bin", 100, Some(123))),
+                Some(40),
+                "/remote/a.bin",
+                100,
+                Some(456)
+            ),
+            0
+        );
+
+        // Servers without mtime fall back to source path + size.
+        assert_eq!(
+            download_resume_offset_from(
+                Some(meta("/remote/a.bin", 100, None)),
+                Some(40),
+                "/remote/a.bin",
+                100,
+                None
+            ),
+            40
+        );
+    }
+
+    #[test]
+    fn conflict_policies_cover_the_filezilla_set() {
+        assert_eq!(ConflictPolicy::parse("ask"), ConflictPolicy::Ask);
+        assert_eq!(ConflictPolicy::parse("newer"), ConflictPolicy::Newer);
+        assert_eq!(ConflictPolicy::parse("skip"), ConflictPolicy::Skip);
+        assert_eq!(ConflictPolicy::parse("rename"), ConflictPolicy::Rename);
+        assert_eq!(
+            ConflictPolicy::parse("overwrite"),
+            ConflictPolicy::Overwrite
+        );
+        // Unknown values keep the historical default.
+        assert_eq!(ConflictPolicy::parse("whatever"), ConflictPolicy::Overwrite);
+    }
+
+    #[test]
+    fn conflict_actions_parse_with_cancel_fallback() {
+        assert_eq!(
+            parse_conflict_action("overwrite"),
+            ConflictDecision::Overwrite
+        );
+        assert_eq!(parse_conflict_action("skip"), ConflictDecision::Skip);
+        assert_eq!(parse_conflict_action("rename"), ConflictDecision::Rename);
+        assert_eq!(parse_conflict_action("cancel"), ConflictDecision::Cancel);
+        assert_eq!(parse_conflict_action("junk"), ConflictDecision::Cancel);
+    }
+
+    #[test]
+    fn overwrite_if_newer_matches_filezilla_semantics() {
+        // Same size, same mtime: target already matches, skip.
+        assert!(!overwrite_if_newer(100, 50, 100, 50));
+        // Size differs: overwrite regardless of mtimes.
+        assert!(overwrite_if_newer(120, 50, 100, 90));
+        // Source strictly newer: overwrite.
+        assert!(overwrite_if_newer(100, 51, 100, 50));
+        // Target newer but same size: keep the target.
+        assert!(!overwrite_if_newer(100, 40, 100, 60));
+        // Unknown target mtime (0): a source with a real timestamp wins.
+        assert!(overwrite_if_newer(100, 1, 100, 0));
     }
 }

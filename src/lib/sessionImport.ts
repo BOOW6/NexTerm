@@ -1,0 +1,369 @@
+import type { Session, SessionAuthMethod, SessionKind } from '../types/session';
+
+export type ImportFormat = 'ssh-config' | 'mobaxterm' | 'putty' | 'nexterm';
+
+export interface ImportedSession {
+  kind: SessionKind;
+  title: string;
+  host?: string;
+  port?: number;
+  username?: string;
+  authMethod: SessionAuthMethod;
+  keyPath?: string;
+  group: string;
+  favorite?: boolean;
+}
+
+export interface ImportSummary {
+  sessions: ImportedSession[];
+  skipped: number;
+}
+
+function unquote(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length >= 2) {
+    const first = trimmed[0];
+    const last = trimmed[trimmed.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      return trimmed.slice(1, -1);
+    }
+  }
+  return trimmed;
+}
+
+function stripInlineComment(value: string): string {
+  return value.replace(/\s+#.*$/, '').trim();
+}
+
+function normalizePort(value: string | undefined, fallback = 22): number {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 65535 ? parsed : fallback;
+}
+
+function dedupeSessions(sessions: ImportedSession[]): ImportedSession[] {
+  const seen = new Set<string>();
+  const result: ImportedSession[] = [];
+  for (const session of sessions) {
+    const key =
+      session.kind === 'local'
+        ? `local|${session.title}`
+        : `${session.kind}|${session.host ?? ''}|${session.port ?? 22}|${session.username ?? ''}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(session);
+  }
+  return result;
+}
+
+export function parseSshConfig(text: string, group = 'SSH Config'): ImportedSession[] {
+  const sessions: ImportedSession[] = [];
+  let current: {
+    patterns: string[];
+    hostname?: string;
+    user?: string;
+    port?: number;
+    identity?: string;
+  } | null = null;
+  let inMatch = false;
+
+  const flush = () => {
+    if (!current || inMatch) {
+      current = null;
+      return;
+    }
+    const alias = current.patterns.find(
+      (pattern) =>
+        pattern && !pattern.includes('*') && !pattern.includes('?') && !pattern.startsWith('!')
+    );
+    if (!alias) {
+      current = null;
+      return;
+    }
+    const host = current.hostname || alias;
+    sessions.push({
+      kind: 'ssh',
+      title: alias,
+      host,
+      port: current.port ?? 22,
+      username: current.user ?? '',
+      authMethod: current.identity ? 'key' : 'password',
+      keyPath: current.identity,
+      group
+    });
+    current = null;
+  };
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) {
+      continue;
+    }
+    const match = /^([A-Za-z][A-Za-z0-9_-]*)\s*(?:=|\s)\s*(.*)$/.exec(line);
+    if (!match) {
+      continue;
+    }
+    const keyword = match[1].toLowerCase();
+    const value = unquote(stripInlineComment(match[2]));
+
+    if (keyword === 'host') {
+      flush();
+      inMatch = false;
+      current = { patterns: value.split(/\s+/).filter(Boolean) };
+      continue;
+    }
+    if (keyword === 'match') {
+      flush();
+      inMatch = true;
+      continue;
+    }
+    if (!current || inMatch) {
+      continue;
+    }
+
+    if (keyword === 'hostname') {
+      current.hostname = value;
+    } else if (keyword === 'user') {
+      current.user = value;
+    } else if (keyword === 'port') {
+      current.port = normalizePort(value);
+    } else if (keyword === 'identityfile' && !current.identity) {
+      current.identity = value;
+    }
+  }
+
+  flush();
+  return dedupeSessions(sessions);
+}
+
+export function parseMobaXterm(text: string, group = 'MobaXterm'): ImportedSession[] {
+  const sessions: ImportedSession[] = [];
+  let section = '';
+  let fields: Record<string, string> = {};
+
+  const flush = () => {
+    if (!section.toLowerCase().startsWith('bookmarks')) {
+      return;
+    }
+    const host = fields.host?.trim();
+    if (!host) {
+      return;
+    }
+    const protocol = (fields.protocol ?? 'ssh').toLowerCase();
+    if (!protocol.includes('ssh') && !protocol.includes('sftp')) {
+      return;
+    }
+    const subRep = (fields.subrep ?? '')
+      .replace(/\\/g, '/')
+      .replace(/^\/+|\/+$/g, '')
+      .trim();
+    sessions.push({
+      kind: protocol.includes('sftp') ? 'sftp' : 'ssh',
+      title: fields.bookmarkname?.trim() || host,
+      host,
+      port: normalizePort(fields.port),
+      username: fields.username?.trim() ?? '',
+      authMethod: fields.privatekey?.trim() ? 'key' : 'password',
+      keyPath: fields.privatekey?.trim() || undefined,
+      group: subRep ? `${group}/${subRep}` : group
+    });
+  };
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith(';') || line.startsWith('#')) {
+      continue;
+    }
+    const sectionMatch = /^\[(.+)\]$/.exec(line);
+    if (sectionMatch) {
+      flush();
+      section = sectionMatch[1].trim();
+      fields = {};
+      continue;
+    }
+    const separator = line.indexOf('=');
+    if (separator <= 0) {
+      continue;
+    }
+    fields[line.slice(0, separator).trim().toLowerCase()] = line.slice(separator + 1).trim();
+  }
+
+  flush();
+  return dedupeSessions(sessions);
+}
+
+function decodePuTTYName(name: string): string {
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name;
+  }
+}
+
+export function parsePuTTY(text: string, group = 'PuTTY'): ImportedSession[] {
+  const sessions: ImportedSession[] = [];
+  let section = '';
+  let fields: Record<string, string> = {};
+
+  const flush = () => {
+    const match = /^HKEY_CURRENT_USER\\Software\\SimonTatham\\PuTTY\\Sessions\\(.+)$/i.exec(
+      section
+    );
+    if (!match) {
+      return;
+    }
+    const name = decodePuTTYName(match[1]);
+    if (!name || name.toLowerCase() === 'default settings') {
+      return;
+    }
+    const host = fields.hostname?.trim();
+    if (!host) {
+      return;
+    }
+    const protocol = (fields.protocol ?? 'ssh').toLowerCase();
+    if (protocol !== 'ssh') {
+      return;
+    }
+    const segments = name.split(/[\\/]/).filter(Boolean);
+    const title = segments[segments.length - 1] ?? name;
+    const parent = segments.slice(0, -1).join('/');
+    sessions.push({
+      kind: 'ssh',
+      title,
+      host,
+      port: normalizePort(fields.portnumber),
+      username: fields.username?.trim() ?? '',
+      authMethod: fields.publickeyfile?.trim() ? 'key' : 'password',
+      keyPath: fields.publickeyfile?.trim() || undefined,
+      group: parent ? `${group}/${parent}` : group
+    });
+  };
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    const sectionMatch = /^\[(.+)\]$/.exec(line);
+    if (sectionMatch) {
+      flush();
+      section = sectionMatch[1].trim();
+      fields = {};
+      continue;
+    }
+    const valueMatch = /^"([^"]+)"=(.*)$/.exec(line);
+    if (!valueMatch) {
+      continue;
+    }
+    const key = valueMatch[1].toLowerCase();
+    const rawValue = valueMatch[2].trim();
+    if (key === 'portnumber') {
+      const dword = /^dword:([0-9a-f]+)$/i.exec(rawValue);
+      fields[key] = dword ? String(Number.parseInt(dword[1], 16)) : unquote(rawValue);
+    } else {
+      fields[key] = unquote(rawValue);
+    }
+  }
+
+  flush();
+  return dedupeSessions(sessions);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function asKind(value: unknown): SessionKind {
+  return value === 'sftp' || value === 'local' ? value : 'ssh';
+}
+
+function asAuthMethod(value: unknown): SessionAuthMethod {
+  return value === 'key' || value === 'agent' ? value : 'password';
+}
+
+export function parseNexTermBackup(text: string): ImportedSession[] {
+  const parsed: unknown = JSON.parse(text);
+  const list = Array.isArray(parsed)
+    ? parsed
+    : isRecord(parsed) && Array.isArray(parsed.sessions)
+      ? parsed.sessions
+      : null;
+  if (!list) {
+    throw new Error('不是有效的 NexTerm 会话备份');
+  }
+
+  const sessions: ImportedSession[] = [];
+  for (const item of list) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    const kind = asKind(item.kind);
+    const host = asString(item.host);
+    const title = asString(item.title);
+    if (kind !== 'local' && !host) {
+      continue;
+    }
+    sessions.push({
+      kind,
+      title: title ?? (kind === 'local' ? '本地终端' : (host ?? 'Session')),
+      host,
+      port: typeof item.port === 'number' ? item.port : 22,
+      username: asString(item.username),
+      authMethod: asAuthMethod(item.authMethod),
+      keyPath: asString(item.keyPath),
+      group: asString(item.group) ?? '会话',
+      favorite: Boolean(item.favorite)
+    });
+  }
+  return dedupeSessions(sessions);
+}
+
+export function importSessionsFromText(format: ImportFormat, text: string): ImportedSession[] {
+  switch (format) {
+    case 'ssh-config':
+      return parseSshConfig(text);
+    case 'mobaxterm':
+      return parseMobaXterm(text);
+    case 'putty':
+      return parsePuTTY(text);
+    case 'nexterm':
+      return parseNexTermBackup(text);
+  }
+}
+
+export function serializeSessionBackup(sessions: Session[]): string {
+  return JSON.stringify(
+    {
+      app: 'NexTerm',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      sessions: sessions.map((session) => ({
+        kind: session.kind,
+        title: session.title,
+        host: session.host,
+        port: session.port,
+        username: session.username,
+        authMethod: session.authMethod,
+        keyPath: session.keyPath,
+        group: session.group,
+        favorite: session.favorite
+      }))
+    },
+    null,
+    2
+  );
+}
+
+export function importKey(
+  session: Pick<ImportedSession, 'kind' | 'host' | 'port' | 'username' | 'title'>
+): string {
+  if (session.kind === 'local') {
+    return `local|${session.title}`;
+  }
+  return `${session.kind}|${session.host ?? ''}|${session.port ?? 22}|${session.username ?? ''}`;
+}

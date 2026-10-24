@@ -2,7 +2,13 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { ask, message } from '@tauri-apps/plugin-dialog';
 
-export type AppWindowKind = 'main' | 'settings' | 'quick-connect' | 'host-key' | 'prompt';
+export type AppWindowKind =
+  | 'main'
+  | 'settings'
+  | 'quick-connect'
+  | 'host-key'
+  | 'prompt'
+  | 'sftp-conflict';
 
 export interface ModalWindowOptions {
   title: string;
@@ -17,7 +23,8 @@ export function currentWindowKind(): AppWindowKind {
     value === 'settings' ||
     value === 'quick-connect' ||
     value === 'host-key' ||
-    value === 'prompt'
+    value === 'prompt' ||
+    value === 'sftp-conflict'
   ) {
     return value;
   }

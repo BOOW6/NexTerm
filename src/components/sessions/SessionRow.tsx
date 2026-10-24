@@ -5,6 +5,7 @@ import { sessionSubtitle } from '../../types/session';
 import { DropdownMenu } from '../ui/dropdown-menu';
 import { showNativeContextMenu } from '../../lib/appWindows';
 import { SESSION_KIND_ICON, sessionStatusDot } from '../../lib/sessionVisuals';
+import { useI18n } from '../../i18n';
 
 interface SessionRowProps {
   session: Session;
@@ -24,6 +25,7 @@ export default function SessionRow({
   onRemove
 }: SessionRowProps) {
   const KindIcon = SESSION_KIND_ICON[session.kind];
+  const { t } = useI18n();
 
   return (
     <div
@@ -33,10 +35,10 @@ export default function SessionRow({
       onContextMenu={(event) => {
         event.preventDefault();
         void showNativeContextMenu([
-          { label: '打开' },
-          { label: '编辑' },
-          { label: session.favorite ? '取消收藏' : '收藏' },
-          { label: '删除', separatorBefore: true }
+          { label: t('session.open') },
+          { label: t('session.edit') },
+          { label: session.favorite ? t('session.unfavorite') : t('session.favorite') },
+          { label: t('session.delete'), separatorBefore: true }
         ]).then((index) => {
           if (index === 0) {
             onOpen(session.id);
@@ -76,8 +78,8 @@ export default function SessionRow({
 
       <button
         type="button"
-        aria-label={session.favorite ? '取消收藏' : '收藏'}
-        title={session.favorite ? '取消收藏' : '收藏'}
+        aria-label={session.favorite ? t('session.unfavorite') : t('session.favorite')}
+        title={session.favorite ? t('session.unfavorite') : t('session.favorite')}
         onClick={(event) => {
           event.stopPropagation();
           onToggleFavorite(session.id);
@@ -93,17 +95,17 @@ export default function SessionRow({
       </button>
 
       <DropdownMenu
-        label={`${session.title} 的更多操作`}
+        label={t('session.more', { name: session.title })}
         items={[
-          { label: '打开', icon: Plug, onSelect: () => onOpen(session.id) },
-          { label: '编辑', icon: Pencil, onSelect: () => onEdit(session.id) },
+          { label: t('session.open'), icon: Plug, onSelect: () => onOpen(session.id) },
+          { label: t('session.edit'), icon: Pencil, onSelect: () => onEdit(session.id) },
           {
-            label: session.favorite ? '取消收藏' : '收藏',
+            label: session.favorite ? t('session.unfavorite') : t('session.favorite'),
             icon: Star,
             onSelect: () => onToggleFavorite(session.id)
           },
           {
-            label: '删除',
+            label: t('session.delete'),
             icon: Trash2,
             danger: true,
             separatorBefore: true,

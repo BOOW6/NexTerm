@@ -278,7 +278,7 @@ export default function QuickConnectWindow() {
               id="session-group"
               value={form.group}
               onChange={(event) => update('group', event.target.value)}
-              placeholder={DEFAULT_GROUP}
+              placeholder={`${DEFAULT_GROUP}（支持 服务器/生产 这样的多级分组）`}
             />
           </div>
 

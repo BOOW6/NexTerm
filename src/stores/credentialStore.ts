@@ -8,6 +8,7 @@ interface CredentialState {
   setPassphrase: (sessionId: string, passphrase: string) => void;
   authorize: (sessionId: string) => void;
   clearCredentials: (sessionId: string) => void;
+  clearAllCredentials: () => void;
 }
 
 /**
@@ -39,5 +40,7 @@ export const useCredentialStore = create<CredentialState>((set) => ({
       delete passphrases[sessionId];
       delete authorizations[sessionId];
       return { passwords, passphrases, authorizations };
-    })
+    }),
+
+  clearAllCredentials: () => set({ passwords: {}, passphrases: {}, authorizations: {} })
 }));

@@ -9,6 +9,7 @@ export interface PromptPayload {
   initialValue: string;
   placeholder?: string;
   confirmLabel: string;
+  password?: boolean;
 }
 
 export default function PromptWindow() {
@@ -36,7 +37,7 @@ export default function PromptWindow() {
     }
     setBusy(true);
     try {
-      await submitModal(trimmed);
+      await submitModal(value);
     } catch {
       setBusy(false);
     }
@@ -49,6 +50,7 @@ export default function PromptWindow() {
         <Input
           id="prompt-input"
           autoFocus
+          type={payload?.password ? 'password' : 'text'}
           value={value}
           placeholder={payload?.placeholder}
           onChange={(event) => setValue(event.target.value)}

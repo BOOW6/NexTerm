@@ -6,10 +6,20 @@ import type {
 } from '../hooks/useTauriSsh';
 
 export type TransferDirection = 'upload' | 'download';
-export type TransferStatus = 'running' | 'paused' | 'done' | 'error' | 'cancelled';
+export type TransferStatus =
+  | 'running'
+  | 'paused'
+  | 'done'
+  | 'error'
+  | 'cancelled'
+  | 'interrupted';
+
+export const INTERRUPTED_MESSAGE = '连接已断开，重连后将自动续传';
 
 export interface TransferRequest {
-  sshId: string;
+  /** Session-store id the transfer is bound to; sshId is resolved fresh on
+   * every (re)start so retries and auto-resume survive reconnects. */
+  sessionId: string;
   localPath: string;
   remotePath: string;
   recursive: boolean;
@@ -47,6 +57,8 @@ interface TransferState {
   applyProgress: (payload: SftpProgressPayload) => void;
   finish: (payload: SftpTransferDonePayload) => void;
   setPaused: (id: string, paused: boolean) => void;
+  /** Mark a session's active transfers as interrupted (connection dropped). */
+  markSessionDisconnected: (sessionId: string) => void;
   clearFinished: () => void;
   remove: (id: string) => void;
 }
@@ -156,7 +168,9 @@ export const useTransferStore = create<TransferState>((set) => ({
         ? 'cancelled'
         : payload.success
           ? 'done'
-          : 'error';
+          : payload.disconnected
+            ? 'interrupted'
+            : 'error';
       const next: TransferItem = {
         id: payload.transfer_id,
         name: payload.name,
@@ -167,7 +181,11 @@ export const useTransferStore = create<TransferState>((set) => ({
         filesDone: payload.files_done,
         filesTotal: payload.files_total,
         paused: false,
-        error: payload.error ?? undefined,
+        error: payload.success
+          ? undefined
+          : payload.disconnected
+            ? INTERRUPTED_MESSAGE
+            : payload.error ?? undefined,
         startedAt: current?.startedAt ?? now,
         updatedAt: now,
         speed: 0,
@@ -193,6 +211,23 @@ export const useTransferStore = create<TransferState>((set) => ({
           ...item,
           paused,
           status: paused ? 'paused' : 'running',
+          updatedAt: Date.now()
+        };
+      })
+    })),
+
+  markSessionDisconnected: (sessionId) =>
+    set((state) => ({
+      transfers: state.transfers.map((item) => {
+        if (item.request?.sessionId !== sessionId || !isActive(item.status)) {
+          return item;
+        }
+        return {
+          ...item,
+          status: 'interrupted',
+          paused: false,
+          speed: 0,
+          error: INTERRUPTED_MESSAGE,
           updatedAt: Date.now()
         };
       })

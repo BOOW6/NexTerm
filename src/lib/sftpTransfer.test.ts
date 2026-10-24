@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { downloadSftp, uploadSftp } from '../hooks/useTauriSsh';
+import { useConnectionStore } from '../stores/connectionStore';
 import { useTransferStore } from '../stores/transferStore';
-import { retryTransfer, startSftpTransfer } from './sftpTransfer';
+import { retryTransfer, resumeInterruptedTransfers, startSftpTransfer } from './sftpTransfer';
 
 vi.mock('../hooks/useTauriSsh', () => ({
   uploadSftp: vi.fn(),
@@ -11,8 +12,21 @@ vi.mock('../hooks/useTauriSsh', () => ({
 const upload = vi.mocked(uploadSftp);
 const download = vi.mocked(downloadSftp);
 
+const setConnection = (sessionId: string, sshId: string | null) => {
+  useConnectionStore.setState((state) => {
+    const connections = { ...state.connections };
+    if (sshId) {
+      connections[sessionId] = { sshId, status: 'connected' };
+    } else {
+      delete connections[sessionId];
+    }
+    return { connections };
+  });
+};
+
 beforeEach(() => {
   useTransferStore.setState({ transfers: [] });
+  setConnection('sess-1', 'ssh-1');
   upload.mockReset();
   download.mockReset();
   upload.mockResolvedValue('transfer-1');
@@ -20,9 +34,9 @@ beforeEach(() => {
 });
 
 describe('startSftpTransfer', () => {
-  it('invokes upload with options and registers a retryable transfer', async () => {
+  it('resolves the current sshId from the bound session and registers a retryable transfer', async () => {
     const id = await startSftpTransfer({
-      sshId: 'ssh-1',
+      sessionId: 'sess-1',
       direction: 'upload',
       name: 'archive',
       localPath: 'C:/tmp/archive',
@@ -40,7 +54,7 @@ describe('startSftpTransfer', () => {
 
     const item = useTransferStore.getState().transfers[0];
     expect(item.request).toEqual({
-      sshId: 'ssh-1',
+      sessionId: 'sess-1',
       localPath: 'C:/tmp/archive',
       remotePath: '/home/user/archive',
       recursive: true,
@@ -49,29 +63,28 @@ describe('startSftpTransfer', () => {
     });
   });
 
-  it('defaults to overwrite and non-recursive transfers', async () => {
-    await startSftpTransfer({
-      sshId: 'ssh-1',
-      direction: 'download',
-      name: 'file.txt',
-      localPath: 'C:/tmp/file.txt',
-      remotePath: '/home/user/file.txt'
-    });
+  it('rejects when the session has no active SSH connection', async () => {
+    setConnection('sess-1', null);
 
-    expect(download).toHaveBeenCalledWith('ssh-1', '/home/user/file.txt', 'C:/tmp/file.txt', {
-      recursive: false,
-      resume: true,
-      conflict: 'overwrite'
-    });
+    await expect(
+      startSftpTransfer({
+        sessionId: 'sess-1',
+        direction: 'download',
+        name: 'file.txt',
+        localPath: 'C:/tmp/file.txt',
+        remotePath: '/home/user/file.txt'
+      })
+    ).rejects.toThrow('会话尚未建立 SSH 连接');
+    expect(download).not.toHaveBeenCalled();
   });
 });
 
 describe('retryTransfer', () => {
-  it('replays the stored request with the same direction', async () => {
+  it('replays the request through the session id and drops the old entry', async () => {
     download.mockResolvedValueOnce('transfer-2').mockResolvedValueOnce('transfer-3');
 
     await startSftpTransfer({
-      sshId: 'ssh-1',
+      sessionId: 'sess-1',
       direction: 'download',
       name: 'file.txt',
       localPath: 'C:/tmp/file.txt',
@@ -79,16 +92,35 @@ describe('retryTransfer', () => {
       conflict: 'skip'
     });
 
+    // Simulate a reconnect: the backend sshId changed for this session.
+    setConnection('sess-1', 'ssh-2');
     const item = useTransferStore.getState().transfers[0];
     const id = await retryTransfer(item);
 
     expect(id).toBe('transfer-3');
-    expect(download).toHaveBeenLastCalledWith('ssh-1', '/home/user/file.txt', 'C:/tmp/file.txt', {
+    expect(download).toHaveBeenLastCalledWith('ssh-2', '/home/user/file.txt', 'C:/tmp/file.txt', {
       recursive: false,
       resume: true,
       conflict: 'skip'
     });
-    expect(useTransferStore.getState().transfers).toHaveLength(2);
+    expect(useTransferStore.getState().transfers).toHaveLength(1);
+  });
+
+  it('throws when the session is not connected', async () => {
+    download.mockResolvedValueOnce('transfer-2');
+
+    await startSftpTransfer({
+      sessionId: 'sess-1',
+      direction: 'download',
+      name: 'file.txt',
+      localPath: 'C:/tmp/file.txt',
+      remotePath: '/home/user/file.txt'
+    });
+    setConnection('sess-1', null);
+    const item = useTransferStore.getState().transfers[0];
+
+    await expect(retryTransfer(item)).rejects.toThrow('会话未连接');
+    expect(download).toHaveBeenCalledTimes(1);
   });
 
   it('returns null when the request is missing', async () => {
@@ -98,6 +130,7 @@ describe('retryTransfer', () => {
       name: 'orphan.txt',
       success: false,
       cancelled: false,
+      disconnected: false,
       error: 'failed',
       transferred: 0,
       total: 0,
@@ -109,5 +142,53 @@ describe('retryTransfer', () => {
     expect(await retryTransfer(item)).toBeNull();
     expect(upload).not.toHaveBeenCalled();
     expect(download).not.toHaveBeenCalled();
+  });
+});
+
+describe('resumeInterruptedTransfers', () => {
+  it('restarts interrupted transfers of the session and removes the stale entries', async () => {
+    download.mockResolvedValueOnce('transfer-2').mockResolvedValueOnce('transfer-3');
+
+    await startSftpTransfer({
+      sessionId: 'sess-1',
+      direction: 'download',
+      name: 'file.txt',
+      localPath: 'C:/tmp/file.txt',
+      remotePath: '/home/user/file.txt',
+      resume: true
+    });
+    useTransferStore.getState().markSessionDisconnected('sess-1');
+    expect(useTransferStore.getState().transfers[0].status).toBe('interrupted');
+
+    setConnection('sess-1', 'ssh-2');
+    const resumed = await resumeInterruptedTransfers('sess-1');
+
+    expect(resumed).toBe(1);
+    expect(download).toHaveBeenLastCalledWith('ssh-2', '/home/user/file.txt', 'C:/tmp/file.txt', {
+      recursive: false,
+      resume: true,
+      conflict: 'overwrite'
+    });
+    expect(useTransferStore.getState().transfers).toHaveLength(1);
+    expect(useTransferStore.getState().transfers[0].status).toBe('running');
+  });
+
+  it('keeps the interrupted entry when the session is still offline', async () => {
+    download.mockResolvedValueOnce('transfer-2');
+
+    await startSftpTransfer({
+      sessionId: 'sess-1',
+      direction: 'download',
+      name: 'file.txt',
+      localPath: 'C:/tmp/file.txt',
+      remotePath: '/home/user/file.txt'
+    });
+    useTransferStore.getState().markSessionDisconnected('sess-1');
+    setConnection('sess-1', null);
+
+    const resumed = await resumeInterruptedTransfers('sess-1');
+
+    expect(resumed).toBe(0);
+    expect(useTransferStore.getState().transfers[0].status).toBe('interrupted');
   });
 });

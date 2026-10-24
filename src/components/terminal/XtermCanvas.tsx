@@ -4,12 +4,17 @@ import { Terminal, type IDisposable } from '@xterm/xterm';
 import { writeText as writeClipboardText } from '@tauri-apps/plugin-clipboard-manager';
 import { FitAddon } from '@xterm/addon-fit';
 import type { SearchAddon } from '@xterm/addon-search';
+import { SerializeAddon } from '@xterm/addon-serialize';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 import { WebglAddon } from '@xterm/addon-webgl';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import '@xterm/xterm/css/xterm.css';
 import {
   closePtySession,
   createPtySession,
   getPtyPlatformInfo,
+  listenPtyClosed,
   listenPtyOutput,
   resizePty,
   writePty
@@ -25,9 +30,17 @@ import {
 import { useConnectionStore } from '../../stores/connectionStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useTransferStore } from '../../stores/transferStore';
+import { resumeInterruptedTransfers } from '../../lib/sftpTransfer';
 import { useTheme } from '../../theme/ThemeProvider';
 import { getTerminalTheme } from '../../theme/terminalTheme';
 import { NativeLigaturesAddon } from '../../theme/nativeLigaturesAddon';
+import {
+  clearTerminalSnapshot,
+  readTerminalSnapshot,
+  writeTerminalSnapshot
+} from '../../lib/terminalSnapshot';
+import { registerTerminalReconnect } from '../../lib/terminalReconnect';
 
 export interface XtermHandle {
   clear: () => void;
@@ -37,6 +50,7 @@ export interface XtermHandle {
   selectAll: () => void;
   findNext: (query: string) => void;
   findPrevious: (query: string) => void;
+  reconnect: () => void;
   focus: () => void;
   reset: () => void;
 }
@@ -138,6 +152,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
   ({ sessionId, fontSize = 13, transport = 'local', ssh, visible = true }, ref) => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const terminalRef = useRef<Terminal | null>(null);
+    const reconnectRef = useRef<(() => void) | null>(null);
     const searchRef = useRef<SearchAddon | null>(null);
     const loadSearchRef = useRef<(() => Promise<SearchAddon | null>) | null>(null);
     const visibleRef = useRef(visible);
@@ -207,6 +222,12 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       let ligaturesEnabled = false;
       let ligatureFeatureSettings = '';
       let webglAddon: WebglAddon | null = null;
+      let unicode11Addon: Unicode11Addon | null = null;
+      let webLinksAddon: WebLinksAddon | null = null;
+      let serializeAddon: SerializeAddon | null = null;
+      let selectionDisposable: IDisposable | undefined;
+      let snapshotCleanup: (() => void) | null = null;
+      let snapshotSave: (() => void) | null = null;
 
       const loadWebgl = () => {
         const instance = terminal;
@@ -478,120 +499,411 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         flush();
       };
 
-      const run = async (instance: Terminal) => {
-        try {
-          if (isSsh) {
-            if (!host || !username) {
-              throw new Error('缺少主机或用户名');
-            }
-            if (authMethod === 'password' && !password) {
-              throw new Error('缺少密码');
-            }
-            if (authMethod === 'key' && !privateKeyPath) {
-              throw new Error('缺少私钥文件');
-            }
+      let reconnectAttempts = 0;
+      let reconnectTimer: number | null = null;
+      let manualDisconnect = false;
+      let connectedAt = 0;
+      // Invalidates callbacks from superseded connection attempts.
+      let transportGeneration = 0;
 
-            useSessionStore.getState().setStatus(sessionId, 'connecting');
+      const clearTransportListeners = () => {
+        unlistenOutput?.();
+        unlistenOutput = undefined;
+        unlistenClosed?.();
+        unlistenClosed = undefined;
+        dataDisposable?.dispose();
+        dataDisposable = undefined;
+        resizeDisposable?.dispose();
+        resizeDisposable = undefined;
+      };
 
-            const id = await connectSsh({
-              host,
-              port,
-              username,
-              authMethod,
-              password,
-              privateKeyPath: privateKeyPath || undefined,
-              passphrase: passphrase || undefined,
-              cols: instance.cols,
-              rows: instance.rows
-            });
-
+      /**
+       * Append a divider after the historical output, then push the divider
+       * itself into scrollback so the new shell gets a clean screen.
+       *
+       * For restore/reconnect (`placeAtBottom`) the resulting buffer is
+       * `[...history][notice][current screen]`: the notice is the last
+       * scrollback line and the line above it is the historical output. It is
+       * only visible when the user scrolls up.
+       *
+       * Retry notices (`placeAtBottom === false`) stay on the current screen so
+       * the user can see reconnection progress.
+       */
+      const writeScrollbackNotice = (
+        instance: Terminal,
+        notice: string,
+        placeAtBottom: boolean
+      ): Promise<void> => {
+        if (disposed) {
+          return Promise.resolve();
+        }
+        flushPendingWrites();
+        // Save/reset/restore around the scroll-region reset: DECSTBM homes the
+        // cursor, which would place the divider over the restored history.
+        const reset = placeAtBottom
+          ? '\x1b[?1049l\x1b7\x1b[0m\x1b[r\x1b[?6l\x1b[4l\x1b[?1l\x1b[?7h\x1b[?25h\x1b8'
+          : '\x1b[?1049l\x1b[0m\x1b[?6l\x1b[4l\x1b[?1l\x1b[?7h\x1b[?25h';
+        return new Promise((resolve) => {
+          // Exit the alternate buffer first. Only then is the normal buffer's
+          // cursor/scroll state final, so scroll to its live bottom.
+          instance.write(reset, () => {
             if (disposed) {
-              void disconnectSsh(id);
+              resolve();
+              return;
+            }
+            instance.scrollToBottom();
+
+            if (!placeAtBottom) {
+              instance.write(`${notice}\r\n`, () => resolve());
               return;
             }
 
-            backendId = id;
-            resizeTarget = { id, transport: 'ssh' };
-            useConnectionStore
-              .getState()
-              .setConnection(sessionId, { sshId: id, status: 'connected' });
-            useSessionStore.getState().setStatus(sessionId, 'connected');
+            // Keep the divider on its own line, but do not insert an empty
+            // line when the cursor is already at the start of one.
+            const active = instance.buffer.active;
+            const currentLine = active.getLine(active.baseY + active.cursorY);
+            const hasContent = active.cursorX > 0 || Boolean(currentLine?.translateToString(true));
+            const prefix = hasContent ? '\r\n' : '';
 
-            // Register size sync before the async listener setup so a fit
-            // that settles during that window is not lost.
-            dataDisposable = instance.onData((data) => {
-              void writeSsh(id, data);
+            instance.write(`${prefix}${notice}`, () => {
+              if (disposed) {
+                resolve();
+                return;
+              }
+
+              // Scroll exactly the lines that contain history + the divider.
+              // The rows below the divider are blank and stay in the viewport,
+              // so they never become empty scrollback lines.
+              const rows = instance.rows;
+              const noticeRow = instance.buffer.active.cursorY;
+              const scrollLines = Math.min(rows, Math.max(1, noticeRow + 1));
+              instance.write(`\x1b[${rows};1H${'\r\n'.repeat(scrollLines)}\x1b[2J\x1b[H`, () =>
+                resolve()
+              );
             });
-            resizeDisposable = instance.onResize(({ cols, rows }) => {
-              sendBackendResize(cols, rows);
-            });
+          });
+        });
+      };
+      let connectSshTransport: (instance: Terminal) => Promise<void> = async () => {};
 
-            const stopOutput = await listenSshOutput(id, ({ data }) => {
-              enqueueWrite(data);
-            });
-            if (disposed) {
-              stopOutput();
-              return;
-            }
-            unlistenOutput = stopOutput;
+      const scheduleReconnect = (instance: Terminal, reason: string) => {
+        if (disposed || manualDisconnect || reconnectTimer !== null) {
+          return;
+        }
+        if (!useSettingsStore.getState().sshAutoReconnect) {
+          useSessionStore.getState().setStatus(sessionId, 'idle');
+          return;
+        }
+        if (reconnectAttempts >= 5) {
+          useSessionStore.getState().setStatus(sessionId, 'error');
+          enqueueWrite('\x1b[31m[SSH 自动重连已达上限，已停止重试]\x1b[0m\r\n');
+          return;
+        }
 
-            const stopClosed = await listenSshClosed(id, () => {
-              enqueueWrite('\r\n\x1b[33m[SSH 连接已断开]\x1b[0m\r\n');
-              useConnectionStore.getState().removeConnection(sessionId, id);
-              useSessionStore.getState().setStatus(sessionId, 'idle');
-            });
-            if (disposed) {
-              stopClosed();
-              return;
-            }
-            unlistenClosed = stopClosed;
-
-            instance.focus();
-          } else {
-            const id = await createPtySession(instance.cols, instance.rows);
-            if (disposed) {
-              void closePtySession(id);
-              return;
-            }
-
-            backendId = id;
-            resizeTarget = { id, transport: 'local' };
-            useSessionStore.getState().setStatus(sessionId, 'connected');
-
-            // Register size sync before the async listener setup so a fit
-            // that settles during that window is not lost.
-            dataDisposable = instance.onData((data) => {
-              void writePty(id, data);
-            });
-            resizeDisposable = instance.onResize(({ cols, rows }) => {
-              sendBackendResize(cols, rows);
-            });
-
-            const stopOutput = await listenPtyOutput(id, ({ data }) => {
-              enqueueWrite(data);
-            });
-            if (disposed) {
-              stopOutput();
-              return;
-            }
-            unlistenOutput = stopOutput;
-
-            instance.focus();
+        const attempt = reconnectAttempts + 1;
+        reconnectAttempts = attempt;
+        const delay = Math.min(16_000, 1_000 * 2 ** (attempt - 1));
+        useSessionStore.getState().setStatus(sessionId, 'connecting');
+        void writeScrollbackNotice(
+          instance,
+          `\x1b[33m[${reason}，${Math.round(delay / 1000)} 秒后进行第 ${attempt}/5 次重连]\x1b[0m`,
+          false
+        );
+        reconnectTimer = window.setTimeout(() => {
+          reconnectTimer = null;
+          if (disposed) {
+            return;
           }
-        } catch (error) {
-          if (!disposed) {
-            useSessionStore.getState().setStatus(sessionId, 'error');
-            if (isSsh) {
-              useConnectionStore.getState().removeConnection(sessionId);
+          if (!useSettingsStore.getState().sshAutoReconnect) {
+            useSessionStore.getState().setStatus(sessionId, 'idle');
+            return;
+          }
+          void connectSshTransport(instance);
+        }, delay);
+      };
+
+      connectSshTransport = async (instance: Terminal) => {
+        if (disposed) {
+          return;
+        }
+        clearTransportListeners();
+        const generation = ++transportGeneration;
+        if (backendId) {
+          // A previous attempt may have established a connection but failed
+          // while registering listeners. Do not leak it on the next attempt.
+          useConnectionStore.getState().removeConnection(sessionId, backendId);
+          void disconnectSsh(backendId);
+          backendId = '';
+          resizeTarget = null;
+        }
+
+        const id = crypto.randomUUID();
+        let established = false;
+        let closedEarly = false;
+
+        try {
+          if (!host || !username) {
+            throw new Error('缺少主机或用户名');
+          }
+          if (authMethod === 'password' && !password) {
+            throw new Error('缺少密码');
+          }
+          if (authMethod === 'key' && !privateKeyPath) {
+            throw new Error('缺少私钥文件');
+          }
+
+          useSessionStore.getState().setStatus(sessionId, 'connecting');
+
+          // Attach listeners before the backend opens the shell. The first
+          // prompt can be emitted before connectSsh resolves, and events that
+          // arrive without a listener are dropped by Tauri.
+          const stopOutput = await listenSshOutput(id, ({ data }) => {
+            if (generation === transportGeneration && !disposed) {
+              enqueueWrite(data);
             }
-            enqueueWrite(
-              `\r\n\x1b[31m${isSsh ? 'SSH 连接失败' : '无法创建 PTY 会话'}：${errorMessage(
-                error
-              )}\x1b[0m\r\n`
-            );
+          });
+          if (disposed || generation !== transportGeneration) {
+            stopOutput();
+            return;
+          }
+          unlistenOutput = stopOutput;
+
+          const stopClosed = await listenSshClosed(id, () => {
+            if (disposed || generation !== transportGeneration) {
+              return;
+            }
+            if (!established) {
+              closedEarly = true;
+              return;
+            }
+            const uptime = connectedAt > 0 ? Date.now() - connectedAt : 0;
+            clearTransportListeners();
+            backendId = '';
+            resizeTarget = null;
+            useConnectionStore.getState().removeConnection(sessionId, id);
+            useSessionStore.getState().setStatus(sessionId, 'idle');
+            useTransferStore.getState().markSessionDisconnected(sessionId);
+            // Only treat a connection as healthy once it survived a while;
+            // otherwise a server that accepts and immediately drops would
+            // reset the backoff and reconnect forever.
+            if (uptime > 10_000) {
+              reconnectAttempts = 0;
+            }
+
+            if (useSettingsStore.getState().sshAutoReconnect) {
+              void writeScrollbackNotice(instance, '\x1b[33m[SSH 连接已断开]\x1b[0m', true).then(
+                () => {
+                  if (disposed || generation !== transportGeneration) {
+                    return;
+                  }
+                  scheduleReconnect(instance, 'SSH 连接已断开');
+                }
+              );
+            } else {
+              enqueueWrite('\x1b[?1049l\r\n\x1b[33m[SSH 连接已断开]\x1b[0m\r\n');
+            }
+          });
+          if (disposed || generation !== transportGeneration) {
+            stopClosed();
+            return;
+          }
+          unlistenClosed = stopClosed;
+
+          const connectedId = await connectSsh({
+            id,
+            host,
+            port,
+            username,
+            authMethod,
+            password,
+            privateKeyPath: privateKeyPath || undefined,
+            passphrase: passphrase || undefined,
+            cols: instance.cols,
+            rows: instance.rows
+          });
+
+          if (disposed || generation !== transportGeneration || closedEarly) {
+            void disconnectSsh(connectedId);
+            if (closedEarly && !disposed && generation === transportGeneration) {
+              clearTransportListeners();
+              useSessionStore.getState().setStatus(sessionId, 'error');
+              useConnectionStore.getState().removeConnection(sessionId, connectedId);
+              enqueueWrite('\r\n\x1b[31mSSH 连接已被服务器关闭\x1b[0m\r\n');
+            }
+            return;
+          }
+
+          established = true;
+          backendId = connectedId;
+          connectedAt = Date.now();
+          resizeTarget = { id: connectedId, transport: 'ssh' };
+          useConnectionStore
+            .getState()
+            .setConnection(sessionId, { sshId: connectedId, status: 'connected' });
+          useSessionStore.getState().setStatus(sessionId, 'connected');
+          // Resume transfers interrupted by an earlier drop of this session;
+          // the backend picks up from the .part files via their fingerprints.
+          void resumeInterruptedTransfers(sessionId);
+
+          // A fit may have happened while the connection was being
+          // established. Sync the final grid to the remote PTY.
+          sendBackendResize(instance.cols, instance.rows);
+
+          dataDisposable = instance.onData((data) => {
+            void writeSsh(connectedId, data);
+          });
+          resizeDisposable = instance.onResize(({ cols, rows }) => {
+            sendBackendResize(cols, rows);
+          });
+
+          instance.focus();
+        } catch (error) {
+          if (!disposed && generation === transportGeneration) {
+            clearTransportListeners();
+            useSessionStore.getState().setStatus(sessionId, 'error');
+            useConnectionStore.getState().removeConnection(sessionId);
+            enqueueWrite(`\r\n\x1b[31mSSH 连接失败：${errorMessage(error)}\x1b[0m\r\n`);
+            // Only retry failures that happen after a connection was already
+            // established (network drops). Initial auth/host-key failures
+            // should surface immediately instead of looping.
+            if (connectedAt > 0 && established) {
+              scheduleReconnect(instance, 'SSH 连接失败');
+            }
           }
         }
       };
+
+      const connectLocalTransport = async (instance: Terminal) => {
+        if (disposed) {
+          return;
+        }
+        clearTransportListeners();
+        const generation = ++transportGeneration;
+        if (backendId) {
+          void closePtySession(backendId);
+          backendId = '';
+          resizeTarget = null;
+        }
+
+        const id = crypto.randomUUID();
+        let established = false;
+        let closedEarly = false;
+
+        try {
+          useSessionStore.getState().setStatus(sessionId, 'connecting');
+
+          // Attach listeners before the PTY is created. Shells print their
+          // prompt immediately, and Tauri drops events with no listener.
+          const stopOutput = await listenPtyOutput(id, ({ data }) => {
+            if (generation === transportGeneration && !disposed) {
+              enqueueWrite(data);
+            }
+          });
+          if (disposed || generation !== transportGeneration) {
+            stopOutput();
+            return;
+          }
+          unlistenOutput = stopOutput;
+
+          const stopClosed = await listenPtyClosed(id, () => {
+            if (disposed || generation !== transportGeneration) {
+              return;
+            }
+            if (!established) {
+              closedEarly = true;
+              return;
+            }
+            clearTransportListeners();
+            backendId = '';
+            resizeTarget = null;
+            useSessionStore.getState().setStatus(sessionId, 'idle');
+            void writeScrollbackNotice(instance, '\x1b[33m[本地 Shell 已退出]\x1b[0m', true);
+          });
+          if (disposed || generation !== transportGeneration) {
+            stopClosed();
+            return;
+          }
+          unlistenClosed = stopClosed;
+
+          const createdId = await createPtySession(id, instance.cols, instance.rows);
+          if (disposed || generation !== transportGeneration || closedEarly) {
+            void closePtySession(createdId);
+            if (closedEarly && !disposed && generation === transportGeneration) {
+              clearTransportListeners();
+              useSessionStore.getState().setStatus(sessionId, 'idle');
+              void writeScrollbackNotice(instance, '\x1b[33m[本地 Shell 已退出]\x1b[0m', true);
+            }
+            return;
+          }
+
+          established = true;
+          backendId = createdId;
+          resizeTarget = { id: createdId, transport: 'local' };
+          useSessionStore.getState().setStatus(sessionId, 'connected');
+
+          // A fit may have happened while the PTY was being created. Sync the
+          // final grid so the shell and xterm agree before the first prompt.
+          sendBackendResize(instance.cols, instance.rows);
+
+          dataDisposable = instance.onData((data) => {
+            void writePty(createdId, data);
+          });
+          resizeDisposable = instance.onResize(({ cols, rows }) => {
+            sendBackendResize(cols, rows);
+          });
+
+          instance.focus();
+        } catch (error) {
+          if (!disposed && generation === transportGeneration) {
+            clearTransportListeners();
+            useSessionStore.getState().setStatus(sessionId, 'error');
+            enqueueWrite(`\r\n\x1b[31m无法创建 PTY 会话：${errorMessage(error)}\x1b[0m\r\n`);
+          }
+        }
+      };
+
+      const run = async (instance: Terminal) => {
+        if (isSsh) {
+          await connectSshTransport(instance);
+        } else {
+          await connectLocalTransport(instance);
+        }
+      };
+
+      const reconnect = (instance: Terminal) => {
+        if (disposed) {
+          return;
+        }
+        if (reconnectTimer !== null) {
+          window.clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+        reconnectAttempts = 0;
+        useSessionStore.getState().setStatus(sessionId, 'connecting');
+        void writeScrollbackNotice(instance, '\x1b[33m[正在重连]\x1b[0m', true).then(() => {
+          if (disposed) {
+            return;
+          }
+          if (isSsh) {
+            void connectSshTransport(instance);
+          } else {
+            void connectLocalTransport(instance);
+          }
+        });
+      };
+
+      reconnectRef.current = () => {
+        if (terminal) {
+          reconnect(terminal);
+        }
+      };
+      const unregisterReconnect = registerTerminalReconnect(sessionId, () => {
+        if (!terminal) {
+          return false;
+        }
+        reconnect(terminal);
+        return true;
+      });
 
       const initialize = () => {
         initFrame = null;
@@ -636,6 +948,91 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
             instance.open(container);
 
+            try {
+              const unicode11 = new Unicode11Addon();
+              instance.loadAddon(unicode11);
+              instance.unicode.activeVersion = '11';
+              unicode11Addon = unicode11;
+            } catch {
+              unicode11Addon = null;
+            }
+
+            try {
+              const webLinks = new WebLinksAddon((event, uri) => {
+                event.preventDefault();
+                void openUrl(uri).catch(() => undefined);
+              });
+              instance.loadAddon(webLinks);
+              webLinksAddon = webLinks;
+            } catch {
+              webLinksAddon = null;
+            }
+
+            try {
+              const serialize = new SerializeAddon();
+              instance.loadAddon(serialize);
+              serializeAddon = serialize;
+            } catch {
+              serializeAddon = null;
+            }
+
+            let copyTimer: number | null = null;
+            selectionDisposable = instance.onSelectionChange(() => {
+              if (!useSettingsStore.getState().terminalCopyOnSelect) {
+                return;
+              }
+              if (copyTimer !== null) {
+                window.clearTimeout(copyTimer);
+              }
+              copyTimer = window.setTimeout(() => {
+                copyTimer = null;
+                const selection = instance.getSelection();
+                if (selection) {
+                  void writeClipboardText(selection).catch(() => undefined);
+                }
+              }, 80);
+            });
+            const clearCopyTimer = () => {
+              if (copyTimer !== null) {
+                window.clearTimeout(copyTimer);
+                copyTimer = null;
+              }
+            };
+            const saveSnapshot = () => {
+              if (!serializeAddon || !useSettingsStore.getState().terminalRestoreScrollback) {
+                return;
+              }
+              // Full-screen programs use the alternate buffer; restoring that
+              // state into a fresh shell is confusing and often broken.
+              if (instance.buffer.active.type === 'alternate') {
+                return;
+              }
+              try {
+                writeTerminalSnapshot(
+                  sessionId,
+                  // Modes include DECOM (origin mode); addon-serialize writes
+                  // them after placing the cursor, and enabling origin mode
+                  // homes the cursor to the top-left (xtermjs/xterm.js#6233).
+                  serializeAddon.serialize({
+                    scrollback: 2000,
+                    excludeModes: true,
+                    excludeAltBuffer: true
+                  })
+                );
+              } catch {
+                /* terminal is being disposed */
+              }
+            };
+            const onBeforeUnload = () => saveSnapshot();
+            window.addEventListener('beforeunload', onBeforeUnload);
+            window.addEventListener('pagehide', onBeforeUnload);
+            snapshotSave = saveSnapshot;
+            snapshotCleanup = () => {
+              clearCopyTimer();
+              window.removeEventListener('beforeunload', onBeforeUnload);
+              window.removeEventListener('pagehide', onBeforeUnload);
+            };
+
             ligaturesEnabled = settings.terminalFontLigatures;
             ligatureFeatureSettings = settings.terminalFontFeatureSettings;
             if (ligaturesEnabled) {
@@ -665,8 +1062,37 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
             terminalRef.current = instance;
 
-            scheduleFlush();
-            void run(instance);
+            let restored = Promise.resolve();
+            if (settings.terminalRestoreScrollback) {
+              const snapshot = readTerminalSnapshot(sessionId);
+              if (snapshot) {
+                restored = new Promise<void>((resolve) => {
+                  try {
+                    instance.write(snapshot, () => {
+                      void writeScrollbackNotice(
+                        instance,
+                        '\x1b[90m[已恢复上次会话的滚动缓冲]\x1b[0m',
+                        true
+                      ).then(resolve);
+                    });
+                  } catch {
+                    /* ignore malformed snapshot */
+                    resolve();
+                  }
+                });
+              }
+            }
+
+            // Wait for the restored buffer to be fully parsed before starting
+            // the shell. Otherwise ConPTY's first repaint can run before the
+            // cursor has settled at the end of the snapshot.
+            void restored.then(() => {
+              if (disposed) {
+                return;
+              }
+              scheduleFlush();
+              void run(instance);
+            });
           } catch (error) {
             if (!disposed) {
               console.error('[terminal] initialization failed', error);
@@ -1001,7 +1427,20 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         }
         cancelResizeTimer();
 
+        snapshotSave?.();
+        snapshotCleanup?.();
+        selectionDisposable?.dispose();
+        selectionDisposable = undefined;
+
+        unregisterReconnect();
+        transportGeneration += 1;
         disposed = true;
+        manualDisconnect = true;
+        reconnectRef.current = null;
+        if (reconnectTimer !== null) {
+          window.clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
         startRef.current = null;
         resumeRef.current = null;
         refitRef.current = null;
@@ -1047,6 +1486,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         fitAddon?.dispose();
         searchAddon?.dispose();
         ligaturesAddon?.dispose();
+        unicode11Addon?.dispose();
+        webLinksAddon?.dispose();
+        serializeAddon?.dispose();
         webglAddon?.dispose();
         terminal?.dispose();
       };
@@ -1111,6 +1553,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             terminal.clear();
             terminal.focus();
           }
+          clearTerminalSnapshot(sessionId);
         },
         copySelection: async () => {
           const terminal = terminalRef.current;
@@ -1141,9 +1584,10 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           }
         },
         focus: () => terminalRef.current?.focus(),
+        reconnect: () => reconnectRef.current?.(),
         reset: () => terminalRef.current?.reset()
       }),
-      []
+      [sessionId]
     );
 
     return <div ref={containerRef} className="h-full w-full" />;

@@ -7,6 +7,7 @@ export interface SshOutputPayload {
 }
 
 export interface SshConnectOptions {
+  id: string;
   host: string;
   port: number;
   username: string;
@@ -81,7 +82,7 @@ export interface SftpEntry {
   permissions: number | null;
 }
 
-export type SftpConflictPolicy = 'overwrite' | 'skip' | 'rename';
+export type SftpConflictPolicy = 'ask' | 'overwrite' | 'skip' | 'rename' | 'newer';
 
 export interface SftpTransferOptions {
   recursive: boolean;
@@ -105,6 +106,8 @@ export interface SftpTransferDonePayload {
   name: string;
   success: boolean;
   cancelled: boolean;
+  /** The failure was caused by the SSH connection dropping, not the file. */
+  disconnected: boolean;
   error: string | null;
   transferred: number;
   total: number;
@@ -112,8 +115,20 @@ export interface SftpTransferDonePayload {
   files_total: number;
 }
 
+export interface SftpConflictPayload {
+  request_id: string;
+  transfer_id: string;
+  direction: string;
+  name: string;
+  source_size: number;
+  source_mtime: number;
+  target_size: number;
+  target_mtime: number;
+}
+
 export async function connectSsh(options: SshConnectOptions): Promise<string> {
   return invoke<string>('ssh_connect', {
+    id: options.id,
     host: options.host,
     port: options.port,
     username: options.username,
@@ -193,6 +208,24 @@ export async function pauseSftpTransfer(transferId: string, paused: boolean): Pr
 
 export async function cancelSftpTransfer(transferId: string): Promise<void> {
   await invoke('sftp_cancel_transfer', { transferId });
+}
+
+export type SftpConflictAction = 'overwrite' | 'skip' | 'rename' | 'cancel';
+
+export async function respondSftpConflict(
+  requestId: string,
+  action: SftpConflictAction,
+  applyToAll: boolean
+): Promise<void> {
+  await invoke('sftp_conflict_response', { requestId, action, applyToAll });
+}
+
+export async function listenSftpConflict(
+  onConflict: (payload: SftpConflictPayload) => void
+): Promise<() => void> {
+  return listen<SftpConflictPayload>('sftp-conflict', (event) => {
+    onConflict(event.payload);
+  });
 }
 
 export async function importKnownHosts(path: string): Promise<KnownHostsImportResult> {

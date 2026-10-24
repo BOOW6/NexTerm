@@ -16,6 +16,8 @@ import {
 
 export type TerminalCursorStyle = 'block' | 'underline' | 'bar';
 
+export type LanguageSetting = 'system' | 'zh-CN' | 'en-US';
+
 export type ShortcutAction = 'commandPalette' | 'newLocal' | 'newSsh' | 'openSettings';
 
 export const DEFAULT_SHORTCUTS: Record<ShortcutAction, string> = {
@@ -26,6 +28,7 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, string> = {
 };
 
 export interface SettingsSnapshot {
+  language: LanguageSetting;
   themeMode: ThemeMode;
   lightTheme: ThemeId;
   darkTheme: ThemeId;
@@ -41,6 +44,10 @@ export interface SettingsSnapshot {
   terminalCursorBlink: boolean;
   terminalScrollback: number;
   terminalLineHeight: number;
+  terminalCopyOnSelect: boolean;
+  terminalRestoreScrollback: boolean;
+  sshAutoReconnect: boolean;
+  sshRememberCredentials: boolean;
   defaultAuthMethod: SessionAuthMethod;
   defaultPort: number;
   defaultUsername: string;
@@ -51,6 +58,7 @@ const DEFAULT_UI_FONT_FAMILY =
   "'Microsoft YaHei', '微软雅黑', Tahoma, Arial, 'PingFang SC', 'Hiragino Sans GB', sans-serif";
 
 export const DEFAULT_SETTINGS: SettingsSnapshot = {
+  language: 'system',
   themeMode: 'system',
   lightTheme: DEFAULT_LIGHT_THEME,
   darkTheme: DEFAULT_DARK_THEME,
@@ -66,6 +74,10 @@ export const DEFAULT_SETTINGS: SettingsSnapshot = {
   terminalCursorBlink: true,
   terminalScrollback: 10000,
   terminalLineHeight: 1,
+  terminalCopyOnSelect: false,
+  terminalRestoreScrollback: true,
+  sshAutoReconnect: true,
+  sshRememberCredentials: false,
   defaultAuthMethod: 'password',
   defaultPort: 22,
   defaultUsername: '',
@@ -83,8 +95,13 @@ function readLegacyThemeMode(): ThemeMode | null {
   }
 }
 
+function normalizeLanguage(value: unknown): LanguageSetting {
+  return value === 'zh-CN' || value === 'en-US' ? value : 'system';
+}
+
 function normalizeSettings(input: SettingsSnapshot): SettingsSnapshot {
   return {
+    language: normalizeLanguage(input.language),
     themeMode: normalizeThemeMode(input.themeMode),
     lightTheme: normalizeThemeId(input.lightTheme, 'light'),
     darkTheme: normalizeThemeId(input.darkTheme, 'dark'),
@@ -109,6 +126,16 @@ function normalizeSettings(input: SettingsSnapshot): SettingsSnapshot {
       1.6,
       Math.max(0.8, Math.round(input.terminalLineHeight * 10) / 10 || 1)
     ),
+    terminalCopyOnSelect: Boolean(input.terminalCopyOnSelect),
+    terminalRestoreScrollback:
+      input.terminalRestoreScrollback === undefined
+        ? DEFAULT_SETTINGS.terminalRestoreScrollback
+        : Boolean(input.terminalRestoreScrollback),
+    sshAutoReconnect:
+      input.sshAutoReconnect === undefined
+        ? DEFAULT_SETTINGS.sshAutoReconnect
+        : Boolean(input.sshAutoReconnect),
+    sshRememberCredentials: Boolean(input.sshRememberCredentials),
     defaultAuthMethod:
       input.defaultAuthMethod === 'key'
         ? 'key'

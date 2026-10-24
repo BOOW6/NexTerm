@@ -15,6 +15,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { Button } from '../ui/button';
 import { useQuickConnectLauncher } from '../../features/workspace/useQuickConnectLauncher';
+import { useI18n } from '../../i18n';
 
 const LAYOUT_KEY = 'nexterm.workspace.layout.v1';
 
@@ -53,21 +54,20 @@ interface Disposable {
 
 function EmptyWorkspace() {
   const openQuickConnect = useQuickConnectLauncher();
+  const { t } = useI18n();
 
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background p-6">
       <div className="pointer-events-auto w-full max-w-sm overflow-hidden rounded-sm border border-border-strong bg-surface-elevated shadow-panel">
         <div className="app-dialog-header border-b border-border bg-panel-title px-3 py-2 text-xs font-semibold text-foreground">
-          <span className="app-dialog-title">NexTerm 工作区</span>
+          <span className="app-dialog-title">{t('app.workspaceTitle')}</span>
         </div>
         <div className="flex flex-col items-center px-4 py-5 text-center">
           <div className="flex h-10 w-10 items-center justify-center rounded-sm border border-border bg-background-alt">
             <Plus className="h-5 w-5 text-muted" />
           </div>
-          <h2 className="mt-3 text-xs font-semibold text-foreground">开始使用 NexTerm</h2>
-          <p className="mt-1 text-[11px] text-muted">
-            从左侧会话列表选择会话，或新建一个本地终端 / SSH 连接。
-          </p>
+          <h2 className="mt-3 text-xs font-semibold text-foreground">{t('app.workspaceTitle')}</h2>
+          <p className="mt-1 text-[11px] text-muted">{t('app.workspaceHint')}</p>
           <Button
             size="sm"
             variant="primary"
@@ -75,7 +75,7 @@ function EmptyWorkspace() {
             onClick={() => void openQuickConnect({ kind: 'local' })}
           >
             <Plus className="h-3 w-3" />
-            新建会话
+            {t('app.newSession')}
           </Button>
         </div>
       </div>

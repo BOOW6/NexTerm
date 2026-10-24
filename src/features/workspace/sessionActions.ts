@@ -1,6 +1,7 @@
 import type { DockviewApi, IDockviewPanel } from 'dockview-react';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
+import { requestTerminalReconnect } from '../../lib/terminalReconnect';
 
 export type SplitDirection = 'right' | 'below';
 
@@ -115,16 +116,19 @@ export function duplicateSessionPanel(
 }
 
 export function reconnectSessionPanels(api: DockviewApi, sessionId: string): void {
-  const panels = findPanelsForSession(api, sessionId);
-  if (panels.length === 0) {
-    openSessionPanel(api, sessionId);
+  // Reconnect the terminal instance in place. Closing and recreating the
+  // panel loses the live buffer and moves the tab to the end of the group.
+  if (requestTerminalReconnect(sessionId)) {
     return;
   }
 
-  panels.forEach((panel) => panel.api.close());
-  window.setTimeout(() => {
-    openSessionPanel(api, sessionId, { forceNew: true });
-  }, 0);
+  const panels = findPanelsForSession(api, sessionId);
+  if (panels.length > 0) {
+    panels[0].api.setActive();
+    return;
+  }
+
+  openSessionPanel(api, sessionId);
 }
 
 export function closeSessionPanels(api: DockviewApi, sessionId: string): void {

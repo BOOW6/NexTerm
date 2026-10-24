@@ -2,11 +2,7 @@ import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
 const EMPTY_MODULE_ID = '\0empty-node-module';
-const nodeOnlyFontPackages = new Set([
-  'font-finder',
-  'get-system-fonts',
-  'promise-stream-reader'
-]);
+const nodeOnlyFontPackages = new Set(['font-finder', 'get-system-fonts', 'promise-stream-reader']);
 const nodeBuiltins = new Set(['fs', 'os', 'path', 'stream', 'util']);
 
 function stubFontLigaturesNodeBranches(): Plugin {

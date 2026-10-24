@@ -8,6 +8,7 @@ const HostKeyWindow = lazy(() => import('./HostKeyWindow'));
 const PromptWindow = lazy(() => import('./PromptWindow'));
 const QuickConnectWindow = lazy(() => import('./QuickConnectWindow'));
 const SettingsWindow = lazy(() => import('./SettingsWindow'));
+const SftpConflictWindow = lazy(() => import('./SftpConflictWindow'));
 
 function WindowFallback() {
   return (
@@ -31,6 +32,8 @@ export default function WindowRoot() {
         return <HostKeyWindow />;
       case 'prompt':
         return <PromptWindow />;
+      case 'sftp-conflict':
+        return <SftpConflictWindow />;
       default:
         return <App />;
     }

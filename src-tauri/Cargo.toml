@@ -13,7 +13,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.0.0", features = [] }
 
 [dependencies]
+aes-gcm = "0.10"
 anyhow = "1"
+argon2 = "0.5"
 base64 = "0.22"
 fontdb = "0.24"
 font-kit = "0.14"
@@ -29,6 +31,7 @@ tauri = { version = "2.0.0", features = [] }
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-decorum = "1"
+tauri-plugin-opener = "2"
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }
 walkdir = "2"

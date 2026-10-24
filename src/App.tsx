@@ -5,19 +5,23 @@ import SessionSidebar from './components/sessions/SessionSidebar';
 import CommandPalette from './components/command/CommandPalette';
 import { Toaster } from './components/ui/toast';
 import { WorkspaceProvider } from './features/workspace/WorkspaceContext';
+import { useSftpConflictEvents } from './hooks/useSftpConflictEvents';
 import { useSftpTransferEvents } from './hooks/useSftpTransferEvents';
 import { useSshHostKeyEvents } from './hooks/useSshHostKeyEvents';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
 import { useSettingsSync } from './hooks/useSettingsSync';
 import { useWindowState } from './hooks/useWindowState';
 import { useWindowTitle } from './hooks/useWindowTitle';
+import { useVaultEvents } from './hooks/useVaultEvents';
 import { useWorkspaceStore } from './stores/workspaceStore';
 
 function AppShell() {
   useSftpTransferEvents();
+  useSftpConflictEvents();
   useSshHostKeyEvents();
   useGlobalShortcuts();
   useSettingsSync();
+  useVaultEvents();
   useWindowState();
   useWindowTitle();
 

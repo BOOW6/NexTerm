@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowUp,
   CheckCircle2,
@@ -27,7 +28,8 @@ const statusText: Record<TransferStatus, string> = {
   paused: '已暂停',
   done: '已完成',
   error: '失败',
-  cancelled: '已取消'
+  cancelled: '已取消',
+  interrupted: '已中断 · 等待重连续传'
 };
 
 export default function TransferPanel() {
@@ -37,7 +39,7 @@ export default function TransferPanel() {
   const setPaused = useTransferStore((state) => state.setPaused);
 
   const hasFinished = transfers.some(
-    (item) => item.status !== 'running' && item.status !== 'paused'
+    (item) => item.status === 'done' || item.status === 'error' || item.status === 'cancelled'
   );
   const activeCount = transfers.filter(
     (item) => item.status === 'running' || item.status === 'paused'
@@ -105,12 +107,17 @@ export default function TransferPanel() {
               const StatusIcon =
                 item.status === 'done'
                   ? CheckCircle2
-                  : item.status === 'error' || item.status === 'cancelled'
-                    ? XCircle
-                    : item.paused
-                      ? Pause
-                      : null;
-              const canRetry = item.status === 'error' || item.status === 'cancelled';
+                  : item.status === 'interrupted'
+                    ? AlertTriangle
+                    : item.status === 'error' || item.status === 'cancelled'
+                      ? XCircle
+                      : item.paused
+                        ? Pause
+                        : null;
+              const canRetry =
+                item.status === 'error' ||
+                item.status === 'cancelled' ||
+                item.status === 'interrupted';
 
               return (
                 <div
@@ -136,9 +143,11 @@ export default function TransferPanel() {
                           'h-3.5 w-3.5 shrink-0',
                           item.status === 'done'
                             ? 'text-success'
-                            : item.status === 'cancelled'
-                              ? 'text-muted'
-                              : 'text-error'
+                            : item.status === 'interrupted'
+                              ? 'text-warning'
+                              : item.status === 'cancelled'
+                                ? 'text-muted'
+                                : 'text-error'
                         )}
                       />
                     ) : null}
@@ -197,7 +206,7 @@ export default function TransferPanel() {
                           ? 'bg-error'
                           : item.status === 'cancelled'
                             ? 'bg-muted'
-                            : item.paused
+                            : item.status === 'interrupted' || item.paused
                               ? 'bg-warning'
                               : 'bg-accent'
                       )}

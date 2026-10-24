@@ -6,6 +6,7 @@ use crate::ssh::{
     KnownHost, KnownHostsExportResult, KnownHostsImportResult, PortForwardInfo, SftpEntry,
     SftpTransferOptions, SshManager,
 };
+use crate::vault::{VaultManager, VaultStatus};
 
 #[tauri::command]
 pub async fn fonts_list(state: State<'_, FontManager>) -> Result<Vec<SystemFontFamily>, String> {
@@ -41,11 +42,12 @@ pub fn pty_platform_info(state: State<'_, PtySessionManager>) -> PtyPlatformInfo
 pub fn create_pty_session(
     app: AppHandle,
     state: State<'_, PtySessionManager>,
+    id: String,
     cols: u16,
     rows: u16,
 ) -> Result<String, String> {
     state
-        .create_session(app, cols, rows)
+        .create_session(app, id, cols, rows)
         .map_err(|err| err.to_string())
 }
 
@@ -82,6 +84,7 @@ pub fn close_pty_session(state: State<'_, PtySessionManager>, id: String) -> Res
 pub async fn ssh_connect(
     app: AppHandle,
     state: State<'_, SshManager>,
+    id: String,
     host: String,
     port: u16,
     username: String,
@@ -95,6 +98,7 @@ pub async fn ssh_connect(
     state
         .connect(
             app,
+            id,
             host,
             port,
             username,
@@ -227,6 +231,17 @@ pub fn sftp_cancel_transfer(
 }
 
 #[tauri::command]
+pub fn sftp_conflict_response(
+    state: State<'_, SshManager>,
+    request_id: String,
+    action: String,
+    apply_to_all: bool,
+) -> Result<(), String> {
+    state.resolve_sftp_conflict(&request_id, &action, apply_to_all);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn known_hosts_import(
     state: State<'_, SshManager>,
     path: String,
@@ -326,4 +341,154 @@ pub async fn sftp_mkdir(
         .sftp_mkdir(&id, path)
         .await
         .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn read_text_file(path: String) -> Result<String, String> {
+    const MAX_BYTES: u64 = 8 * 1024 * 1024;
+    let metadata = std::fs::metadata(&path).map_err(|err| err.to_string())?;
+    if metadata.len() > MAX_BYTES {
+        return Err("文件过大（上限 8 MiB）".to_string());
+    }
+    let bytes = std::fs::read(&path).map_err(|err| err.to_string())?;
+    Ok(decode_text(bytes))
+}
+
+/// Import files such as PuTTY `.reg` exports are commonly UTF-16LE with a BOM,
+/// while SSH config and MobaXterm `.ini` are usually UTF-8. Handle both.
+fn decode_text(bytes: Vec<u8>) -> String {
+    if bytes.starts_with(&[0xFF, 0xFE]) {
+        return decode_utf16(&bytes[2..], true);
+    }
+    if bytes.starts_with(&[0xFE, 0xFF]) {
+        return decode_utf16(&bytes[2..], false);
+    }
+    let sample = &bytes[..bytes.len().min(200)];
+    let nul_bytes = sample.iter().filter(|byte| **byte == 0).count();
+    if nul_bytes > sample.len() / 4 {
+        return decode_utf16(&bytes, true);
+    }
+    String::from_utf8_lossy(&bytes)
+        .trim_start_matches('\u{feff}')
+        .to_string()
+}
+
+fn decode_utf16(bytes: &[u8], little_endian: bool) -> String {
+    let (chunks, _) = bytes.as_chunks::<2>();
+    let units: Vec<u16> = chunks
+        .iter()
+        .map(|chunk| {
+            if little_endian {
+                u16::from_le_bytes(*chunk)
+            } else {
+                u16::from_be_bytes(*chunk)
+            }
+        })
+        .collect();
+    String::from_utf16_lossy(&units)
+}
+
+#[tauri::command]
+pub fn write_text_file(path: String, contents: String) -> Result<(), String> {
+    std::fs::write(&path, contents).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn vault_status(state: State<'_, VaultManager>) -> VaultStatus {
+    state.status()
+}
+
+#[tauri::command]
+pub fn vault_initialize(
+    state: State<'_, VaultManager>,
+    master_password: String,
+) -> Result<VaultStatus, String> {
+    state
+        .initialize(&master_password)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn vault_unlock(
+    state: State<'_, VaultManager>,
+    master_password: String,
+) -> Result<bool, String> {
+    state
+        .unlock(&master_password)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn vault_lock(state: State<'_, VaultManager>) {
+    state.lock();
+}
+
+#[tauri::command]
+pub fn vault_set(
+    state: State<'_, VaultManager>,
+    name: String,
+    secret: String,
+) -> Result<(), String> {
+    state.set(&name, &secret).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn vault_get(state: State<'_, VaultManager>, name: String) -> Result<Option<String>, String> {
+    state.get(&name).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn vault_delete(state: State<'_, VaultManager>, name: String) -> Result<(), String> {
+    state.delete(&name).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn vault_clear(state: State<'_, VaultManager>) -> Result<(), String> {
+    state.clear().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn vault_change_password(
+    state: State<'_, VaultManager>,
+    old_password: String,
+    new_password: String,
+) -> Result<VaultStatus, String> {
+    state
+        .change_password(&old_password, &new_password)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn vault_reset(state: State<'_, VaultManager>) -> Result<(), String> {
+    state.reset().map_err(|err| err.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_text;
+
+    #[test]
+    fn decodes_utf8_with_bom() {
+        let mut bytes = vec![0xEF, 0xBB, 0xBF];
+        bytes.extend_from_slice("Host prod".as_bytes());
+        assert_eq!(decode_text(bytes), "Host prod");
+    }
+
+    #[test]
+    fn decodes_utf16le_with_bom() {
+        let mut bytes = vec![0xFF, 0xFE];
+        for unit in "Host prod".encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        assert_eq!(decode_text(bytes), "Host prod");
+    }
+
+    #[test]
+    fn detects_utf16le_without_bom() {
+        let mut bytes = Vec::new();
+        for unit in "Windows Registry Editor Version 5.00".encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        assert_eq!(decode_text(bytes), "Windows Registry Editor Version 5.00");
+    }
 }

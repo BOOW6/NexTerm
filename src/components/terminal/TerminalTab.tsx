@@ -17,7 +17,6 @@ import SshConnectForm from './SshConnectForm';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useCredentialStore } from '../../stores/credentialStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { useWorkspace } from '../../features/workspace/WorkspaceContext';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Tooltip } from '../ui/tooltip';
@@ -25,6 +24,7 @@ import { toast } from '../ui/toast';
 import { showNativeContextMenu } from '../../lib/appWindows';
 import { readText as readClipboardText } from '@tauri-apps/plugin-clipboard-manager';
 import { TERMINAL_ACTION_EVENT, type TerminalAction } from '../../lib/terminalCommands';
+import { useI18n } from '../../i18n';
 
 const PANEL_PREFIX = 'session-';
 const MIN_FONT_SIZE = 10;
@@ -46,7 +46,7 @@ export default function TerminalTab(props: IDockviewPanelProps) {
   );
   const clearCredentials = useCredentialStore((state) => state.clearCredentials);
 
-  const { reconnectSession } = useWorkspace();
+  const { t } = useI18n();
 
   const defaultFontSize = useSettingsStore((state) => state.terminalFontSize);
   const terminalRef = useRef<XtermHandle>(null);
@@ -82,7 +82,7 @@ export default function TerminalTab(props: IDockviewPanelProps) {
       if (action === 'copy') {
         void terminalRef.current?.copySelection().then((copied) => {
           toast({
-            title: copied ? '已复制选中内容' : '没有选中内容',
+            title: copied ? t('terminal.copied') : t('terminal.nothingSelected'),
             variant: copied ? 'success' : 'default'
           });
         });
@@ -93,7 +93,7 @@ export default function TerminalTab(props: IDockviewPanelProps) {
               terminalRef.current?.paste(text);
             }
           })
-          .catch(() => toast({ title: '无法读取剪贴板', variant: 'error' }));
+          .catch(() => toast({ title: t('terminal.clipboardFailed'), variant: 'error' }));
       } else if (action === 'select-all') {
         terminalRef.current?.selectAll();
       } else if (action === 'find') {
@@ -111,13 +111,13 @@ export default function TerminalTab(props: IDockviewPanelProps) {
 
     window.addEventListener(TERMINAL_ACTION_EVENT, handler);
     return () => window.removeEventListener(TERMINAL_ACTION_EVENT, handler);
-  }, [defaultFontSize, props.api]);
+  }, [defaultFontSize, props.api, t]);
 
   if (!session) {
     return (
       <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-background text-center">
-        <p className="text-sm font-medium text-foreground">会话不存在</p>
-        <p className="text-xs text-muted">该会话可能已被删除。</p>
+        <p className="text-sm font-medium text-foreground">{t('terminal.missing')}</p>
+        <p className="text-xs text-muted">{t('terminal.missingHint')}</p>
       </div>
     );
   }
@@ -145,7 +145,7 @@ export default function TerminalTab(props: IDockviewPanelProps) {
   const handleCopy = async () => {
     const copied = await terminalRef.current?.copySelection();
     toast({
-      title: copied ? '已复制选中内容' : '没有选中内容',
+      title: copied ? t('terminal.copied') : t('terminal.nothingSelected'),
       variant: copied ? 'success' : 'default'
     });
   };
@@ -157,12 +157,12 @@ export default function TerminalTab(props: IDockviewPanelProps) {
   const openTerminalMenu = async () => {
     const hasSelection = Boolean(terminalRef.current?.hasSelection());
     const index = await showNativeContextMenu([
-      { label: '复制', enabled: hasSelection },
-      { label: '粘贴' },
-      { label: '全选' },
-      { label: '查找', separatorBefore: true },
-      { label: '清屏' },
-      { label: '重新连接', separatorBefore: true }
+      { label: t('terminal.copyAction'), enabled: hasSelection },
+      { label: t('terminal.paste') },
+      { label: t('terminal.selectAll') },
+      { label: t('terminal.find'), separatorBefore: true },
+      { label: t('terminal.clear') },
+      { label: t('terminal.reconnect'), separatorBefore: true }
     ]);
 
     if (index === 0) {
@@ -174,7 +174,7 @@ export default function TerminalTab(props: IDockviewPanelProps) {
             terminalRef.current?.paste(text);
           }
         })
-        .catch(() => toast({ title: '无法读取剪贴板', variant: 'error' }));
+        .catch(() => toast({ title: t('terminal.clipboardFailed'), variant: 'error' }));
     } else if (index === 2) {
       terminalRef.current?.selectAll();
     } else if (index === 3) {
@@ -182,19 +182,19 @@ export default function TerminalTab(props: IDockviewPanelProps) {
     } else if (index === 4) {
       terminalRef.current?.clear();
     } else if (index === 5) {
-      reconnectSession(session.id);
-      toast({ title: '正在重连会话…' });
+      terminalRef.current?.reconnect();
+      toast({ title: t('terminal.reconnectToast') });
     }
   };
 
   return (
     <div className="flex h-full w-full flex-col bg-background">
       <div className="flex h-7 shrink-0 items-center gap-0.5 border-b border-border bg-surface px-1">
-        <Tooltip label="查找">
+        <Tooltip label={t('terminal.find')}>
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="查找"
+            aria-label={t('terminal.find')}
             onClick={() => setSearchOpen((value) => !value)}
           >
             <Search className="h-3 w-3" />
@@ -215,15 +215,15 @@ export default function TerminalTab(props: IDockviewPanelProps) {
                   setSearchOpen(false);
                 }
               }}
-              placeholder="查找..."
+              placeholder={t('terminal.searchPlaceholder')}
               size="sm"
               width={144}
-              aria-label="查找内容"
+              aria-label={t('terminal.find')}
             />
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label="上一个"
+              aria-label={t('terminal.prevMatch')}
               onClick={() => runSearch('previous')}
             >
               <ChevronUp className="h-3 w-3" />
@@ -231,7 +231,7 @@ export default function TerminalTab(props: IDockviewPanelProps) {
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label="下一个"
+              aria-label={t('terminal.nextMatch')}
               onClick={() => runSearch('next')}
             >
               <ChevronDown className="h-3 w-3" />
@@ -239,7 +239,7 @@ export default function TerminalTab(props: IDockviewPanelProps) {
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label="关闭查找"
+              aria-label={t('terminal.closeSearch')}
               onClick={() => setSearchOpen(false)}
             >
               <X className="h-3 w-3" />
@@ -249,22 +249,22 @@ export default function TerminalTab(props: IDockviewPanelProps) {
 
         <div className="flex-1" />
 
-        <Tooltip label="清屏">
+        <Tooltip label={t('terminal.clear')}>
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="清屏"
+            aria-label={t('terminal.clear')}
             onClick={() => terminalRef.current?.clear()}
           >
             <Eraser className="h-3 w-3" />
           </Button>
         </Tooltip>
 
-        <Tooltip label="复制选中">
+        <Tooltip label={t('terminal.copy')}>
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="复制选中"
+            aria-label={t('terminal.copy')}
             onClick={() => void handleCopy()}
           >
             <Copy className="h-3 w-3" />
@@ -273,22 +273,22 @@ export default function TerminalTab(props: IDockviewPanelProps) {
 
         <span className="mx-0.5 h-3 w-px bg-border" />
 
-        <Tooltip label="缩小字号">
+        <Tooltip label={t('terminal.fontDown')}>
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="缩小字号"
+            aria-label={t('terminal.fontDown')}
             onClick={() => adjustFont(-1)}
           >
             <ZoomOut className="h-3 w-3" />
           </Button>
         </Tooltip>
         <span className="w-7 text-center text-[10px] tabular-nums text-muted">{fontSize}px</span>
-        <Tooltip label="放大字号">
+        <Tooltip label={t('terminal.fontUp')}>
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="放大字号"
+            aria-label={t('terminal.fontUp')}
             onClick={() => adjustFont(1)}
           >
             <ZoomIn className="h-3 w-3" />
@@ -298,11 +298,11 @@ export default function TerminalTab(props: IDockviewPanelProps) {
         <span className="mx-0.5 h-3 w-px bg-border" />
 
         {!isLocal ? (
-          <Tooltip label="重新认证">
+          <Tooltip label={t('terminal.clearAuth')}>
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label="重新认证"
+              aria-label={t('terminal.clearAuth')}
               onClick={() => clearCredentials(session.id)}
             >
               <KeyRound className="h-3 w-3" />
@@ -310,14 +310,14 @@ export default function TerminalTab(props: IDockviewPanelProps) {
           </Tooltip>
         ) : null}
 
-        <Tooltip label="重连">
+        <Tooltip label={t('terminal.reconnect')}>
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="重连"
+            aria-label={t('terminal.reconnect')}
             onClick={() => {
-              reconnectSession(session.id);
-              toast({ title: '正在重连会话…' });
+              terminalRef.current?.reconnect();
+              toast({ title: t('terminal.reconnectToast') });
             }}
           >
             <RotateCw className="h-3 w-3" />

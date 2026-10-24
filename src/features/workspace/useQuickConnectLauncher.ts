@@ -4,6 +4,7 @@ import { useCredentialStore } from '../../stores/credentialStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { toast } from '../../components/ui/toast';
+import { forgetSessionCredentials, rememberSessionCredentials } from '../../lib/credentialVault';
 import type { Session, SessionAuthMethod, SessionDraft, SessionKind } from '../../types/session';
 import { useWorkspace } from './WorkspaceContext';
 
@@ -66,7 +67,7 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
         const previousAuthMethod = session.authMethod ?? 'password';
         sessionState.updateSession(session.id, result.draft);
         if (isRemote && previousAuthMethod !== result.draft.authMethod) {
-          useCredentialStore.getState().clearCredentials(session.id);
+          await forgetSessionCredentials(session.id);
         }
         if (isRemote) {
           if (result.password?.trim()) {
@@ -77,6 +78,10 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
             useCredentialStore.getState().authorize(session.id);
           } else if (result.draft.authMethod === 'agent') {
             useCredentialStore.getState().authorize(session.id);
+          }
+          const updated = sessionState.getSession(session.id);
+          if (updated) {
+            await rememberSessionCredentials(updated);
           }
         }
         toast({ title: '会话已更新', variant: 'success' });
@@ -95,6 +100,10 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
           useCredentialStore.getState().authorize(created.id);
         } else {
           useCredentialStore.getState().authorize(created.id);
+        }
+        const stored = sessionState.getSession(created.id);
+        if (stored) {
+          await rememberSessionCredentials(stored);
         }
       }
 

@@ -29,8 +29,8 @@ export function getPtyPlatformInfo(): Promise<PtyPlatformInfo> {
   return platformInfoPromise;
 }
 
-export async function createPtySession(cols: number, rows: number): Promise<string> {
-  return invoke<string>('create_pty_session', { cols, rows });
+export async function createPtySession(id: string, cols: number, rows: number): Promise<string> {
+  return invoke<string>('create_pty_session', { id, cols, rows });
 }
 
 export async function writePty(id: string, data: string): Promise<void> {
@@ -51,5 +51,11 @@ export async function listenPtyOutput(
 ): Promise<() => void> {
   return listen<PtyOutputPayload>(`pty-output-${id}`, (event) => {
     onOutput(event.payload);
+  });
+}
+
+export async function listenPtyClosed(id: string, onClosed: () => void): Promise<() => void> {
+  return listen(`pty-closed-${id}`, () => {
+    onClosed();
   });
 }

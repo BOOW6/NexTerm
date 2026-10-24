@@ -24,16 +24,29 @@ import { cn } from '../lib/cn';
 import {
   DEFAULT_SETTINGS,
   useSettingsStore,
+  type LanguageSetting,
   type SettingsSnapshot,
   type ShortcutAction,
   type TerminalCursorStyle
 } from '../stores/settingsStore';
 import { THEME_FAMILIES, getTheme, type ThemeDefinition, type ThemeMode } from '../theme/themes';
 import { TERMINAL_COLOR_SCHEMES } from '../theme/terminalColorSchemes';
-import { confirmAction } from '../lib/appWindows';
+import { confirmAction, openModalWindow } from '../lib/appWindows';
+import {
+  changeVaultPassword,
+  clearVault,
+  forgetSessionCredentials,
+  getVaultStatus,
+  initializeVault,
+  lockVault,
+  resetVault,
+  unlockVault,
+  type VaultStatus
+} from '../lib/credentialVault';
 import { firstFontFamily, fontFamilyStack, type FontFamilyTarget } from '../lib/fontFamily';
 import type { SystemFontFamily } from '../lib/systemFonts';
 import { useFontCatalogStore } from '../stores/fontCatalogStore';
+import { useSessionStore } from '../stores/sessionStore';
 import {
   exportKnownHosts,
   importKnownHosts,
@@ -148,6 +161,7 @@ const TerminalPreview = lazy(() => import('./settings/TerminalPreview'));
 function snapshotOf(): SettingsSnapshot {
   const state = useSettingsStore.getState();
   return {
+    language: state.language,
     themeMode: state.themeMode,
     lightTheme: state.lightTheme,
     darkTheme: state.darkTheme,
@@ -163,6 +177,10 @@ function snapshotOf(): SettingsSnapshot {
     terminalCursorBlink: state.terminalCursorBlink,
     terminalScrollback: state.terminalScrollback,
     terminalLineHeight: state.terminalLineHeight,
+    terminalCopyOnSelect: state.terminalCopyOnSelect,
+    terminalRestoreScrollback: state.terminalRestoreScrollback,
+    sshAutoReconnect: state.sshAutoReconnect,
+    sshRememberCredentials: state.sshRememberCredentials,
     defaultAuthMethod: state.defaultAuthMethod,
     defaultPort: state.defaultPort,
     defaultUsername: state.defaultUsername,
@@ -217,6 +235,8 @@ export default function SettingsWindow() {
   const [hashHosts, setHashHosts] = useState(false);
   const [applying, setApplying] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [vaultStatus, setVaultStatus] = useState<VaultStatus | null>(null);
+  const [vaultBusy, setVaultBusy] = useState(false);
 
   const systemFonts = useFontCatalogStore((state) => state.families);
   const systemFontsLoading = useFontCatalogStore((state) => state.loading);
@@ -293,6 +313,208 @@ export default function SettingsWindow() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getVaultStatus()
+      .then((status) => {
+        if (!cancelled) {
+          setVaultStatus(status);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const promptSecret = (label: string, confirmLabel: string): Promise<string | null> =>
+    openModalWindow<string>('prompt', {
+      title: label,
+      width: 420,
+      height: 200,
+      data: {
+        title: label,
+        label,
+        initialValue: '',
+        placeholder: label,
+        confirmLabel,
+        password: true
+      }
+    });
+
+  const refreshVaultStatus = async () => {
+    const status = await getVaultStatus();
+    setVaultStatus(status);
+    return status;
+  };
+
+  const notifyVaultUnlocked = async () => {
+    await emit('nexterm-vault-unlocked');
+  };
+
+  const notifyVaultLocked = async () => {
+    await emit('nexterm-vault-locked');
+  };
+
+  const notifyVaultCleared = async () => {
+    await emit('nexterm-vault-cleared');
+  };
+
+  const handleVaultSetup = async () => {
+    if (vaultBusy) {
+      return;
+    }
+    const password = await promptSecret('设置保险库主密码（至少 8 个字符）', '下一步');
+    if (!password) {
+      return;
+    }
+    const confirm = await promptSecret('再次输入主密码', '创建');
+    if (!confirm) {
+      return;
+    }
+    if (password !== confirm) {
+      toast({ title: '两次输入的主密码不一致', variant: 'error' });
+      return;
+    }
+    setVaultBusy(true);
+    try {
+      setVaultStatus(await initializeVault(password));
+      await notifyVaultUnlocked();
+      toast({ title: '凭据保险库已创建', variant: 'success' });
+    } catch (reason) {
+      toast({ title: '创建保险库失败', description: String(reason), variant: 'error' });
+    } finally {
+      setVaultBusy(false);
+    }
+  };
+
+  const handleVaultUnlock = async () => {
+    if (vaultBusy) {
+      return;
+    }
+    const password = await promptSecret('解锁凭据保险库', '解锁');
+    if (!password) {
+      return;
+    }
+    setVaultBusy(true);
+    try {
+      const ok = await unlockVault(password);
+      if (!ok) {
+        toast({ title: '主密码错误', variant: 'error' });
+        return;
+      }
+      await refreshVaultStatus();
+      await notifyVaultUnlocked();
+      toast({ title: '凭据保险库已解锁', variant: 'success' });
+    } catch (reason) {
+      toast({ title: '解锁失败', description: String(reason), variant: 'error' });
+    } finally {
+      setVaultBusy(false);
+    }
+  };
+
+  const handleVaultLock = async () => {
+    if (vaultBusy) {
+      return;
+    }
+    setVaultBusy(true);
+    try {
+      await lockVault();
+      await refreshVaultStatus();
+      await notifyVaultLocked();
+      toast({ title: '凭据保险库已锁定', variant: 'success' });
+    } catch (reason) {
+      toast({ title: '锁定失败', description: String(reason), variant: 'error' });
+    } finally {
+      setVaultBusy(false);
+    }
+  };
+
+  const handleVaultChangePassword = async () => {
+    if (vaultBusy) {
+      return;
+    }
+    const oldPassword = await promptSecret('当前主密码', '下一步');
+    if (!oldPassword) {
+      return;
+    }
+    const newPassword = await promptSecret('新主密码（至少 8 个字符）', '下一步');
+    if (!newPassword) {
+      return;
+    }
+    const confirm = await promptSecret('再次输入新主密码', '修改');
+    if (!confirm) {
+      return;
+    }
+    if (newPassword !== confirm) {
+      toast({ title: '两次输入的新主密码不一致', variant: 'error' });
+      return;
+    }
+    setVaultBusy(true);
+    try {
+      setVaultStatus(await changeVaultPassword(oldPassword, newPassword));
+      await notifyVaultUnlocked();
+      toast({ title: '主密码已修改', variant: 'success' });
+    } catch (reason) {
+      toast({ title: '修改主密码失败', description: String(reason), variant: 'error' });
+    } finally {
+      setVaultBusy(false);
+    }
+  };
+
+  const handleVaultClear = async () => {
+    if (vaultBusy) {
+      return;
+    }
+    const ok = await confirmAction('确定清空保险库中保存的全部凭据吗？此操作不可撤销。', {
+      title: '清空凭据保险库',
+      okLabel: '清空'
+    });
+    if (!ok) {
+      return;
+    }
+    setVaultBusy(true);
+    try {
+      await clearVault();
+      await lockVault();
+      const sessions = useSessionStore.getState().sessions;
+      await Promise.all(sessions.map((session) => forgetSessionCredentials(session.id)));
+      await refreshVaultStatus();
+      await notifyVaultCleared();
+      toast({ title: '保险库凭据已清空', variant: 'success' });
+    } catch (reason) {
+      toast({ title: '清空保险库失败', description: String(reason), variant: 'error' });
+    } finally {
+      setVaultBusy(false);
+    }
+  };
+
+  const handleVaultReset = async () => {
+    if (vaultBusy) {
+      return;
+    }
+    const ok = await confirmAction(
+      '确定重置凭据保险库吗？已保存的所有密码将被删除，且需要重新设置主密码。',
+      { title: '重置凭据保险库', okLabel: '重置' }
+    );
+    if (!ok) {
+      return;
+    }
+    setVaultBusy(true);
+    try {
+      await resetVault();
+      const sessions = useSessionStore.getState().sessions;
+      await Promise.all(sessions.map((session) => forgetSessionCredentials(session.id)));
+      setVaultStatus(await getVaultStatus());
+      await notifyVaultCleared();
+      toast({ title: '凭据保险库已重置', variant: 'success' });
+    } catch (reason) {
+      toast({ title: '重置保险库失败', description: String(reason), variant: 'error' });
+    } finally {
+      setVaultBusy(false);
+    }
+  };
 
   const update = <K extends keyof SettingsSnapshot>(key: K, value: SettingsSnapshot[K]) => {
     setSavedAt(null);
@@ -443,6 +665,24 @@ export default function SettingsWindow() {
 
     return (
       <section className="space-y-5">
+        <div className="rounded-sm border border-border bg-surface p-3">
+          <div className="max-w-xs">
+            <Label htmlFor="language">界面语言</Label>
+            <Select
+              id="language"
+              value={draft.language}
+              onChange={(event) => update('language', event.target.value as LanguageSetting)}
+            >
+              <option value="system">跟随系统</option>
+              <option value="zh-CN">简体中文</option>
+              <option value="en-US">English</option>
+            </Select>
+            <p className="mt-1 text-[10px] text-muted-foreground">
+              核心工作区（会话、终端、连接表单）已支持中英文，设置面板仍在逐步迁移。
+            </p>
+          </div>
+        </div>
+
         <div className="rounded-sm border border-border bg-surface p-3">
           <div className="grid gap-3 md:grid-cols-[minmax(0,240px)_1fr]">
             <div>
@@ -765,9 +1005,29 @@ export default function SettingsWindow() {
           />
           Font Ligatures
         </label>
+        <label className="flex items-center gap-2 text-[11px] text-muted">
+          <input
+            type="checkbox"
+            className="app-checkbox h-3.5 w-3.5 accent-accent"
+            checked={draft.terminalCopyOnSelect}
+            onChange={(event) => update('terminalCopyOnSelect', event.target.checked)}
+          />
+          选中即复制
+        </label>
+        <label className="flex items-center gap-2 text-[11px] text-muted">
+          <input
+            type="checkbox"
+            className="app-checkbox h-3.5 w-3.5 accent-accent"
+            checked={draft.terminalRestoreScrollback}
+            onChange={(event) => update('terminalRestoreScrollback', event.target.checked)}
+          />
+          重启后恢复滚动缓冲
+        </label>
       </div>
       <p className="-mt-1 text-[10px] text-muted-foreground">
         连字需要等宽字体支持（如 Fira Code、Cascadia Code），WebGL 渲染下同样生效。
+        滚动缓冲快照保存在本地
+        localStorage，可能包含敏感输出；如不需要可关闭「重启后恢复滚动缓冲」。
       </p>
 
       <div>
@@ -843,6 +1103,20 @@ export default function SettingsWindow() {
           placeholder="例如 root"
         />
       </div>
+      <div className="col-span-2 space-y-2 rounded-sm border border-border bg-background-alt px-2 py-2">
+        <label className="flex items-center gap-2 text-[11px] text-muted">
+          <input
+            type="checkbox"
+            className="app-checkbox h-3.5 w-3.5 accent-accent"
+            checked={draft.sshAutoReconnect}
+            onChange={(event) => update('sshAutoReconnect', event.target.checked)}
+          />
+          连接意外断开时自动重连
+        </label>
+        <p className="text-[10px] text-muted-foreground">
+          SSH 每 30 秒发送一次保活探测；断线后按 1s / 2s / 4s / 8s / 16s 退避重试。
+        </p>
+      </div>
     </section>
   );
 
@@ -865,71 +1139,174 @@ export default function SettingsWindow() {
     </section>
   );
 
-  const renderSecurity = () => (
-    <section>
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold text-foreground">已知主机（known_hosts）</h3>
-        <div className="flex items-center gap-1.5">
-          <label className="flex items-center gap-1 text-[10px] text-muted">
+  const renderSecurity = () => {
+    const vaultInitialized = Boolean(vaultStatus?.initialized);
+    const vaultUnlocked = Boolean(vaultStatus?.unlocked);
+    return (
+      <section className="space-y-5">
+        <div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-xs font-semibold text-foreground">凭据保险库</h3>
+            <span
+              className={cn(
+                'rounded-sm border px-1.5 py-0.5 text-[10px]',
+                vaultUnlocked
+                  ? 'border-success/40 text-success'
+                  : vaultInitialized
+                    ? 'border-warning/40 text-warning'
+                    : 'border-border text-muted'
+              )}
+            >
+              {vaultInitialized ? (vaultUnlocked ? '已解锁' : '已锁定') : '未创建'}
+            </span>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            记住的 SSH 密码与私钥口令使用 Argon2id 派生密钥并通过 AES-256-GCM
+            加密，保存在应用配置目录。应用重启后保险库默认锁定。
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {!vaultInitialized ? (
+              <Button
+                size="xs"
+                variant="primary"
+                disabled={vaultBusy}
+                onClick={() => void handleVaultSetup()}
+              >
+                设置主密码
+              </Button>
+            ) : vaultUnlocked ? (
+              <>
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  disabled={vaultBusy}
+                  onClick={() => void handleVaultLock()}
+                >
+                  锁定
+                </Button>
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  disabled={vaultBusy}
+                  onClick={() => void handleVaultChangePassword()}
+                >
+                  更改主密码
+                </Button>
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  disabled={vaultBusy}
+                  onClick={() => void handleVaultClear()}
+                >
+                  清空凭据
+                </Button>
+              </>
+            ) : (
+              <Button
+                size="xs"
+                variant="primary"
+                disabled={vaultBusy}
+                onClick={() => void handleVaultUnlock()}
+              >
+                解锁
+              </Button>
+            )}
+            {vaultInitialized ? (
+              <Button
+                size="xs"
+                variant="ghost"
+                disabled={vaultBusy}
+                onClick={() => void handleVaultReset()}
+              >
+                重置保险库
+              </Button>
+            ) : null}
+            {vaultUnlocked ? (
+              <span className="text-[10px] text-muted">
+                已保存 {vaultStatus?.entry_count ?? 0} 条凭据
+              </span>
+            ) : null}
+          </div>
+          <label className="mt-3 flex items-center gap-2 text-[11px] text-muted">
             <input
               type="checkbox"
-              checked={hashHosts}
-              onChange={(event) => setHashHosts(event.target.checked)}
+              className="app-checkbox h-3.5 w-3.5 accent-accent"
+              checked={draft.sshRememberCredentials}
+              onChange={(event) => update('sshRememberCredentials', event.target.checked)}
             />
-            哈希主机名
+            记住 SSH 凭据（保险库解锁后自动保存并填充）
           </label>
-          <Button size="xs" variant="secondary" onClick={() => void handleImportHosts()}>
-            导入
-          </Button>
-          <Button size="xs" variant="secondary" onClick={() => void handleExportHosts()}>
-            导出
-          </Button>
         </div>
-      </div>
-      {loadingHosts ? (
-        <p className="text-[11px] text-muted">加载中…</p>
-      ) : hostsError ? (
-        <p className="selectable text-[11px] text-error">{hostsError}</p>
-      ) : visibleHosts.length === 0 ? (
-        <p className="text-[11px] text-muted">暂无记录。首次连接主机时会提示确认指纹。</p>
-      ) : (
-        <div className="max-h-72 overflow-y-auto rounded-sm border border-border">
-          {visibleHosts.map((entry) => (
-            <div
-              key={entry.host}
-              className="flex items-center gap-2 border-b border-border-muted/60 px-2 py-1.5 last:border-b-0"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="selectable truncate font-mono text-[11px] text-foreground">
-                  {entry.host}
-                </p>
-                <p className="selectable truncate text-[10px] text-muted" title={entry.fingerprint}>
-                  {entry.algorithm} · {entry.fingerprint}
-                </p>
-              </div>
-              <Button
-                size="icon-md"
-                variant="ghost"
-                aria-label="删除主机记录"
-                title="删除主机记录"
-                onClick={() => void handleRemoveHost(entry.host)}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
+
+        <div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-xs font-semibold text-foreground">已知主机（known_hosts）</h3>
+            <div className="flex items-center gap-1.5">
+              <label className="flex items-center gap-1 text-[10px] text-muted">
+                <input
+                  type="checkbox"
+                  checked={hashHosts}
+                  onChange={(event) => setHashHosts(event.target.checked)}
+                />
+                哈希主机名
+              </label>
+              <Button size="xs" variant="secondary" onClick={() => void handleImportHosts()}>
+                导入
+              </Button>
+              <Button size="xs" variant="secondary" onClick={() => void handleExportHosts()}>
+                导出
               </Button>
             </div>
-          ))}
+          </div>
+          {loadingHosts ? (
+            <p className="text-[11px] text-muted">加载中…</p>
+          ) : hostsError ? (
+            <p className="selectable text-[11px] text-error">{hostsError}</p>
+          ) : visibleHosts.length === 0 ? (
+            <p className="text-[11px] text-muted">暂无记录。首次连接主机时会提示确认指纹。</p>
+          ) : (
+            <div className="max-h-72 overflow-y-auto rounded-sm border border-border">
+              {visibleHosts.map((entry) => (
+                <div
+                  key={entry.host}
+                  className="flex items-center gap-2 border-b border-border-muted/60 px-2 py-1.5 last:border-b-0"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="selectable truncate font-mono text-[11px] text-foreground">
+                      {entry.host}
+                    </p>
+                    <p
+                      className="selectable truncate text-[10px] text-muted"
+                      title={entry.fingerprint}
+                    >
+                      {entry.algorithm} · {entry.fingerprint}
+                    </p>
+                  </div>
+                  <Button
+                    size="icon-md"
+                    variant="ghost"
+                    aria-label="删除主机记录"
+                    title="删除主机记录"
+                    onClick={() => void handleRemoveHost(entry.host)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+          {removedHosts.length > 0 ? (
+            <p className="mt-2 text-[10px] text-warning">
+              已标记 {removedHosts.length} 条记录，点击「应用」后删除。
+            </p>
+          ) : null}
+          <p className="mt-2 text-[10px] text-muted-foreground">
+            删除后，下次连接该主机会重新提示确认指纹。
+          </p>
         </div>
-      )}
-      {removedHosts.length > 0 ? (
-        <p className="mt-2 text-[10px] text-warning">
-          已标记 {removedHosts.length} 条记录，点击「应用」后删除。
-        </p>
-      ) : null}
-      <p className="mt-2 text-[10px] text-muted-foreground">
-        删除后，下次连接该主机会重新提示确认指纹。
-      </p>
-    </section>
-  );
+      </section>
+    );
+  };
 
   const renderAbout = () => (
     <section className="space-y-2">

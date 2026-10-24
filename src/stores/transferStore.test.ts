@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useTransferStore, type TransferRequest } from './transferStore';
 
 const request: TransferRequest = {
-  sshId: 'ssh-1',
+  sessionId: 'sess-1',
   localPath: 'C:/tmp/file.txt',
   remotePath: '/home/user/file.txt',
   recursive: false,
@@ -27,6 +27,7 @@ const done = (overrides: Record<string, unknown> = {}) => ({
   name: 'file.txt',
   success: true,
   cancelled: false,
+  disconnected: false,
   error: null,
   transferred: 1000,
   total: 1000,
@@ -191,6 +192,24 @@ describe('finish', () => {
     expect(item.transferred).toBe(400);
   });
 
+  it('marks connection-drop failures as interrupted and resumable', () => {
+    useTransferStore.getState().begin({
+      id: 't1',
+      name: 'file.txt',
+      direction: 'upload',
+      request
+    });
+
+    useTransferStore
+      .getState()
+      .finish(done({ success: false, disconnected: true, error: 'channel closed' }));
+
+    const [item] = useTransferStore.getState().transfers;
+    expect(item.status).toBe('interrupted');
+    expect(item.error).toBe('连接已断开，重连后将自动续传');
+    expect(item.request).toEqual(request);
+  });
+
   it('prepends completions that never reported progress', () => {
     useTransferStore.getState().finish(done({ transfer_id: 'a', name: 'a.txt' }));
     useTransferStore.getState().finish(done({ transfer_id: 'b', name: 'b.txt' }));
@@ -225,10 +244,12 @@ describe('setPaused', () => {
 });
 
 describe('clearFinished and remove', () => {
-  it('keeps running and paused transfers when clearing', () => {
+  it('keeps running, paused and interrupted transfers when clearing', () => {
     useTransferStore.getState().applyProgress(progress({ transfer_id: 'running' }));
     useTransferStore.getState().applyProgress(progress({ transfer_id: 'paused' }));
     useTransferStore.getState().setPaused('paused', true);
+    useTransferStore.getState().applyProgress(progress({ transfer_id: 'interrupted' }));
+    useTransferStore.getState().markSessionDisconnected('sess-1');
     useTransferStore.getState().finish(done({ transfer_id: 'done' }));
 
     useTransferStore.getState().clearFinished();
@@ -238,12 +259,57 @@ describe('clearFinished and remove', () => {
         .getState()
         .transfers.map((item) => item.id)
         .sort()
-    ).toEqual(['paused', 'running']);
+    ).toEqual(['interrupted', 'paused', 'running']);
   });
 
   it('removes a transfer by id', () => {
     useTransferStore.getState().applyProgress(progress());
     useTransferStore.getState().remove('t1');
     expect(useTransferStore.getState().transfers).toHaveLength(0);
+  });
+});
+
+describe('markSessionDisconnected', () => {
+  it('interrupts only the active transfers of the dropped session', () => {
+    useTransferStore.getState().begin({
+      id: 't1',
+      name: 'file.txt',
+      direction: 'upload',
+      request
+    });
+    useTransferStore.getState().applyProgress(progress({ transfer_id: 't2', name: 'other' }));
+    useTransferStore.getState().applyProgress(
+      progress({ transfer_id: 't3', name: 'other-session' })
+    );
+    useTransferStore.setState((state) => ({
+      transfers: state.transfers.map((item) =>
+        item.id === 't3'
+          ? {
+              ...item,
+              request: { ...request, sessionId: 'sess-2' }
+            }
+          : item
+      )
+    }));
+
+    useTransferStore.getState().markSessionDisconnected('sess-1');
+
+    const byId = Object.fromEntries(
+      useTransferStore.getState().transfers.map((item) => [item.id, item])
+    );
+    expect(byId.t1.status).toBe('interrupted');
+    expect(byId.t1.error).toBe('连接已断开，重连后将自动续传');
+    // t2 has no bound request (progress arrived before begin), so the
+    // session-tagged sweep skips it; its own done(disconnected) event
+    // converts it later.
+    expect(byId.t2.status).toBe('running');
+    expect(byId.t3.status).toBe('running');
+  });
+
+  it('leaves already finished transfers untouched', () => {
+    useTransferStore.getState().finish(done({ transfer_id: 't9' }));
+    useTransferStore.getState().markSessionDisconnected('sess-1');
+
+    expect(useTransferStore.getState().transfers[0].status).toBe('done');
   });
 });

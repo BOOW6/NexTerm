@@ -2,6 +2,7 @@ pub mod commands;
 pub mod fonts;
 pub mod pty;
 pub mod ssh;
+pub mod vault;
 pub mod windows;
 pub mod windows_ext;
 
@@ -10,12 +11,14 @@ use pty::PtySessionManager;
 use ssh::SshManager;
 use tauri::{Manager, WindowEvent};
 use tauri_plugin_decorum::WebviewWindowExt;
+use vault::VaultManager;
 use windows::ModalManager;
 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_decorum::init())
         .manage(PtySessionManager::default())
         .manage(ModalManager::default())
@@ -57,6 +60,16 @@ pub fn run() {
 
             app.manage(SshManager::new(known_hosts_path));
 
+            let vault_path = app
+                .path()
+                .app_config_dir()
+                .map(|dir| {
+                    let _ = std::fs::create_dir_all(&dir);
+                    dir.join("credentials.vault.json")
+                })
+                .unwrap_or_else(|_| std::env::temp_dir().join("nexterm-credentials.vault.json"));
+            app.manage(VaultManager::new(vault_path));
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -85,9 +98,22 @@ pub fn run() {
             commands::sftp_mkdir,
             commands::sftp_pause_transfer,
             commands::sftp_cancel_transfer,
+            commands::sftp_conflict_response,
             commands::port_forward_list,
             commands::port_forward_start,
             commands::port_forward_stop,
+            commands::read_text_file,
+            commands::write_text_file,
+            commands::vault_status,
+            commands::vault_initialize,
+            commands::vault_unlock,
+            commands::vault_lock,
+            commands::vault_set,
+            commands::vault_get,
+            commands::vault_delete,
+            commands::vault_clear,
+            commands::vault_change_password,
+            commands::vault_reset,
             windows::show_context_menu,
             windows::show_input_context_menu,
             windows::open_modal_window,

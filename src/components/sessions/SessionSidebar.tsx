@@ -2,21 +2,37 @@
 import {
   ChevronDown,
   ChevronRight,
+  Download,
+  FileText,
   Plus,
   Search,
   Star,
   TerminalSquare,
+  Upload,
   Zap,
   type LucideIcon
 } from 'lucide-react';
+import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { useWorkspace } from '../../features/workspace/WorkspaceContext';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { toast } from '../ui/toast';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { DropdownMenu } from '../ui/dropdown-menu';
+import { readTextFile, writeTextFile } from '../../lib/fileText';
+import {
+  importKey,
+  importSessionsFromText,
+  serializeSessionBackup,
+  type ImportFormat
+} from '../../lib/sessionImport';
+import { DEFAULT_GROUP, type Session, type SessionDraft } from '../../types/session';
+import { useI18n } from '../../i18n';
 import SessionRow from './SessionRow';
 import { confirmAction } from '../../lib/appWindows';
+import { forgetSessionCredentials } from '../../lib/credentialVault';
+import { clearTerminalSnapshot } from '../../lib/terminalSnapshot';
 import { useQuickConnectLauncher } from '../../features/workspace/useQuickConnectLauncher';
 
 interface GroupSectionProps {
@@ -25,6 +41,7 @@ interface GroupSectionProps {
   collapsed: boolean;
   onToggle: () => void;
   icon?: LucideIcon;
+  depth?: number;
   children: ReactNode;
 }
 
@@ -34,6 +51,7 @@ function GroupSection({
   collapsed,
   onToggle,
   icon: Icon,
+  depth = 0,
   children
 }: GroupSectionProps) {
   return (
@@ -41,7 +59,8 @@ function GroupSection({
       <button
         type="button"
         onClick={onToggle}
-        className="app-group-header flex w-full items-center gap-1 rounded-sm px-1.5 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
+        style={{ paddingLeft: 6 + depth * 10 }}
+        className="app-group-header flex w-full items-center gap-1 rounded-sm py-1 pr-1.5 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
       >
         {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
         {Icon ? <Icon className="h-3 w-3" /> : null}
@@ -53,14 +72,79 @@ function GroupSection({
   );
 }
 
+interface SessionGroupNode {
+  name: string;
+  path: string;
+  sessions: Session[];
+  children: SessionGroupNode[];
+}
+
+interface MutableGroupNode {
+  name: string;
+  path: string;
+  sessions: Session[];
+  children: Map<string, MutableGroupNode>;
+}
+
+function buildGroupTree(sessions: Session[]): SessionGroupNode[] {
+  const roots = new Map<string, MutableGroupNode>();
+
+  for (const session of sessions) {
+    const segments = session.group
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+    const parts = segments.length > 0 ? segments : [DEFAULT_GROUP];
+
+    let siblings = roots;
+    let node: MutableGroupNode | null = null;
+    for (let index = 0; index < parts.length; index += 1) {
+      const segment = parts[index];
+      let current = siblings.get(segment);
+      if (!current) {
+        current = {
+          name: segment,
+          path: parts.slice(0, index + 1).join('/'),
+          sessions: [],
+          children: new Map()
+        };
+        siblings.set(segment, current);
+      }
+      node = current;
+      siblings = current.children;
+    }
+    node?.sessions.push(session);
+  }
+
+  const toNodes = (map: Map<string, MutableGroupNode>): SessionGroupNode[] =>
+    Array.from(map.values())
+      .sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'))
+      .map((node) => ({
+        name: node.name,
+        path: node.path,
+        sessions: [...node.sessions].sort((a, b) => a.title.localeCompare(b.title)),
+        children: toNodes(node.children)
+      }));
+
+  return toNodes(roots);
+}
+
+function groupSessionCount(node: SessionGroupNode): number {
+  return (
+    node.sessions.length + node.children.reduce((sum, child) => sum + groupSessionCount(child), 0)
+  );
+}
+
 export default function SessionSidebar() {
   const sessions = useSessionStore((state) => state.sessions);
   const toggleFavorite = useSessionStore((state) => state.toggleFavorite);
   const removeSession = useSessionStore((state) => state.removeSession);
+  const addSessions = useSessionStore((state) => state.addSessions);
 
   const activeSessionId = useWorkspaceStore((state) => state.activeSessionId);
   const setActiveSessionId = useWorkspaceStore((state) => state.setActiveSessionId);
   const openQuickConnect = useQuickConnectLauncher();
+  const { t } = useI18n();
 
   const { openSession, closeSessionPanel } = useWorkspace();
 
@@ -100,18 +184,10 @@ export default function SessionSidebar() {
 
   const favorites = useMemo(() => filtered.filter((session) => session.favorite), [filtered]);
 
-  const groups = useMemo(() => {
-    const map = new Map<string, typeof filtered>();
-    for (const session of filtered) {
-      if (session.favorite) {
-        continue;
-      }
-      const list = map.get(session.group) ?? [];
-      list.push(session);
-      map.set(session.group, list);
-    }
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b, 'zh-Hans-CN'));
-  }, [filtered]);
+  const groupTree = useMemo(
+    () => buildGroupTree(filtered.filter((session) => !session.favorite)),
+    [filtered]
+  );
 
   const handleOpen = (sessionId: string) => openSession(sessionId);
 
@@ -119,20 +195,125 @@ export default function SessionSidebar() {
 
   const handleRemove = async (sessionId: string) => {
     const target = sessions.find((session) => session.id === sessionId);
-    const ok = await confirmAction(`确定删除「${target?.title ?? '会话'}」吗？`, {
-      title: '删除会话',
-      okLabel: '删除'
+    const name = target?.title ?? 'Session';
+    const ok = await confirmAction(t('sidebar.deleteConfirm', { name }), {
+      title: t('sidebar.deleteTitle'),
+      okLabel: t('session.delete')
     });
     if (!ok) {
       return;
     }
     closeSessionPanel(sessionId);
     removeSession(sessionId);
+    void forgetSessionCredentials(sessionId);
+    clearTerminalSnapshot(sessionId);
     if (activeSessionId === sessionId) {
       setActiveSessionId(null);
     }
-    toast({ title: `已删除「${target?.title ?? '会话'}」`, variant: 'success' });
+    toast({ title: t('sidebar.deleted', { name }), variant: 'success' });
   };
+
+  const handleImport = async (format: ImportFormat) => {
+    try {
+      const filters =
+        format === 'putty'
+          ? [{ name: 'PuTTY 注册表导出', extensions: ['reg'] }]
+          : format === 'mobaxterm'
+            ? [{ name: 'MobaXterm 会话', extensions: ['ini', 'mxtsessions'] }]
+            : format === 'nexterm'
+              ? [{ name: 'NexTerm 备份', extensions: ['json'] }]
+              : undefined;
+      const selected = await openDialog({
+        multiple: false,
+        title: t('sidebar.importPick'),
+        ...(filters ? { filters } : {})
+      });
+      if (typeof selected !== 'string') {
+        return;
+      }
+
+      const imported = importSessionsFromText(format, await readTextFile(selected));
+      if (imported.length === 0) {
+        toast({ title: t('sidebar.importNone'), variant: 'default' });
+        return;
+      }
+
+      const known = new Set(
+        useSessionStore.getState().sessions.map((session) => importKey(session))
+      );
+      const drafts: SessionDraft[] = [];
+      let skipped = 0;
+      for (const item of imported) {
+        const key = importKey(item);
+        if (known.has(key)) {
+          skipped += 1;
+          continue;
+        }
+        known.add(key);
+        drafts.push({
+          kind: item.kind,
+          title: item.title,
+          host: item.host,
+          port: item.port,
+          username: item.username,
+          authMethod: item.authMethod,
+          keyPath: item.keyPath,
+          group: item.group,
+          favorite: item.favorite
+        });
+      }
+
+      const created = addSessions(drafts);
+      toast({
+        title: t('sidebar.imported', { count: created.length }),
+        description: skipped > 0 ? t('sidebar.importedSkipped', { count: skipped }) : undefined,
+        variant: created.length > 0 ? 'success' : 'default'
+      });
+    } catch (reason) {
+      toast({ title: t('sidebar.importFailed'), description: String(reason), variant: 'error' });
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      const target = await saveDialog({
+        defaultPath: 'nexterm-sessions.json',
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+        title: t('sidebar.export')
+      });
+      if (!target) {
+        return;
+      }
+      await writeTextFile(target, serializeSessionBackup(useSessionStore.getState().sessions));
+      toast({ title: t('sidebar.exported'), variant: 'success' });
+    } catch (reason) {
+      toast({ title: t('sidebar.exportFailed'), description: String(reason), variant: 'error' });
+    }
+  };
+
+  const renderGroupNode = (node: SessionGroupNode, depth: number): ReactNode => (
+    <GroupSection
+      key={node.path}
+      title={node.name}
+      count={groupSessionCount(node)}
+      collapsed={Boolean(collapsed[node.path])}
+      onToggle={() => toggleGroup(node.path)}
+      depth={depth}
+    >
+      {node.sessions.map((session) => (
+        <SessionRow
+          key={session.id}
+          session={session}
+          active={activeSessionId === session.id}
+          onOpen={handleOpen}
+          onEdit={handleEdit}
+          onToggleFavorite={toggleFavorite}
+          onRemove={handleRemove}
+        />
+      ))}
+      {node.children.map((child) => renderGroupNode(child, depth + 1))}
+    </GroupSection>
+  );
 
   return (
     <aside
@@ -140,22 +321,55 @@ export default function SessionSidebar() {
       className="relative flex shrink-0 flex-col border-r border-border bg-surface"
     >
       <div className="app-panel-header flex h-7 shrink-0 items-center justify-between border-b border-border bg-panel-title px-2">
-        <span className="text-xs font-semibold text-foreground">会话管理器</span>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label="新建会话"
-          title="新建会话"
-          onClick={() => openQuickConnect()}
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </Button>
+        <span className="text-xs font-semibold text-foreground">{t('sidebar.title')}</span>
+        <div className="flex items-center gap-0.5">
+          <DropdownMenu
+            label={t('sidebar.importMenu')}
+            items={[
+              {
+                label: t('sidebar.import'),
+                icon: Upload,
+                onSelect: () => void handleImport('ssh-config')
+              },
+              {
+                label: t('sidebar.importMoba'),
+                icon: FileText,
+                onSelect: () => void handleImport('mobaxterm')
+              },
+              {
+                label: t('sidebar.importPutty'),
+                icon: FileText,
+                onSelect: () => void handleImport('putty')
+              },
+              {
+                label: t('sidebar.importBackup'),
+                icon: Upload,
+                onSelect: () => void handleImport('nexterm')
+              },
+              {
+                label: t('sidebar.export'),
+                icon: Download,
+                separatorBefore: true,
+                onSelect: () => void handleExport()
+              }
+            ]}
+          />
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label={t('sidebar.newSession')}
+            title={t('sidebar.newSession')}
+            onClick={() => openQuickConnect()}
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </div>
 
       <div className="flex gap-1 px-2 pt-2">
         <Button size="sm" variant="secondary" className="flex-1" onClick={() => openQuickConnect()}>
           <Plus className="h-3 w-3" />
-          新建会话
+          {t('sidebar.newSession')}
         </Button>
         <Button
           size="sm"
@@ -164,7 +378,7 @@ export default function SessionSidebar() {
           onClick={() => openQuickConnect({ kind: 'ssh' })}
         >
           <Zap className="h-3 w-3" />
-          快速连接
+          {t('sidebar.quickConnect')}
         </Button>
       </div>
 
@@ -174,10 +388,10 @@ export default function SessionSidebar() {
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索会话..."
+            placeholder={t('sidebar.search')}
             size="compact"
             className="pl-7"
-            aria-label="搜索会话"
+            aria-label={t('sidebar.search')}
           />
         </div>
       </div>
@@ -186,19 +400,19 @@ export default function SessionSidebar() {
         {sessions.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-3 py-10 text-center">
             <TerminalSquare className="h-7 w-7 text-muted-foreground" />
-            <p className="text-[11px] text-muted">还没有任何会话</p>
+            <p className="text-[11px] text-muted">{t('sidebar.empty')}</p>
             <Button size="sm" variant="primary" onClick={() => openQuickConnect()}>
               <Plus className="h-3 w-3" />
-              新建会话
+              {t('sidebar.newSession')}
             </Button>
           </div>
         ) : filtered.length === 0 ? (
-          <p className="px-2 py-6 text-center text-[11px] text-muted">没有匹配的会话</p>
+          <p className="px-2 py-6 text-center text-[11px] text-muted">{t('sidebar.noMatch')}</p>
         ) : (
           <>
             {favorites.length > 0 ? (
               <GroupSection
-                title="收藏"
+                title={t('sidebar.favorites')}
                 count={favorites.length}
                 collapsed={Boolean(collapsed['__favorites'])}
                 onToggle={() => toggleGroup('__favorites')}
@@ -218,33 +432,13 @@ export default function SessionSidebar() {
               </GroupSection>
             ) : null}
 
-            {groups.map(([group, list]) => (
-              <GroupSection
-                key={group}
-                title={group}
-                count={list.length}
-                collapsed={Boolean(collapsed[group])}
-                onToggle={() => toggleGroup(group)}
-              >
-                {list.map((session) => (
-                  <SessionRow
-                    key={session.id}
-                    session={session}
-                    active={activeSessionId === session.id}
-                    onOpen={handleOpen}
-                    onEdit={handleEdit}
-                    onToggleFavorite={toggleFavorite}
-                    onRemove={handleRemove}
-                  />
-                ))}
-              </GroupSection>
-            ))}
+            {groupTree.map((node) => renderGroupNode(node, 0))}
           </>
         )}
       </div>
 
       <div className="border-t border-border bg-background-alt px-2 py-1 text-[11px] text-muted">
-        共 {sessions.length} 个会话
+        {t('sidebar.total', { count: sessions.length })}
       </div>
 
       <div

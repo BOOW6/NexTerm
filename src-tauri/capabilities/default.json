@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "dialog:default",
+    "opener:default",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
     "decorum:allow-show-snap-overlay",

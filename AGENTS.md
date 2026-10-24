@@ -47,7 +47,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - SFTP：
   - 命令：`sftp_list` / `sftp_download` / `sftp_upload` / `sftp_remove` / `sftp_rename` / `sftp_mkdir` / `sftp_pause_transfer` / `sftp_cancel_transfer`
   - 事件：`sftp-progress`、`sftp-transfer-done`
-  - 每个 SSH 会话复用一条 SFTP 子系统通道；传输支持递归目录、聚合进度、断点续传（下载使用 `.part`）、暂停/取消/重试与冲突策略（覆盖/跳过/重命名）。
+  - 每个 SSH 会话复用一条 SFTP 子系统通道；传输支持递归目录、聚合进度、断点续传、暂停/取消/重试与冲突策略（询问/覆盖/跳过/重命名/较新才覆盖）。断点续传实现：下载写本地 `<file>.part`，上传写远端 `<file>.nexterm-part`，均带侧车元数据（来源 size + mtime 指纹）做续传校验，完成后原子替换目标文件，目标路径上只出现完整内容。传输任务绑定会话而非后端连接 id：断线自动重连后自动从 part 续传；conflict=ask 时经 `sftp-conflict` 事件弹出独立确认窗口（`sftp_conflict_response` 应答，支持"应用到全部"）。
   - UI：目录浏览、文件/文件夹上传、文件/文件夹下载、新建文件夹、重命名、删除、传输队列。
 
 ### 设置与主题（P4）
@@ -84,8 +84,9 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 │   │   └── ui/               # 基础组件（Button/Input/Dialog/Menu/Toast…）
 │   ├── features/workspace/   # 工作区上下文与会话操作
 │   ├── hooks/                # useTauriPty / useTauriSsh / 事件与快捷键
-│   ├── lib/                  # cn、快捷键、格式化、会话图标与状态
-│   ├── stores/               # session / workspace / ui / credentials / connections / transfer / settings
+│   ├── i18n/                 # 中英文文案与 useI18n
+│   ├── lib/                  # cn、快捷键、格式化、会话导入、终端快照、凭据保险库
+│   ├── stores/               # session / workspace / ui / credentials / vault / connections / transfer / settings
 │   ├── theme/                # tokens、ThemeProvider、xterm 主题
 │   ├── types/
 │   ├── windows/              # 设置、快速连接、主机密钥等独立窗口
@@ -96,6 +97,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 │   ├── src/
 │   │   ├── pty/mod.rs        # 本地 PTY 会话管理
 │   │   ├── ssh/mod.rs        # SSH / SFTP 连接管理
+│   │   ├── vault.rs          # 加密凭据保险库（Argon2id + AES-256-GCM）
 │   │   ├── commands/mod.rs   # Tauri IPC 命令
 │   │   ├── windows.rs        # 模态窗口与原生菜单
 │   │   ├── windows_ext.rs    # WebView 平台补丁
@@ -183,5 +185,10 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - [x] SFTP 新建 / 重命名 / 删除
 - [x] 设置面板（主题 / 终端外观 / SSH 默认值 / 快捷键 / known_hosts）
 - [x] 递归传输、断点续传、暂停/取消/重试、冲突策略
-- [ ] OpenSSH 证书认证、自动重连
-- [ ] 国际化、可访问性增强、配置导入导出
+- [x] SSH 保活（30s / 3 次）与断线自动重连（指数退避）
+- [x] 加密凭据保险库（主密码、Argon2id + AES-256-GCM）
+- [x] 会话导入（SSH config / MobaXterm / PuTTY）、JSON 备份、树形分组
+- [x] 终端 WebLinks / Unicode11 / 选中即复制 / 滚动缓冲恢复
+- [x] i18n 骨架（中 / 英核心工作区）
+- [ ] OpenSSH 证书认证、跳板机 / ProxyJump
+- [ ] 国际化全量迁移、可访问性增强

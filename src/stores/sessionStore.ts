@@ -11,6 +11,7 @@ import {
 interface SessionState {
   sessions: Session[];
   addSession: (draft: SessionDraft) => Session;
+  addSessions: (drafts: SessionDraft[]) => Session[];
   updateSession: (id: string, patch: Partial<SessionDraft>) => void;
   removeSession: (id: string) => void;
   toggleFavorite: (id: string) => void;
@@ -48,6 +49,14 @@ export const useSessionStore = create<SessionState>()(
         const session = buildSession(draft);
         set((state) => ({ sessions: [...state.sessions, session] }));
         return session;
+      },
+
+      addSessions: (drafts) => {
+        const sessions = drafts.map(buildSession);
+        if (sessions.length > 0) {
+          set((state) => ({ sessions: [...state.sessions, ...sessions] }));
+        }
+        return sessions;
       },
 
       updateSession: (id, patch) => {

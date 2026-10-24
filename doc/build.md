@@ -167,9 +167,30 @@ sftpMkdir(id, path): Promise<void>
 
 > 安全相关说明见 [`p3-ssh-sftp.md`](p3-ssh-sftp.md)。known_hosts 保存在应用配置目录的 `known_hosts.json`，为本项目自有格式，暂不与 OpenSSH 互通。
 
+SSH 连接默认每 30 秒发送一次保活探测，连续 3 次无响应后断开；前端在「设置 > SSH」中可开启断线自动重连（1s / 2s / 4s / 8s / 16s 退避，最多 5 次）。
+
+### 凭据保险库 / 文件导入
+
+```ts
+vaultStatus(): Promise<{ initialized, unlocked, entry_count }>
+vaultInitialize(masterPassword): Promise<VaultStatus>
+vaultUnlock(masterPassword): Promise<boolean>
+vaultLock(): Promise<void>
+vaultSet(name, secret): Promise<void>
+vaultGet(name): Promise<string | null>
+vaultDelete(name): Promise<void>
+vaultClear(): Promise<void>
+vaultChangePassword(oldPassword, newPassword): Promise<VaultStatus>
+vaultReset(): Promise<void>
+readTextFile(path): Promise<string>
+writeTextFile(path, contents): Promise<void>
+```
+
+保险库文件为应用配置目录下的 `credentials.vault.json`，使用 Argon2id 派生密钥与 AES-256-GCM 加密；应用重启后默认锁定。会话导入解析在 `src/lib/sessionImport.ts` 中完成（SSH config / MobaXterm / PuTTY / NexTerm JSON），文件读写通过 `read_text_file` / `write_text_file`。
+
 ## Windows ConPTY
 
-Windows 构建会通过 `conpty-assets` 随包携带 Microsoft ConPTY `1.25.260930003`（x64）。应用启动时会将其中的 `conpty.dll` / `OpenConsole.exe` 解压到应用本地数据目录，并在创建第一个 PTY 之前加载。
+Windows 构建会通过 `conpty-assets` 随包携带 Microsoft ConPTY（x64）。应用启动时会将其中的 `conpty.dll` / `OpenConsole.exe` 解压到应用本地数据目录，并在创建第一个 PTY 之前加载。
 
 这样 `portable-pty` 会优先使用随包 ConPTY，而不是系统 ConPTY。新版 ConPTY 支持 `PSEUDOCONSOLE_RESIZE_QUIRK`，窗口缩放时不再重印整屏；xterm.js 负责自己的缓冲区 reflow，从而避免垂直缩放时的行重影。许可证、来源与 SHA-256 见 [`src-tauri/THIRD_PARTY_NOTICES.md`](../src-tauri/THIRD_PARTY_NOTICES.md)。
 

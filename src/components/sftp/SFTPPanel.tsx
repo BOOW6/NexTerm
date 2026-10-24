@@ -62,9 +62,18 @@ const CONFLICT_KEY = 'nexterm.sftp.conflict.v1';
 function readConflict(): SftpConflictPolicy {
   try {
     const value = window.localStorage.getItem(CONFLICT_KEY);
-    return value === 'skip' || value === 'rename' ? value : 'overwrite';
+    if (
+      value === 'ask' ||
+      value === 'overwrite' ||
+      value === 'skip' ||
+      value === 'rename' ||
+      value === 'newer'
+    ) {
+      return value;
+    }
+    return 'ask';
   } catch {
-    return 'overwrite';
+    return 'ask';
   }
 }
 
@@ -188,7 +197,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
   };
 
   const handleUpload = async () => {
-    if (!sshId) {
+    if (!sshId || !boundSessionId) {
       return;
     }
 
@@ -204,7 +213,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
       const paths = Array.isArray(selected) ? selected : [selected];
       for (const localPath of paths) {
         await startSftpTransfer({
-          sshId,
+          sessionId: boundSessionId,
           direction: 'upload',
           name: baseName(localPath),
           localPath,
@@ -228,7 +237,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
   };
 
   const handleUploadFolder = async () => {
-    if (!sshId) {
+    if (!sshId || !boundSessionId) {
       return;
     }
 
@@ -244,7 +253,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
 
       const name = baseName(selected);
       await startSftpTransfer({
-        sshId,
+        sessionId: boundSessionId,
         direction: 'upload',
         name,
         localPath: selected,
@@ -265,7 +274,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
   };
 
   const handleDownload = async (entry: SftpEntry) => {
-    if (!sshId) {
+    if (!sshId || !boundSessionId) {
       return;
     }
 
@@ -281,7 +290,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         }
 
         await startSftpTransfer({
-          sshId,
+          sessionId: boundSessionId,
           direction: 'download',
           name: entry.name,
           localPath: `${directory}/${entry.name}`,
@@ -299,7 +308,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         }
 
         await startSftpTransfer({
-          sshId,
+          sessionId: boundSessionId,
           direction: 'download',
           name: entry.name,
           localPath: target,
@@ -499,12 +508,14 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
           value={conflict}
           onChange={(event) => setConflict(event.target.value as SftpConflictPolicy)}
           size="sm"
-          width={78}
+          width={110}
           className="shrink-0"
         >
+          <option value="ask">询问</option>
           <option value="overwrite">覆盖</option>
           <option value="skip">跳过</option>
           <option value="rename">重命名</option>
+          <option value="newer">较新才覆盖</option>
         </Select>
         <span
           className="selectable min-w-0 flex-1 truncate font-mono text-[11px] text-muted"

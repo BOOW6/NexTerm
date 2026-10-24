@@ -8,7 +8,6 @@ use anyhow::{anyhow, Context};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
-use uuid::Uuid;
 
 pub(crate) mod conpty_bundle;
 
@@ -42,7 +41,28 @@ pub struct PtyPlatformInfo {
 }
 
 impl PtySessionManager {
-    pub fn create_session(&self, app: AppHandle, cols: u16, rows: u16) -> anyhow::Result<String> {
+    pub fn create_session(
+        &self,
+        app: AppHandle,
+        id: String,
+        cols: u16,
+        rows: u16,
+    ) -> anyhow::Result<String> {
+        // The frontend generates the id so it can register output listeners
+        // before the shell starts. Validate it and reject duplicates so an
+        // event stream can never be attached to the wrong session.
+        if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+            return Err(anyhow!("invalid pty session id"));
+        }
+        if self
+            .sessions
+            .lock()
+            .map_err(|_| anyhow!("failed to lock session map"))?
+            .contains_key(&id)
+        {
+            return Err(anyhow!("pty session id already exists"));
+        }
+
         let pty_system = native_pty_system();
         let initial_size = PtySize {
             rows,
@@ -72,8 +92,8 @@ impl PtySessionManager {
             .context("failed to clone reader")?;
         let writer = pair.master.take_writer().context("failed to get writer")?;
 
-        let id = Uuid::new_v4().to_string();
         let event_id = id.clone();
+        let closed_event_id = id.clone();
         let app_handle = app.clone();
 
         std::thread::spawn(move || {
@@ -92,6 +112,8 @@ impl PtySessionManager {
                     Err(_) => break,
                 }
             }
+
+            let _ = app_handle.emit(&format!("pty-closed-{}", closed_event_id), ());
         });
 
         let session = Arc::new(PtySession {
