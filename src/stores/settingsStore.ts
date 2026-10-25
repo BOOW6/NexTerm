@@ -189,3 +189,34 @@ export const useSettingsStore = create<SettingsState>()(
     }
   )
 );
+
+/** A plain snapshot of the current settings, safe to pass over IPC events. */
+export function settingsSnapshot(): SettingsSnapshot {
+  const state = useSettingsStore.getState();
+  return {
+    language: state.language,
+    themeMode: state.themeMode,
+    lightTheme: state.lightTheme,
+    darkTheme: state.darkTheme,
+    uiFontFamily: state.uiFontFamily,
+    uiFontLigatures: state.uiFontLigatures,
+    uiFontFeatureSettings: state.uiFontFeatureSettings,
+    terminalFontSize: state.terminalFontSize,
+    terminalFontFamily: state.terminalFontFamily,
+    terminalFontLigatures: state.terminalFontLigatures,
+    terminalFontFeatureSettings: state.terminalFontFeatureSettings,
+    terminalColorScheme: state.terminalColorScheme,
+    terminalCursorStyle: state.terminalCursorStyle,
+    terminalCursorBlink: state.terminalCursorBlink,
+    terminalScrollback: state.terminalScrollback,
+    terminalLineHeight: state.terminalLineHeight,
+    terminalCopyOnSelect: state.terminalCopyOnSelect,
+    terminalRestoreScrollback: state.terminalRestoreScrollback,
+    sshAutoReconnect: state.sshAutoReconnect,
+    sshRememberCredentials: state.sshRememberCredentials,
+    defaultAuthMethod: state.defaultAuthMethod,
+    defaultPort: state.defaultPort,
+    defaultUsername: state.defaultUsername,
+    shortcuts: { ...state.shortcuts }
+  };
+}

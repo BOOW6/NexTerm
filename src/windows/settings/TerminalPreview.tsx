@@ -38,6 +38,7 @@ export default function TerminalPreview({
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const ligaturesRef = useRef<NativeLigaturesAddon | null>(null);
   const fontReadyRef = useRef(false);
   const fontFamilyRef = useRef(fontFamily);
   const { themeId } = useTheme();
@@ -59,7 +60,6 @@ export default function TerminalPreview({
     let disposed = false;
     let terminal: Terminal | null = null;
     let fitAddon: FitAddon | null = null;
-    let ligaturesAddon: NativeLigaturesAddon | null = null;
     let webglAddon: WebglAddon | null = null;
     let initFrame: number | null = null;
     let resizeFrame: number | null = null;
@@ -114,9 +114,9 @@ export default function TerminalPreview({
         try {
           const addon = new NativeLigaturesAddon({ featureSettings: fontFeatureSettings });
           instance.loadAddon(addon);
-          ligaturesAddon = addon;
+          ligaturesRef.current = addon;
         } catch {
-          ligaturesAddon = null;
+          ligaturesRef.current = null;
         }
       }
 
@@ -187,7 +187,8 @@ export default function TerminalPreview({
       terminalRef.current = null;
       fitRef.current = null;
       fitAddon?.dispose();
-      ligaturesAddon?.dispose();
+      ligaturesRef.current?.dispose();
+      ligaturesRef.current = null;
       webglAddon?.dispose();
       terminal?.dispose();
     };
@@ -195,7 +196,31 @@ export default function TerminalPreview({
     // changes are applied by the effects below. Ligatures require a fresh
     // renderer, so toggling them remounts the preview terminal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, fontLigatures, fontFeatureSettings]);
+  }, [visible, fontLigatures]);
+
+  // Feature settings only affect the ligatures addon: rebuilding it alone
+  // keeps typing in the settings field from churning the terminal and its
+  // WebGL context on every keystroke.
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal || !visible) {
+      return;
+    }
+    ligaturesRef.current?.dispose();
+    ligaturesRef.current = null;
+    if (fontLigatures) {
+      try {
+        const addon = new NativeLigaturesAddon({ featureSettings: fontFeatureSettings });
+        terminal.loadAddon(addon);
+        ligaturesRef.current = addon;
+      } catch {
+        /* fall back to the default shaping */
+      }
+    }
+    // The terminal mount is managed by the effect above (which also runs on
+    // fontLigatures changes); this one only tracks the feature settings.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fontFeatureSettings]);
 
   useEffect(() => {
     const terminal = terminalRef.current;

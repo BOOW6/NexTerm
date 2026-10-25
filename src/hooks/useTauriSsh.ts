@@ -33,6 +33,12 @@ export interface HostKeyMismatchPayload {
   actual: string;
 }
 
+export interface HostKeyTimeoutPayload {
+  request_id: string;
+  host: string;
+  port: number;
+}
+
 export interface KnownHost {
   host: string;
   algorithm: string;
@@ -298,5 +304,13 @@ export async function listenHostKeyMismatch(
 ): Promise<() => void> {
   return listen<HostKeyMismatchPayload>('ssh-host-key-mismatch', (event) => {
     onMismatch(event.payload);
+  });
+}
+
+export async function listenHostKeyTimeout(
+  onTimeout: (payload: HostKeyTimeoutPayload) => void
+): Promise<() => void> {
+  return listen<HostKeyTimeoutPayload>('ssh-host-key-timeout', (event) => {
+    onTimeout(event.payload);
   });
 }

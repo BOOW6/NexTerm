@@ -31,6 +31,7 @@ import { useConnectionStore } from '../../stores/connectionStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTransferStore } from '../../stores/transferStore';
+import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { resumeInterruptedTransfers } from '../../lib/sftpTransfer';
 import { useTheme } from '../../theme/ThemeProvider';
 import { getTerminalTheme } from '../../theme/terminalTheme';
@@ -210,6 +211,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
       let disposed = false;
       let backendId = '';
+      // Id of a connect attempt still in its handshake (typically waiting
+      // for a host-key decision). Closing the panel cancels it explicitly.
+      let pendingConnectId: string | null = null;
       let unlistenOutput: (() => void) | undefined;
       let unlistenClosed: (() => void) | undefined;
       let dataDisposable: IDisposable | undefined;
@@ -305,6 +309,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       let writesParsed = 0;
       let parseWaiters: Array<() => void> = [];
       let writeFrozen = false;
+      let unfreezeWaiters: Array<() => void> = [];
 
       let latestDimensions: { cols: number; rows: number; id: number } | null = null;
       let desiredDimensions: { cols: number; rows: number; id: number } | null = null;
@@ -503,6 +508,10 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       let reconnectTimer: number | null = null;
       let manualDisconnect = false;
       let connectedAt = 0;
+      // Whether this session ever had a working connection. A scheduled
+      // reconnect that fails must keep the chain going, so the retry
+      // decision cannot rely on the current attempt's local flag.
+      let everEstablished = false;
       // Invalidates callbacks from superseded connection attempts.
       let transportGeneration = 0;
 
@@ -529,13 +538,24 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
        * Retry notices (`placeAtBottom === false`) stay on the current screen so
        * the user can see reconnection progress.
        */
-      const writeScrollbackNotice = (
+      const writeScrollbackNotice = async (
         instance: Terminal,
         notice: string,
         placeAtBottom: boolean
       ): Promise<void> => {
         if (disposed) {
-          return Promise.resolve();
+          return;
+        }
+        // A resize freeze is holding the write queue: the queued old-size
+        // output must reach xterm BEFORE the divider, or the notice would
+        // appear above history that is still pending.
+        if (writeFrozen) {
+          await new Promise<void>((resolve) => {
+            unfreezeWaiters.push(resolve);
+          });
+        }
+        if (disposed) {
+          return;
         }
         flushPendingWrites();
         // Save/reset/restore around the scroll-region reset: DECSTBM homes the
@@ -681,7 +701,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             backendId = '';
             resizeTarget = null;
             useConnectionStore.getState().removeConnection(sessionId, id);
-            useSessionStore.getState().setStatus(sessionId, 'idle');
+            // Another split pane of this session may still be connected;
+            // only reset the status once no connection remains.
+            if (useConnectionStore.getState().connections[sessionId] === undefined) {
+              useSessionStore.getState().setStatus(sessionId, 'idle');
+            }
             useTransferStore.getState().markSessionDisconnected(sessionId);
             // Only treat a connection as healthy once it survived a while;
             // otherwise a server that accepts and immediately drops would
@@ -709,6 +733,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           }
           unlistenClosed = stopClosed;
 
+          pendingConnectId = id;
           const connectedId = await connectSsh({
             id,
             host,
@@ -721,6 +746,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             cols: instance.cols,
             rows: instance.rows
           });
+          if (pendingConnectId === id) {
+            pendingConnectId = null;
+          }
 
           if (disposed || generation !== transportGeneration || closedEarly) {
             void disconnectSsh(connectedId);
@@ -734,6 +762,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           }
 
           established = true;
+          everEstablished = true;
           backendId = connectedId;
           connectedAt = Date.now();
           resizeTarget = { id: connectedId, transport: 'ssh' };
@@ -756,17 +785,26 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             sendBackendResize(cols, rows);
           });
 
-          instance.focus();
+          // A background pane's auto-reconnect must not steal keyboard focus
+          // from the pane the user is typing in.
+          if (useWorkspaceStore.getState().activeSessionId === sessionId) {
+            instance.focus();
+          }
         } catch (error) {
+          if (pendingConnectId === id) {
+            pendingConnectId = null;
+          }
           if (!disposed && generation === transportGeneration) {
             clearTransportListeners();
             useSessionStore.getState().setStatus(sessionId, 'error');
-            useConnectionStore.getState().removeConnection(sessionId);
+            useConnectionStore.getState().removeConnection(sessionId, id);
             enqueueWrite(`\r\n\x1b[31mSSH 连接失败：${errorMessage(error)}\x1b[0m\r\n`);
-            // Only retry failures that happen after a connection was already
-            // established (network drops). Initial auth/host-key failures
-            // should surface immediately instead of looping.
-            if (connectedAt > 0 && established) {
+            // Retry whenever this session had a working connection before —
+            // either the attempt that just dropped, or a previous one whose
+            // scheduled retry itself failed (e.g. the network is still down).
+            // Never-connected sessions (auth/host-key failures) surface
+            // immediately instead of looping.
+            if (everEstablished) {
               scheduleReconnect(instance, 'SSH 连接失败');
             }
           }
@@ -1003,8 +1041,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
                 return;
               }
               // Full-screen programs use the alternate buffer; restoring that
-              // state into a fresh shell is confusing and often broken.
+              // state into a fresh shell is confusing and often broken. Skip
+              // the save AND drop the previous snapshot, otherwise the next
+              // open would restore history unrelated to this session.
               if (instance.buffer.active.type === 'alternate') {
+                clearTerminalSnapshot(sessionId);
                 return;
               }
               try {
@@ -1202,6 +1243,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
             writeFrozen = false;
             applyInProgress = false;
+            const unfreezeWaiterList = unfreezeWaiters;
+            unfreezeWaiters = [];
+            unfreezeWaiterList.forEach((resolve) => resolve());
             scheduleFlush();
 
             if (desiredDimensions && !disposed) {
@@ -1473,6 +1517,17 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           } else {
             void closePtySession(backendId);
           }
+        } else if (isSsh && pendingConnectId) {
+          // The attempt is still in its handshake (typically waiting for a
+          // host-key decision); tell the backend to cancel it so it can't
+          // finish into an unwatched session.
+          void disconnectSsh(pendingConnectId);
+        }
+
+        // Closing the last terminal panel of a session clears its status
+        // even when other panels (SFTP, forwards) of the session stay open.
+        if (isSsh && useConnectionStore.getState().connections[sessionId] === undefined) {
+          useSessionStore.getState().setStatus(sessionId, 'idle');
         }
 
         resizeTarget = null;

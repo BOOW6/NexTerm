@@ -75,8 +75,14 @@ export const useSessionStore = create<SessionState>()(
                   ? patch.title.trim() || SESSION_KIND_LABEL[nextKind]
                   : session.title,
               host: nextKind === 'local' ? undefined : patch.host?.trim() || session.host,
+              // An explicitly cleared username (empty string) must stick; the
+              // old value is only kept when the patch omits the field.
               username:
-                nextKind === 'local' ? undefined : patch.username?.trim() || session.username,
+                nextKind === 'local'
+                  ? undefined
+                  : patch.username !== undefined
+                    ? patch.username.trim() || undefined
+                    : session.username,
               port: nextKind === 'local' ? undefined : (patch.port ?? session.port),
               authMethod:
                 nextKind === 'local'

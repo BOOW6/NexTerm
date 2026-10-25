@@ -278,9 +278,9 @@ describe('markSessionDisconnected', () => {
       request
     });
     useTransferStore.getState().applyProgress(progress({ transfer_id: 't2', name: 'other' }));
-    useTransferStore.getState().applyProgress(
-      progress({ transfer_id: 't3', name: 'other-session' })
-    );
+    useTransferStore
+      .getState()
+      .applyProgress(progress({ transfer_id: 't3', name: 'other-session' }));
     useTransferStore.setState((state) => ({
       transfers: state.transfers.map((item) =>
         item.id === 't3'

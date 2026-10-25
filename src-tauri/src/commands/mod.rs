@@ -1,4 +1,4 @@
-use tauri::{ipc::Response, AppHandle, State};
+use tauri::{ipc::Response, AppHandle, Emitter, State};
 
 use crate::fonts::{FontManager, SystemFontFace, SystemFontFamily};
 use crate::pty::{PtyPlatformInfo, PtySessionManager};
@@ -52,13 +52,14 @@ pub fn create_pty_session(
 }
 
 #[tauri::command]
-pub fn write_pty(
+pub async fn write_pty(
     state: State<'_, PtySessionManager>,
     id: String,
     data: String,
 ) -> Result<(), String> {
     state
-        .write_session(&id, data.as_bytes())
+        .write_session(&id, data.into_bytes())
+        .await
         .map_err(|err| err.to_string())
 }
 
@@ -344,13 +345,17 @@ pub async fn sftp_mkdir(
 }
 
 #[tauri::command]
-pub fn read_text_file(path: String) -> Result<String, String> {
+pub async fn read_text_file(path: String) -> Result<String, String> {
     const MAX_BYTES: u64 = 8 * 1024 * 1024;
-    let metadata = std::fs::metadata(&path).map_err(|err| err.to_string())?;
+    let metadata = tokio::fs::metadata(&path)
+        .await
+        .map_err(|err| err.to_string())?;
     if metadata.len() > MAX_BYTES {
         return Err("文件过大（上限 8 MiB）".to_string());
     }
-    let bytes = std::fs::read(&path).map_err(|err| err.to_string())?;
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|err| err.to_string())?;
     Ok(decode_text(bytes))
 }
 
@@ -389,8 +394,10 @@ fn decode_utf16(bytes: &[u8], little_endian: bool) -> String {
 }
 
 #[tauri::command]
-pub fn write_text_file(path: String, contents: String) -> Result<(), String> {
-    std::fs::write(&path, contents).map_err(|err| err.to_string())
+pub async fn write_text_file(path: String, contents: String) -> Result<(), String> {
+    tokio::fs::write(&path, contents)
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -399,37 +406,52 @@ pub fn vault_status(state: State<'_, VaultManager>) -> VaultStatus {
 }
 
 #[tauri::command]
-pub fn vault_initialize(
+pub async fn vault_initialize(
     state: State<'_, VaultManager>,
+    app: AppHandle,
     master_password: String,
 ) -> Result<VaultStatus, String> {
-    state
+    let status = state
         .initialize(&master_password)
-        .map_err(|err| err.to_string())
+        .await
+        .map_err(|err| err.to_string())?;
+    let _ = app.emit("nexterm-vault-unlocked", ());
+    Ok(status)
 }
 
 #[tauri::command]
-pub fn vault_unlock(
+pub async fn vault_unlock(
     state: State<'_, VaultManager>,
+    app: AppHandle,
     master_password: String,
 ) -> Result<bool, String> {
-    state
+    let unlocked = state
         .unlock(&master_password)
-        .map_err(|err| err.to_string())
+        .await
+        .map_err(|err| err.to_string())?;
+    if unlocked {
+        let _ = app.emit("nexterm-vault-unlocked", ());
+    }
+    Ok(unlocked)
 }
 
 #[tauri::command]
-pub fn vault_lock(state: State<'_, VaultManager>) {
-    state.lock();
+pub async fn vault_lock(state: State<'_, VaultManager>, app: AppHandle) -> Result<(), String> {
+    state.lock().await;
+    let _ = app.emit("nexterm-vault-locked", ());
+    Ok(())
 }
 
 #[tauri::command]
-pub fn vault_set(
+pub async fn vault_set(
     state: State<'_, VaultManager>,
     name: String,
     secret: String,
 ) -> Result<(), String> {
-    state.set(&name, &secret).map_err(|err| err.to_string())
+    state
+        .set(&name, &secret)
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -438,29 +460,37 @@ pub fn vault_get(state: State<'_, VaultManager>, name: String) -> Result<Option<
 }
 
 #[tauri::command]
-pub fn vault_delete(state: State<'_, VaultManager>, name: String) -> Result<(), String> {
-    state.delete(&name).map_err(|err| err.to_string())
+pub async fn vault_delete(state: State<'_, VaultManager>, name: String) -> Result<(), String> {
+    state.delete(&name).await.map_err(|err| err.to_string())
 }
 
 #[tauri::command]
-pub fn vault_clear(state: State<'_, VaultManager>) -> Result<(), String> {
-    state.clear().map_err(|err| err.to_string())
+pub async fn vault_clear(state: State<'_, VaultManager>, app: AppHandle) -> Result<(), String> {
+    state.clear().await.map_err(|err| err.to_string())?;
+    let _ = app.emit("nexterm-vault-cleared", ());
+    Ok(())
 }
 
 #[tauri::command]
-pub fn vault_change_password(
+pub async fn vault_change_password(
     state: State<'_, VaultManager>,
+    app: AppHandle,
     old_password: String,
     new_password: String,
 ) -> Result<VaultStatus, String> {
-    state
+    let status = state
         .change_password(&old_password, &new_password)
-        .map_err(|err| err.to_string())
+        .await
+        .map_err(|err| err.to_string())?;
+    let _ = app.emit("nexterm-vault-unlocked", ());
+    Ok(status)
 }
 
 #[tauri::command]
-pub fn vault_reset(state: State<'_, VaultManager>) -> Result<(), String> {
-    state.reset().map_err(|err| err.to_string())
+pub async fn vault_reset(state: State<'_, VaultManager>, app: AppHandle) -> Result<(), String> {
+    state.reset().await.map_err(|err| err.to_string())?;
+    let _ = app.emit("nexterm-vault-cleared", ());
+    Ok(())
 }
 
 #[cfg(test)]

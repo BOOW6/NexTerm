@@ -15,6 +15,7 @@ import {
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { useWorkspace } from '../../features/workspace/WorkspaceContext';
 import { useSessionStore } from '../../stores/sessionStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { toast } from '../ui/toast';
 import { Button } from '../ui/button';
@@ -255,7 +256,9 @@ export default function SessionSidebar() {
           title: item.title,
           host: item.host,
           port: item.port,
-          username: item.username,
+          // Imported configs often omit User; fall back to the configured
+          // default so the session can actually connect.
+          username: item.username || useSettingsStore.getState().defaultUsername,
           authMethod: item.authMethod,
           keyPath: item.keyPath,
           group: item.group,

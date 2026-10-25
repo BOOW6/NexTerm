@@ -1,6 +1,12 @@
 import { useEffect } from 'react';
 import { openModalWindow } from '../lib/appWindows';
-import { listenHostKeyMismatch, listenHostKeyPrompt, respondHostKey } from './useTauriSsh';
+import { toast } from '../components/ui/toast';
+import {
+  listenHostKeyMismatch,
+  listenHostKeyPrompt,
+  listenHostKeyTimeout,
+  respondHostKey
+} from './useTauriSsh';
 
 export function useSshHostKeyEvents(): void {
   useEffect(() => {
@@ -25,14 +31,22 @@ export function useSshHostKeyEvents(): void {
           height: 540,
           data: { mode: 'mismatch', mismatch: payload }
         });
+      }),
+      listenHostKeyTimeout((payload) => {
+        toast({
+          title: `主机密钥确认超时：${payload.host}:${payload.port}`,
+          description: '指纹确认窗口已关闭，连接已取消，可重新发起连接。',
+          variant: 'warning'
+        });
       })
     ])
-      .then(([disposePrompt, disposeMismatch]) => {
+      .then(([disposePrompt, disposeMismatch, disposeTimeout]) => {
         if (cancelled) {
           disposePrompt();
           disposeMismatch();
+          disposeTimeout();
         } else {
-          disposers = [disposePrompt, disposeMismatch];
+          disposers = [disposePrompt, disposeMismatch, disposeTimeout];
         }
       })
       .catch(() => undefined);

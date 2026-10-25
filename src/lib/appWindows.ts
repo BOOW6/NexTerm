@@ -3,12 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { ask, message } from '@tauri-apps/plugin-dialog';
 
 export type AppWindowKind =
-  | 'main'
-  | 'settings'
-  | 'quick-connect'
-  | 'host-key'
-  | 'prompt'
-  | 'sftp-conflict';
+  'main' | 'settings' | 'quick-connect' | 'host-key' | 'prompt' | 'sftp-conflict';
 
 export interface ModalWindowOptions {
   title: string;

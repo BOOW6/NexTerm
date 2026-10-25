@@ -109,8 +109,14 @@ describe('updateSession', () => {
     const updated = useSessionStore.getState().getSession(created.id)!;
     expect(updated.title).toBe(SESSION_KIND_LABEL.ssh);
     expect(updated.host).toBe('new.example.com');
-    expect(updated.username).toBe('root');
+    // A whitespace-only username is an explicit clear, not a fallback.
+    expect(updated.username).toBeUndefined();
     expect(updated.keyPath).toBe('~/.ssh/id_ed25519');
+
+    // A patch that omits the field keeps the stored value.
+    useSessionStore.getState().updateSession(created.id, { username: 'deploy' });
+    useSessionStore.getState().updateSession(created.id, { host: 'third.example.com' });
+    expect(useSessionStore.getState().getSession(created.id)!.username).toBe('deploy');
   });
 
   it('clears network fields when converting to a local session', () => {

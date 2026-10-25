@@ -137,18 +137,38 @@ pub struct HostKeyState {
 
 impl HostKeyState {
     fn new(path: PathBuf) -> Self {
-        let known = std::fs::read(&path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<Vec<KnownHost>>(&bytes).ok())
-            .unwrap_or_default()
-            .into_iter()
-            .map(|entry| (entry.host.clone(), entry))
-            .collect();
+        let known = Self::load(&path);
 
         Self {
             path,
             known: Mutex::new(known),
             pending: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn load(path: &Path) -> HashMap<String, KnownHost> {
+        let bytes = match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            // Missing file: first run, start empty.
+            Err(_) => return HashMap::new(),
+        };
+        match serde_json::from_slice::<Vec<KnownHost>>(&bytes) {
+            Ok(entries) => entries
+                .into_iter()
+                .map(|entry| (entry.host.clone(), entry))
+                .collect(),
+            Err(error) => {
+                // A truncated or corrupted file must not silently wipe every
+                // recorded TOFU decision; keep it around for inspection.
+                let backup = path.with_extension("json.corrupt");
+                if std::fs::rename(path, &backup).is_ok() {
+                    eprintln!(
+                        "[known_hosts] unreadable file ({error}); moved to {}",
+                        backup.display()
+                    );
+                }
+                HashMap::new()
+            }
         }
     }
 
@@ -193,35 +213,72 @@ impl HostKeyState {
 
     fn persist(&self, known: &HashMap<String, KnownHost>) {
         let entries: Vec<&KnownHost> = known.values().collect();
-        if let Ok(json) = serde_json::to_vec_pretty(&entries) {
-            if let Some(parent) = self.path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            let _ = std::fs::write(&self.path, json);
+        let Ok(json) = serde_json::to_vec_pretty(&entries) else {
+            return;
+        };
+        if let Some(parent) = self.path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        // Write-through-temp-then-rename: a crash mid-write leaves the
+        // previous file intact instead of a truncated, unparsable one.
+        let temp = self.path.with_extension("json.tmp");
+        if std::fs::write(&temp, json)
+            .and_then(|()| std::fs::rename(&temp, &self.path))
+            .is_err()
+        {
+            eprintln!("[known_hosts] failed to persist {}", self.path.display());
         }
     }
 }
 
+/// Remote forwards keyed by (bind address, bind port) → (target host, port).
+type RemoteForwardMap = HashMap<(String, u32), (String, u16)>;
+
 pub struct SshManager {
-    sessions: Mutex<HashMap<String, Arc<SshConnection>>>,
+    sessions: Arc<Mutex<HashMap<String, Arc<SshConnection>>>>,
     host_keys: Arc<HostKeyState>,
-    forwards: Mutex<HashMap<String, ForwardHandle>>,
+    forwards: Arc<Mutex<HashMap<String, ForwardHandle>>>,
     transfers: Arc<Mutex<HashMap<String, Arc<TransferControl>>>>,
     conflicts: Arc<ConflictPendingMap>,
+    /// Handshakes still in flight, keyed by session id. Reserving the id
+    /// keeps duplicate connects out and lets `ssh_disconnect` cancel an
+    /// attempt that is waiting for a host-key decision instead of letting it
+    /// finish into an authenticated session nobody watches.
+    connecting: Mutex<HashMap<String, ConnectHandle>>,
+}
+
+struct ConnectHandle {
+    cancel: oneshot::Sender<()>,
+    cancelled: Arc<AtomicBool>,
+}
+
+/// Removes the connecting reservation on every exit path of `connect`,
+/// including the many `?` early returns.
+struct ConnectReservation<'a> {
+    connecting: &'a Mutex<HashMap<String, ConnectHandle>>,
+    id: String,
+}
+
+impl Drop for ConnectReservation<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut connecting) = self.connecting.lock() {
+            connecting.remove(&self.id);
+        }
+    }
 }
 
 struct SshConnection {
     handle: Arc<client::Handle<Client>>,
     writer: Arc<ChannelWriteHalf<client::Msg>>,
     sftp: tokio::sync::Mutex<Option<Arc<SftpSession>>>,
-    remote_forwards: Arc<Mutex<HashMap<u32, (String, u16)>>>,
+    remote_forwards: Arc<Mutex<RemoteForwardMap>>,
 }
 
 struct ForwardHandle {
     info: PortForwardInfo,
     task: Option<tokio::task::JoinHandle<()>>,
     handle: Arc<client::Handle<Client>>,
-    remote_forwards: Arc<Mutex<HashMap<u32, (String, u16)>>>,
+    remote_forwards: Arc<Mutex<RemoteForwardMap>>,
 }
 
 #[derive(Default)]
@@ -239,7 +296,10 @@ pub struct Client {
     host: String,
     port: u16,
     host_label: String,
-    remote_forwards: Arc<Mutex<HashMap<u32, (String, u16)>>>,
+    remote_forwards: Arc<Mutex<RemoteForwardMap>>,
+    /// Cancels the fingerprint wait when the session is disconnected while
+    /// the dialog is open. Consumed by `check_server_key`.
+    cancel: Option<oneshot::Receiver<()>>,
 }
 
 impl client::Handler for Client {
@@ -292,11 +352,38 @@ impl client::Handler for Client {
             },
         );
 
-        let accepted = tokio::time::timeout(Duration::from_secs(120), receiver)
-            .await
-            .ok()
-            .and_then(|result| result.ok())
-            .unwrap_or(false);
+        let mut cancel = self.cancel.take();
+        // A dropped sender (app shutting down) counts as a rejection.
+        let response = async { receiver.await.unwrap_or_default() };
+        let cancelled = async {
+            match cancel.as_mut() {
+                // `&mut Receiver` is itself a Future.
+                Some(cancel) => {
+                    let _ = cancel.await;
+                }
+                None => std::future::pending::<()>().await,
+            }
+        };
+
+        // The dialog waits for the user's answer, a disconnect while it is
+        // open, or its 120s timeout — whichever comes first.
+        let accepted = tokio::select! {
+            accepted = response => accepted,
+            _ = cancelled => false,
+            _ = tokio::time::sleep(Duration::from_secs(120)) => {
+                // Tell every window: the late "trust" click would otherwise be
+                // silently dropped while the dialog stays open.
+                let _ = self.app.emit(
+                    "ssh-host-key-timeout",
+                    HostKeyTimeoutPayload {
+                        request_id: request_id.clone(),
+                        host: self.host.clone(),
+                        port: self.port,
+                    },
+                );
+                false
+            }
+        };
 
         lock(&self.host_key.pending).remove(&request_id);
 
@@ -316,14 +403,29 @@ impl client::Handler for Client {
     async fn server_channel_open_forwarded_tcpip(
         &mut self,
         channel: Channel<russh::client::Msg>,
-        _connected_address: &str,
+        connected_address: &str,
         connected_port: u32,
         _originator_address: &str,
         _originator_port: u32,
         reply: client::ChannelOpenHandle,
         _session: &mut russh::client::Session,
     ) -> Result<(), Self::Error> {
-        let target = lock(&self.remote_forwards).get(&connected_port).cloned();
+        // Match on (bind address, port): two forwards may share a port with
+        // different bind addresses. Some servers report a different address
+        // form than the one bound, so fall back to a port-only match when it
+        // is unambiguous.
+        let target = {
+            let map = lock(&self.remote_forwards);
+            map.get(&(connected_address.to_string(), connected_port))
+                .cloned()
+                .or_else(|| {
+                    let matches: Vec<_> = map
+                        .iter()
+                        .filter(|((_, port), _)| *port == connected_port)
+                        .collect();
+                    (matches.len() == 1).then(|| matches[0].1.clone())
+                })
+        };
 
         match target {
             Some((host, port)) => {
@@ -361,6 +463,13 @@ struct HostKeyMismatchPayload {
     host: String,
     expected: String,
     actual: String,
+}
+
+#[derive(Clone, Serialize)]
+struct HostKeyTimeoutPayload {
+    request_id: String,
+    host: String,
+    port: u16,
 }
 
 #[derive(Clone, Serialize)]
@@ -431,14 +540,60 @@ fn emit_done(app: &AppHandle, payload: &SftpTransferDonePayload) {
     let _ = app.emit("sftp-transfer-done", payload.clone());
 }
 
+/// Stop every port forward bound to session `id` and notify the frontend.
+///
+/// Shared by the explicit disconnect path and the read loop's connection-died
+/// path, so local listeners never outlive their transport. The remote-side
+/// cancel is best-effort: in the connection-died path the handle is already
+/// dead and the server-side forward dies with it.
+async fn stop_session_forwards(
+    forwards: &Mutex<HashMap<String, ForwardHandle>>,
+    app: &AppHandle,
+    id: &str,
+) {
+    let active_forwards: Vec<String> = lock(forwards)
+        .iter()
+        .filter(|(_, forward)| forward.info.ssh_id == id)
+        .map(|(forward_id, _)| forward_id.clone())
+        .collect();
+    let had_forwards = !active_forwards.is_empty();
+
+    for forward_id in active_forwards {
+        let forward = lock(forwards).remove(&forward_id);
+        if let Some(forward) = forward {
+            if let Some(task) = forward.task {
+                task.abort();
+            }
+            if forward.info.kind == "remote" {
+                lock(&forward.remote_forwards).remove(&(
+                    forward.info.bind_host.clone(),
+                    forward.info.bind_port as u32,
+                ));
+                let _ = forward
+                    .handle
+                    .cancel_tcpip_forward(
+                        forward.info.bind_host.clone(),
+                        forward.info.bind_port as u32,
+                    )
+                    .await;
+            }
+        }
+    }
+
+    if had_forwards {
+        let _ = app.emit("port-forwards-changed", ());
+    }
+}
+
 impl SshManager {
     pub fn new(known_hosts_path: PathBuf) -> Self {
         Self {
-            sessions: Mutex::new(HashMap::new()),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
             host_keys: Arc::new(HostKeyState::new(known_hosts_path)),
-            forwards: Mutex::new(HashMap::new()),
+            forwards: Arc::new(Mutex::new(HashMap::new())),
             transfers: Arc::new(Mutex::new(HashMap::new())),
             conflicts: Arc::new(Mutex::new(HashMap::new())),
+            connecting: Mutex::new(HashMap::new()),
         }
     }
 
@@ -502,6 +657,25 @@ impl SshManager {
             return Err(anyhow!("SSH session id already exists"));
         }
 
+        let (cancel_sender, cancel_receiver) = oneshot::channel();
+        {
+            let mut connecting = lock(&self.connecting);
+            if connecting.contains_key(&id) {
+                return Err(anyhow!("SSH 会话正在连接中"));
+            }
+            connecting.insert(
+                id.clone(),
+                ConnectHandle {
+                    cancel: cancel_sender,
+                    cancelled: Arc::new(AtomicBool::new(false)),
+                },
+            );
+        }
+        let _reservation = ConnectReservation {
+            connecting: &self.connecting,
+            id: id.clone(),
+        };
+
         let config = Arc::new(client::Config {
             inactivity_timeout: None,
             keepalive_interval: Some(Duration::from_secs(30)),
@@ -517,6 +691,7 @@ impl SshManager {
             port,
             host_label: format!("{host}:{port}"),
             remote_forwards: remote_forwards.clone(),
+            cancel: Some(cancel_receiver),
         };
 
         let mut handle = client::connect(config, (host.as_str(), port), client)
@@ -587,25 +762,47 @@ impl SshManager {
 
         let event_id = id.clone();
         let app_handle = app.clone();
+        let reap_forwards = self.forwards.clone();
+        let reap_sessions = self.sessions.clone();
 
         tokio::spawn(async move {
+            // Separate decoders per stream: a stderr packet must not complete
+            // (or corrupt) a stdout sequence that is still missing bytes.
+            let mut output_decoder = crate::text_stream::Utf8StreamDecoder::new();
+            let mut stderr_decoder = crate::text_stream::Utf8StreamDecoder::new();
             while let Some(message) = read_half.wait().await {
-                match message {
-                    ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. } => {
-                        let payload = SshOutputPayload {
-                            id: event_id.clone(),
-                            data: String::from_utf8_lossy(&data).to_string(),
-                        };
-                        let _ = app_handle.emit(&format!("ssh-output-{}", event_id), payload);
-                    }
+                let (data, decoder) = match message {
+                    ChannelMsg::Data { data } => (data, &mut output_decoder),
+                    ChannelMsg::ExtendedData { data, .. } => (data, &mut stderr_decoder),
                     ChannelMsg::ExitStatus { .. } => break,
                     ChannelMsg::Eof | ChannelMsg::Close => break,
-                    _ => {}
-                }
+                    _ => continue,
+                };
+                let payload = SshOutputPayload {
+                    id: event_id.clone(),
+                    data: decoder.feed(&data),
+                };
+                let _ = app_handle.emit(&format!("ssh-output-{}", event_id), payload);
             }
 
             let _ = app_handle.emit(&format!("ssh-closed-{}", event_id), ());
+
+            // The connection died on its own (network drop, server restart):
+            // release its port forwards and drop the dead session entry so
+            // local listeners are freed and the UI stops listing them.
+            stop_session_forwards(&reap_forwards, &app_handle, &event_id).await;
+            lock(&reap_sessions).remove(&event_id);
         });
+
+        // A disconnect during the auth/handshake phases may have given up on
+        // this attempt; never register a session nobody is watching anymore.
+        if lock(&self.connecting)
+            .get(&id)
+            .map(|handle| handle.cancelled.load(Ordering::SeqCst))
+            .unwrap_or(true)
+        {
+            return Err(anyhow!("SSH 连接已取消"));
+        }
 
         self.sessions
             .lock()
@@ -642,20 +839,15 @@ impl SshManager {
     }
 
     pub async fn disconnect(&self, app: AppHandle, id: &str) -> anyhow::Result<()> {
-        let active_forwards: Vec<String> = lock(&self.forwards)
-            .iter()
-            .filter(|(_, forward)| forward.info.ssh_id == id)
-            .map(|(forward_id, _)| forward_id.clone())
-            .collect();
-        let had_forwards = !active_forwards.is_empty();
-
-        for forward_id in active_forwards {
-            let _ = self.stop_forward_inner(&forward_id).await;
+        // A connect still in its handshake (typically waiting for a host-key
+        // decision) has no live session yet — cancel it outright.
+        if let Some(handle) = lock(&self.connecting).remove(id) {
+            handle.cancelled.store(true, Ordering::SeqCst);
+            let _ = handle.cancel.send(());
+            return Ok(());
         }
 
-        if had_forwards {
-            let _ = app.emit("port-forwards-changed", ());
-        }
+        stop_session_forwards(&self.forwards, &app, id).await;
 
         let connection = self
             .sessions
@@ -1003,8 +1195,10 @@ impl SshManager {
                     .await
                     .context("failed to request remote forwarding")?;
                 let actual_port = u16::try_from(actual_port).unwrap_or(0);
-                lock(&connection.remote_forwards)
-                    .insert(actual_port as u32, (target_host.clone(), target_port));
+                lock(&connection.remote_forwards).insert(
+                    (bind_host.clone(), actual_port as u32),
+                    (target_host.clone(), target_port),
+                );
 
                 (
                     PortForwardInfo {
@@ -1052,7 +1246,10 @@ impl SshManager {
         }
 
         if forward.info.kind == "remote" {
-            lock(&forward.remote_forwards).remove(&(forward.info.bind_port as u32));
+            lock(&forward.remote_forwards).remove(&(
+                forward.info.bind_host.clone(),
+                forward.info.bind_port as u32,
+            ));
             let _ = forward
                 .handle
                 .cancel_tcpip_forward(
@@ -1393,6 +1590,19 @@ async fn collect_remote_files(
                     relative,
                     size: entry.metadata().size.unwrap_or(0),
                 });
+            } else if entry.file_type().is_symlink() {
+                // Follow links that point at files; skip links to directories
+                // (cycle risk) and dangling links instead of dropping every
+                // symlink indiscriminately.
+                if let Ok(target) = sftp.metadata(entry.path()).await {
+                    if target.file_type().is_file() {
+                        out.push(RemoteFile {
+                            remote: entry.path(),
+                            relative,
+                            size: target.size.unwrap_or(0),
+                        });
+                    }
+                }
             }
         }
     }
@@ -1421,12 +1631,25 @@ fn collect_local_files(root: &Path) -> anyhow::Result<Vec<LocalFile>> {
 
     for entry in WalkDir::new(root).follow_links(false) {
         let entry = entry?;
-        if entry.file_type().is_file() {
+        let file_type = entry.file_type();
+        if file_type.is_file() {
             files.push(LocalFile {
                 local: entry.path().to_path_buf(),
                 relative: entry.path().strip_prefix(root)?.to_path_buf(),
                 size: entry.metadata()?.len(),
             });
+        } else if file_type.is_symlink() {
+            // Follow links that point at files; skip directory links (cycle
+            // risk) and dangling ones.
+            if let Ok(target) = entry.path().metadata() {
+                if target.is_file() {
+                    files.push(LocalFile {
+                        local: entry.path().to_path_buf(),
+                        relative: entry.path().strip_prefix(root)?.to_path_buf(),
+                        size: target.len(),
+                    });
+                }
+            }
         }
     }
 
@@ -2543,6 +2766,10 @@ fn openssh_host_to_label(pattern: &str) -> Option<String> {
             Some((host, port)) => (host, port.parse::<u16>().ok()?),
             None => (rest.strip_suffix(']')?, 22),
         }
+    } else if pattern.matches(':').count() > 1 {
+        // A bare IPv6 address: OpenSSH omits the brackets and the port when
+        // it is 22, and splitting on the last colon would mangle the address.
+        (pattern, 22)
     } else if let Some((host, port)) = pattern.rsplit_once(':') {
         match port.parse::<u16>() {
             Ok(port) => (host, port),
@@ -3052,5 +3279,62 @@ mod tests {
         assert!(!overwrite_if_newer(100, 40, 100, 60));
         // Unknown target mtime (0): a source with a real timestamp wins.
         assert!(overwrite_if_newer(100, 1, 100, 0));
+    }
+
+    #[test]
+    fn corrupt_known_hosts_file_is_moved_aside() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("known_hosts.json");
+        std::fs::write(&path, b"{ definitely not json").unwrap();
+
+        let state = HostKeyState::new(path.clone());
+
+        assert!(state.list().is_empty());
+        // The unreadable original is kept for inspection, not deleted.
+        assert!(path.with_extension("json.corrupt").exists());
+        assert!(!path.exists());
+
+        // New records persist normally again after the reset.
+        state.add(
+            "recovered:22".to_string(),
+            "ssh-ed25519".to_string(),
+            "SHA256:test".to_string(),
+            None,
+        );
+        assert_eq!(state.list().len(), 1);
+    }
+
+    #[test]
+    fn openssh_import_handles_bare_ipv6_hosts() {
+        // OpenSSH omits brackets and the port for port-22 IPv6 hosts; the
+        // whole address is the host and the port defaults to 22.
+        assert_eq!(openssh_host_to_label("::1"), Some("::1:22".to_string()));
+        assert_eq!(
+            openssh_host_to_label("2001:db8::1"),
+            Some("2001:db8::1:22".to_string())
+        );
+        // A single colon remains host:port.
+        assert_eq!(
+            openssh_host_to_label("example.com:2222"),
+            Some("example.com:2222".to_string())
+        );
+        assert_eq!(
+            openssh_host_to_label("example.com"),
+            Some("example.com:22".to_string())
+        );
+        // Bracketed IPv6 keeps working, with and without a port.
+        assert_eq!(
+            openssh_host_to_label("[::1]:22"),
+            Some("::1:22".to_string())
+        );
+        assert_eq!(
+            openssh_host_to_label("[2001:db8::1]:2200"),
+            Some("2001:db8::1:2200".to_string())
+        );
+        // Export brackets IPv6 hosts again so OpenSSH can parse them.
+        assert_eq!(
+            openssh_host_field("2001:db8::1:22"),
+            Some("[2001:db8::1]:22".to_string())
+        );
     }
 }

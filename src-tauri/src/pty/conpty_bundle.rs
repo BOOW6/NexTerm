@@ -93,9 +93,15 @@ mod imp {
 
     pub fn install(_app: &AppHandle) {}
 
+    // Only `#[cfg(windows)]` callers reference this; compiling it on other
+    // targets trips `-D warnings` (dead_code + unused re-export).
+    #[cfg(windows)]
     pub fn reported_build_number(os_build: Option<u32>) -> Option<u32> {
         os_build
     }
 }
 
-pub use imp::{install, reported_build_number};
+pub use imp::install;
+
+#[cfg(windows)]
+pub use imp::reported_build_number;

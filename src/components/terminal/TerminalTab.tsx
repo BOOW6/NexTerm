@@ -303,7 +303,18 @@ export default function TerminalTab(props: IDockviewPanelProps) {
               size="icon-sm"
               variant="ghost"
               aria-label={t('terminal.clearAuth')}
-              onClick={() => clearCredentials(session.id)}
+              onClick={() => {
+                // Clearing flips the render branch to the auth form, which
+                // would unmount the terminal and kill a live connection.
+                if (session.status === 'connected' || session.status === 'connecting') {
+                  toast({
+                    title: t('terminal.clearAuthBlocked'),
+                    variant: 'warning'
+                  });
+                  return;
+                }
+                clearCredentials(session.id);
+              }}
             >
               <KeyRound className="h-3 w-3" />
             </Button>

@@ -67,9 +67,27 @@ export function parseSshConfig(text: string, group = 'SSH Config'): ImportedSess
     identity?: string;
   } | null = null;
   let inMatch = false;
+  // Options from a `Host *` block apply to every concrete host below it
+  // (IdentityFile and User live there in most real configs).
+  let wildcardDefaults: {
+    hostname?: string;
+    user?: string;
+    port?: number;
+    identity?: string;
+  } = {};
 
   const flush = () => {
     if (!current || inMatch) {
+      current = null;
+      return;
+    }
+    if (current.patterns.length === 1 && current.patterns[0] === '*') {
+      wildcardDefaults = {
+        hostname: current.hostname ?? wildcardDefaults.hostname,
+        user: current.user ?? wildcardDefaults.user,
+        port: current.port ?? wildcardDefaults.port,
+        identity: current.identity ?? wildcardDefaults.identity
+      };
       current = null;
       return;
     }
@@ -82,14 +100,15 @@ export function parseSshConfig(text: string, group = 'SSH Config'): ImportedSess
       return;
     }
     const host = current.hostname || alias;
+    const identity = current.identity ?? wildcardDefaults.identity;
     sessions.push({
       kind: 'ssh',
       title: alias,
       host,
-      port: current.port ?? 22,
-      username: current.user ?? '',
-      authMethod: current.identity ? 'key' : 'password',
-      keyPath: current.identity,
+      port: current.port ?? wildcardDefaults.port ?? 22,
+      username: current.user ?? wildcardDefaults.user ?? '',
+      authMethod: identity ? 'key' : 'password',
+      keyPath: identity,
       group
     });
     current = null;
@@ -217,7 +236,14 @@ export function parsePuTTY(text: string, group = 'PuTTY'): ImportedSession[] {
     if (!name || name.toLowerCase() === 'default settings') {
       return;
     }
-    const host = fields.hostname?.trim();
+    const rawHost = fields.hostname?.trim();
+    if (!rawHost) {
+      return;
+    }
+    // PuTTY stores `user@host` verbatim in the Host Name field.
+    const atIndex = rawHost.lastIndexOf('@');
+    const host = atIndex >= 0 ? rawHost.slice(atIndex + 1) : rawHost;
+    const inlineUser = atIndex >= 0 ? rawHost.slice(0, atIndex) : '';
     if (!host) {
       return;
     }
@@ -233,7 +259,7 @@ export function parsePuTTY(text: string, group = 'PuTTY'): ImportedSession[] {
       title,
       host,
       port: normalizePort(fields.portnumber),
-      username: fields.username?.trim() ?? '',
+      username: fields.username?.trim() || inlineUser,
       authMethod: fields.publickeyfile?.trim() ? 'key' : 'password',
       keyPath: fields.publickeyfile?.trim() || undefined,
       group: parent ? `${group}/${parent}` : group

@@ -57,7 +57,8 @@ function loadSharedFont(family: string): Promise<LigatureFont | null> {
       return font;
     })
     .catch((error) => {
-      sharedFontCache.set(family, null);
+      // Do NOT cache the failure: a transient font-service error would
+      // otherwise disable ligatures for this family until the app restarts.
       console.warn('[terminal] failed to load font ligatures', family, error);
       return null;
     })

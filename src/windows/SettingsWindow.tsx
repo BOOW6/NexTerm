@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { emit, listen } from '@tauri-apps/api/event';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
@@ -23,6 +23,7 @@ import { Toaster, toast } from '../components/ui/toast';
 import { cn } from '../lib/cn';
 import {
   DEFAULT_SETTINGS,
+  settingsSnapshot as snapshotOf,
   useSettingsStore,
   type LanguageSetting,
   type SettingsSnapshot,
@@ -158,36 +159,6 @@ function buildFontOptions(
 
 const TerminalPreview = lazy(() => import('./settings/TerminalPreview'));
 
-function snapshotOf(): SettingsSnapshot {
-  const state = useSettingsStore.getState();
-  return {
-    language: state.language,
-    themeMode: state.themeMode,
-    lightTheme: state.lightTheme,
-    darkTheme: state.darkTheme,
-    uiFontFamily: state.uiFontFamily,
-    uiFontLigatures: state.uiFontLigatures,
-    uiFontFeatureSettings: state.uiFontFeatureSettings,
-    terminalFontSize: state.terminalFontSize,
-    terminalFontFamily: state.terminalFontFamily,
-    terminalFontLigatures: state.terminalFontLigatures,
-    terminalFontFeatureSettings: state.terminalFontFeatureSettings,
-    terminalColorScheme: state.terminalColorScheme,
-    terminalCursorStyle: state.terminalCursorStyle,
-    terminalCursorBlink: state.terminalCursorBlink,
-    terminalScrollback: state.terminalScrollback,
-    terminalLineHeight: state.terminalLineHeight,
-    terminalCopyOnSelect: state.terminalCopyOnSelect,
-    terminalRestoreScrollback: state.terminalRestoreScrollback,
-    sshAutoReconnect: state.sshAutoReconnect,
-    sshRememberCredentials: state.sshRememberCredentials,
-    defaultAuthMethod: state.defaultAuthMethod,
-    defaultPort: state.defaultPort,
-    defaultUsername: state.defaultUsername,
-    shortcuts: { ...state.shortcuts }
-  };
-}
-
 function initialTab(): SettingsTab {
   const tab = new URLSearchParams(window.location.search).get('tab');
   return TABS.some((item) => item.id === tab) ? (tab as SettingsTab) : 'appearance';
@@ -224,10 +195,8 @@ function ThemeSpecimen({ theme, className }: { theme: ThemeDefinition; className
 export default function SettingsWindow() {
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   const [previewActivated, setPreviewActivated] = useState(() => initialTab() === 'terminal');
-  const [draft, setDraft] = useState<SettingsSnapshot>(() => ({
-    ...snapshotOf(),
-    shortcuts: { ...useSettingsStore.getState().shortcuts }
-  }));
+  const initialSnapshot = useMemo(() => snapshotOf(), []);
+  const [draft, setDraft] = useState<SettingsSnapshot>(initialSnapshot);
   const [knownHosts, setKnownHosts] = useState<KnownHost[]>([]);
   const [removedHosts, setRemovedHosts] = useState<string[]>([]);
   const [loadingHosts, setLoadingHosts] = useState(false);
@@ -237,6 +206,13 @@ export default function SettingsWindow() {
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [vaultStatus, setVaultStatus] = useState<VaultStatus | null>(null);
   const [vaultBusy, setVaultBusy] = useState(false);
+  // What this window last believed the store holds. External changes (e.g. a
+  // theme cycle in the main window) are merged into the draft per-field so
+  // unsaved local edits survive; the ref also drives the close guard.
+  const lastKnownRef = useRef<SettingsSnapshot>(initialSnapshot);
+  const dirtyRef = useRef(false);
+  dirtyRef.current =
+    removedHosts.length > 0 || JSON.stringify(draft) !== JSON.stringify(lastKnownRef.current);
 
   const systemFonts = useFontCatalogStore((state) => state.families);
   const systemFontsLoading = useFontCatalogStore((state) => state.loading);
@@ -264,6 +240,40 @@ export default function SettingsWindow() {
   useEffect(() => {
     // Warm up the lazy preview chunk while the user is on the first tab.
     void import('./settings/TerminalPreview');
+  }, []);
+
+  useEffect(() => {
+    // Merge externally applied settings (main-window theme cycle) into the
+    // draft, but only the fields that actually changed so unsaved local
+    // edits for other settings survive.
+    let disposed = false;
+    let dispose: (() => void) | undefined;
+    void listen<{ settings: SettingsSnapshot }>('nexterm-settings-applied', (event) => {
+      const incoming = event.payload.settings;
+      const known = lastKnownRef.current;
+      const changed: Partial<SettingsSnapshot> = {};
+      (Object.keys(incoming) as Array<keyof SettingsSnapshot>).forEach((key) => {
+        if (JSON.stringify(known[key]) !== JSON.stringify(incoming[key])) {
+          (changed as Record<string, unknown>)[key] = incoming[key];
+        }
+      });
+      lastKnownRef.current = incoming;
+      if (Object.keys(changed).length > 0) {
+        setDraft((current) => ({ ...current, ...changed }));
+      }
+    })
+      .then((unlisten) => {
+        if (disposed) {
+          unlisten();
+        } else {
+          dispose = unlisten;
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+      dispose?.();
+    };
   }, []);
 
   useEffect(() => {
@@ -349,18 +359,6 @@ export default function SettingsWindow() {
     return status;
   };
 
-  const notifyVaultUnlocked = async () => {
-    await emit('nexterm-vault-unlocked');
-  };
-
-  const notifyVaultLocked = async () => {
-    await emit('nexterm-vault-locked');
-  };
-
-  const notifyVaultCleared = async () => {
-    await emit('nexterm-vault-cleared');
-  };
-
   const handleVaultSetup = async () => {
     if (vaultBusy) {
       return;
@@ -380,7 +378,6 @@ export default function SettingsWindow() {
     setVaultBusy(true);
     try {
       setVaultStatus(await initializeVault(password));
-      await notifyVaultUnlocked();
       toast({ title: '凭据保险库已创建', variant: 'success' });
     } catch (reason) {
       toast({ title: '创建保险库失败', description: String(reason), variant: 'error' });
@@ -405,7 +402,6 @@ export default function SettingsWindow() {
         return;
       }
       await refreshVaultStatus();
-      await notifyVaultUnlocked();
       toast({ title: '凭据保险库已解锁', variant: 'success' });
     } catch (reason) {
       toast({ title: '解锁失败', description: String(reason), variant: 'error' });
@@ -422,7 +418,6 @@ export default function SettingsWindow() {
     try {
       await lockVault();
       await refreshVaultStatus();
-      await notifyVaultLocked();
       toast({ title: '凭据保险库已锁定', variant: 'success' });
     } catch (reason) {
       toast({ title: '锁定失败', description: String(reason), variant: 'error' });
@@ -454,7 +449,6 @@ export default function SettingsWindow() {
     setVaultBusy(true);
     try {
       setVaultStatus(await changeVaultPassword(oldPassword, newPassword));
-      await notifyVaultUnlocked();
       toast({ title: '主密码已修改', variant: 'success' });
     } catch (reason) {
       toast({ title: '修改主密码失败', description: String(reason), variant: 'error' });
@@ -476,12 +470,14 @@ export default function SettingsWindow() {
     }
     setVaultBusy(true);
     try {
-      await clearVault();
-      await lockVault();
+      // Forget while the vault is still unlocked: the per-session deletes
+      // clear both memory and vault entries, clearVault then wipes anything
+      // left over before the vault is locked.
       const sessions = useSessionStore.getState().sessions;
       await Promise.all(sessions.map((session) => forgetSessionCredentials(session.id)));
+      await clearVault();
+      await lockVault();
       await refreshVaultStatus();
-      await notifyVaultCleared();
       toast({ title: '保险库凭据已清空', variant: 'success' });
     } catch (reason) {
       toast({ title: '清空保险库失败', description: String(reason), variant: 'error' });
@@ -503,11 +499,10 @@ export default function SettingsWindow() {
     }
     setVaultBusy(true);
     try {
-      await resetVault();
       const sessions = useSessionStore.getState().sessions;
       await Promise.all(sessions.map((session) => forgetSessionCredentials(session.id)));
+      await resetVault();
       setVaultStatus(await getVaultStatus());
-      await notifyVaultCleared();
       toast({ title: '凭据保险库已重置', variant: 'success' });
     } catch (reason) {
       toast({ title: '重置保险库失败', description: String(reason), variant: 'error' });
@@ -646,6 +641,46 @@ export default function SettingsWindow() {
   const close = () => {
     void getCurrentWindow().close();
   };
+
+  const requestClose = async () => {
+    if (!dirtyRef.current) {
+      close();
+      return;
+    }
+    const ok = await confirmAction('有未应用的修改，确定放弃并关闭吗？', {
+      title: '未保存的修改',
+      okLabel: '放弃修改'
+    });
+    if (ok) {
+      close();
+    }
+  };
+
+  // The window X button must honor the same unsaved-changes guard.
+  useEffect(() => {
+    const currentWindow = getCurrentWindow();
+    let disposed = false;
+    const promise = currentWindow.onCloseRequested(async (event) => {
+      if (!dirtyRef.current) {
+        return;
+      }
+      event.preventDefault();
+      const ok = await confirmAction('有未应用的修改，确定放弃并关闭吗？', {
+        title: '未保存的修改',
+        okLabel: '放弃修改'
+      });
+      if (ok && !disposed) {
+        // Clear the flag and re-request the close; the second pass passes
+        // the guard (destroy() would need an extra capability).
+        dirtyRef.current = false;
+        void currentWindow.close();
+      }
+    });
+    return () => {
+      disposed = true;
+      void promise.then((unlisten) => unlisten());
+    };
+  }, []);
 
   const handleRemoveHost = async (host: string) => {
     const ok = await confirmAction(`确定删除「${host}」的已知主机记录吗？`, {
@@ -1367,7 +1402,7 @@ export default function SettingsWindow() {
         <span className="mr-1 text-[10px] text-muted">
           {savedAt ? '已应用' : '修改后需点击应用或确定'}
         </span>
-        <Button variant="ghost" onClick={close}>
+        <Button variant="ghost" onClick={() => void requestClose()}>
           取消
         </Button>
         <Button variant="secondary" disabled={applying} onClick={() => void apply()}>

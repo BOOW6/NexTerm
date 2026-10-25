@@ -38,6 +38,19 @@ export default function TransferPanel() {
   const remove = useTransferStore((state) => state.remove);
   const setPaused = useTransferStore((state) => state.setPaused);
 
+  const removeItem = async (item: TransferItem) => {
+    // Active tasks keep running on the backend: without cancelling first,
+    // the next progress event would resurrect the removed entry.
+    if (item.status === 'running' || item.status === 'paused' || item.status === 'interrupted') {
+      try {
+        await cancelSftpTransfer(item.id);
+      } catch {
+        /* backend entry already gone (e.g. finished transfer) */
+      }
+    }
+    remove(item.id);
+  };
+
   const hasFinished = transfers.some(
     (item) => item.status === 'done' || item.status === 'error' || item.status === 'cancelled'
   );
@@ -190,7 +203,7 @@ export default function TransferPanel() {
                     ) : null}
                     <button
                       type="button"
-                      onClick={() => remove(item.id)}
+                      onClick={() => void removeItem(item)}
                       className="rounded-sm p-0.5 text-muted hover:bg-surface-hover hover:text-foreground"
                       aria-label="移除任务"
                     >

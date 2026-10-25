@@ -65,8 +65,14 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
 
       if (session) {
         const previousAuthMethod = session.authMethod ?? 'password';
+        const previousKind = session.kind;
         sessionState.updateSession(session.id, result.draft);
         if (isRemote && previousAuthMethod !== result.draft.authMethod) {
+          await forgetSessionCredentials(session.id);
+        }
+        if (previousKind !== 'local' && !isRemote) {
+          // The session stopped being remote: leaving its stored credentials
+          // behind would silently reconnect with them if it is switched back.
           await forgetSessionCredentials(session.id);
         }
         if (isRemote) {
@@ -74,7 +80,12 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
             useCredentialStore.getState().setPassword(session.id, result.password);
           }
           if (result.draft.authMethod === 'key') {
-            useCredentialStore.getState().setPassphrase(session.id, result.passphrase ?? '');
+            // An empty passphrase means "keep the stored one" (same guard as
+            // the password field) — overwriting it with '' would lose the
+            // vault entry for good.
+            if (result.passphrase?.trim()) {
+              useCredentialStore.getState().setPassphrase(session.id, result.passphrase);
+            }
             useCredentialStore.getState().authorize(session.id);
           } else if (result.draft.authMethod === 'agent') {
             useCredentialStore.getState().authorize(session.id);

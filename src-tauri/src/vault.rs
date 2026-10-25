@@ -8,7 +8,7 @@
 use std::{
     collections::BTreeMap,
     io::Write,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Mutex, MutexGuard},
 };
 
@@ -17,10 +17,11 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use anyhow::{anyhow, Context};
-use argon2::Argon2;
+use argon2::{Algorithm, Argon2, Params, Version};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex as AsyncMutex;
 
 const VAULT_VERSION: u8 = 1;
 const SALT_LEN: usize = 16;
@@ -38,59 +39,112 @@ pub struct VaultStatus {
     pub entry_count: usize,
 }
 
+/// The exact KDF parameters a vault file was written with. Persisted so a
+/// dependency upgrade can never silently change the derivation and lock every
+/// existing vault out.
+#[derive(Clone, Copy, Serialize, Deserialize)]
+struct KdfParams {
+    /// Argon2 memory cost in KiB.
+    m_cost: u32,
+    t_cost: u32,
+    p_cost: u32,
+}
+
+impl Default for KdfParams {
+    fn default() -> Self {
+        // Matches argon2::Params::default(); vaults written before the params
+        // were persisted were derived with exactly these values.
+        Self {
+            m_cost: 19456,
+            t_cost: 2,
+            p_cost: 1,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct VaultFile {
     version: u8,
     kdf: String,
+    /// Absent in vault files written before the parameters were persisted.
+    #[serde(default)]
+    kdf_params: Option<KdfParams>,
     salt: String,
     nonce: String,
     data: String,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct VaultState {
     salt: Option<[u8; SALT_LEN]>,
     key: Option<[u8; KEY_LEN]>,
+    kdf_params: KdfParams,
     entries: BTreeMap<String, String>,
 }
 
 pub struct VaultManager {
-    path: PathBuf,
+    /// `None` when the platform could not provide an app config directory:
+    /// the vault then refuses to operate instead of silently degrading to a
+    /// temp directory that periodic cleanups may wipe.
+    path: Option<PathBuf>,
     state: Mutex<VaultState>,
+    /// Serializes every disk-touching operation. Tauri runs async commands
+    /// concurrently, so the main-thread ordering sync commands used to get
+    /// for free has to be explicit here.
+    io: AsyncMutex<()>,
 }
 
 impl VaultManager {
-    pub fn new(path: PathBuf) -> Self {
+    pub fn new(path: Option<PathBuf>) -> Self {
         Self {
             path,
             state: Mutex::new(VaultState::default()),
+            io: AsyncMutex::new(()),
         }
+    }
+
+    fn vault_path(&self) -> anyhow::Result<&Path> {
+        self.path
+            .as_deref()
+            .ok_or_else(|| anyhow!("无法确定应用配置目录，凭据保险库不可用"))
     }
 
     pub fn status(&self) -> VaultStatus {
         let state = lock(&self.state);
         VaultStatus {
-            initialized: self.path.exists(),
+            initialized: self
+                .path
+                .as_ref()
+                .map(|path| path.exists())
+                .unwrap_or(false),
             unlocked: state.key.is_some(),
             entry_count: state.entries.len(),
         }
     }
 
-    pub fn initialize(&self, master_password: &str) -> anyhow::Result<VaultStatus> {
-        if self.path.exists() {
+    pub async fn initialize(&self, master_password: &str) -> anyhow::Result<VaultStatus> {
+        let _io = self.io.lock().await;
+        let path = self.vault_path()?;
+        if path.exists() {
             return Err(anyhow!("凭据保险库已存在"));
         }
         validate_master_password(master_password)?;
 
         let mut salt = [0u8; SALT_LEN];
         OsRng.fill_bytes(&mut salt);
-        let key = derive_key(master_password, &salt)?;
+        let params = KdfParams::default();
+        let key = derive_key_async(master_password.to_string(), salt, params).await?;
 
         let mut state = lock(&self.state);
+        let previous = state.clone();
         state.salt = Some(salt);
         state.key = Some(key);
+        state.kdf_params = params;
         state.entries.clear();
-        self.persist(&state)?;
+        if let Err(err) = self.persist(&state) {
+            *state = previous;
+            return Err(err);
+        }
 
         Ok(VaultStatus {
             initialized: true,
@@ -99,14 +153,23 @@ impl VaultManager {
         })
     }
 
-    pub fn unlock(&self, master_password: &str) -> anyhow::Result<bool> {
-        let text =
-            std::fs::read_to_string(&self.path).context("failed to read credential vault")?;
+    pub async fn unlock(&self, master_password: &str) -> anyhow::Result<bool> {
+        let _io = self.io.lock().await;
+        self.unlock_inner(master_password).await
+    }
+
+    async fn unlock_inner(&self, master_password: &str) -> anyhow::Result<bool> {
+        let path = self.vault_path()?;
+        let text = std::fs::read_to_string(path).context("failed to read credential vault")?;
         let file: VaultFile =
             serde_json::from_str(&text).context("failed to parse credential vault")?;
         if file.version != VAULT_VERSION {
             return Err(anyhow!("不支持的凭据保险库版本"));
         }
+        if file.kdf != "argon2id" {
+            return Err(anyhow!("不支持的 KDF 算法: {}", file.kdf));
+        }
+        let params = file.kdf_params.unwrap_or_default();
 
         let salt_bytes = BASE64
             .decode(file.salt.as_bytes())
@@ -115,10 +178,12 @@ impl VaultManager {
             .as_slice()
             .try_into()
             .map_err(|_| anyhow!("凭据保险库 salt 长度无效"))?;
-        let key = derive_key(master_password, &salt)?;
+        let key = derive_key_async(master_password.to_string(), salt, params).await?;
 
         let plaintext = match decrypt(&key, &file.nonce, &file.data) {
             Ok(value) => value,
+            // Wrong master password or a corrupted ciphertext: both surface
+            // as an authentication failure, never as a hard error.
             Err(_) => return Ok(false),
         };
         let entries: BTreeMap<String, String> =
@@ -127,24 +192,38 @@ impl VaultManager {
         let mut state = lock(&self.state);
         state.salt = Some(salt);
         state.key = Some(key);
+        state.kdf_params = params;
         state.entries = entries;
         Ok(true)
     }
 
-    pub fn lock(&self) {
+    pub async fn lock(&self) {
+        let _io = self.io.lock().await;
         let mut state = lock(&self.state);
         state.key = None;
         state.entries.clear();
     }
 
-    pub fn set(&self, name: &str, secret: &str) -> anyhow::Result<()> {
+    pub async fn set(&self, name: &str, secret: &str) -> anyhow::Result<()> {
         if name.trim().is_empty() {
             return Err(anyhow!("凭据名称不能为空"));
         }
+        let _io = self.io.lock().await;
         let mut state = lock(&self.state);
         require_unlocked(&state)?;
-        state.entries.insert(name.to_string(), secret.to_string());
-        self.persist(&state)
+        let previous = state.entries.insert(name.to_string(), secret.to_string());
+        if let Err(err) = self.persist(&state) {
+            match previous {
+                Some(value) => {
+                    state.entries.insert(name.to_string(), value);
+                }
+                None => {
+                    state.entries.remove(name);
+                }
+            }
+            return Err(err);
+        }
+        Ok(())
     }
 
     pub fn get(&self, name: &str) -> anyhow::Result<Option<String>> {
@@ -153,40 +232,62 @@ impl VaultManager {
         Ok(state.entries.get(name).cloned())
     }
 
-    pub fn delete(&self, name: &str) -> anyhow::Result<()> {
+    pub async fn delete(&self, name: &str) -> anyhow::Result<()> {
+        let _io = self.io.lock().await;
         let mut state = lock(&self.state);
         require_unlocked(&state)?;
-        if state.entries.remove(name).is_some() {
-            self.persist(&state)?;
+        let Some(removed) = state.entries.remove(name) else {
+            return Ok(());
+        };
+        if let Err(err) = self.persist(&state) {
+            state.entries.insert(name.to_string(), removed);
+            return Err(err);
         }
         Ok(())
     }
 
-    pub fn clear(&self) -> anyhow::Result<()> {
+    pub async fn clear(&self) -> anyhow::Result<()> {
+        let _io = self.io.lock().await;
         let mut state = lock(&self.state);
         require_unlocked(&state)?;
+        let previous = state.entries.clone();
         state.entries.clear();
-        self.persist(&state)
+        if let Err(err) = self.persist(&state) {
+            state.entries = previous;
+            return Err(err);
+        }
+        Ok(())
     }
 
-    pub fn change_password(
+    pub async fn change_password(
         &self,
         old_password: &str,
         new_password: &str,
     ) -> anyhow::Result<VaultStatus> {
         validate_master_password(new_password)?;
-        if !self.unlock(old_password)? {
+        let _io = self.io.lock().await;
+        if !self.unlock_inner(old_password).await? {
             return Err(anyhow!("当前主密码错误"));
         }
 
+        let params = {
+            let state = lock(&self.state);
+            state.kdf_params
+        };
         let mut salt = [0u8; SALT_LEN];
         OsRng.fill_bytes(&mut salt);
-        let key = derive_key(new_password, &salt)?;
+        let key = derive_key_async(new_password.to_string(), salt, params).await?;
 
         let mut state = lock(&self.state);
+        let previous_salt = state.salt;
+        let previous_key = state.key;
         state.salt = Some(salt);
         state.key = Some(key);
-        self.persist(&state)?;
+        if let Err(err) = self.persist(&state) {
+            state.salt = previous_salt;
+            state.key = previous_key;
+            return Err(err);
+        }
 
         Ok(VaultStatus {
             initialized: true,
@@ -195,9 +296,11 @@ impl VaultManager {
         })
     }
 
-    pub fn reset(&self) -> anyhow::Result<()> {
-        if self.path.exists() {
-            std::fs::remove_file(&self.path).context("failed to remove credential vault")?;
+    pub async fn reset(&self) -> anyhow::Result<()> {
+        let _io = self.io.lock().await;
+        let path = self.vault_path()?;
+        if path.exists() {
+            std::fs::remove_file(path).context("failed to remove credential vault")?;
         }
         let mut state = lock(&self.state);
         *state = VaultState::default();
@@ -207,6 +310,7 @@ impl VaultManager {
     fn persist(&self, state: &VaultState) -> anyhow::Result<()> {
         let salt = state.salt.ok_or_else(|| anyhow!("凭据保险库尚未解锁"))?;
         let key = state.key.ok_or_else(|| anyhow!("凭据保险库尚未解锁"))?;
+        let path = self.vault_path()?;
 
         let plaintext =
             serde_json::to_vec(&state.entries).context("failed to serialize vault entries")?;
@@ -222,6 +326,7 @@ impl VaultManager {
         let file = VaultFile {
             version: VAULT_VERSION,
             kdf: "argon2id".to_string(),
+            kdf_params: Some(state.kdf_params),
             salt: BASE64.encode(salt),
             nonce: BASE64.encode(nonce),
             data: BASE64.encode(ciphertext),
@@ -229,14 +334,14 @@ impl VaultManager {
         let json =
             serde_json::to_vec_pretty(&file).context("failed to serialize credential vault")?;
 
-        if let Some(parent) = self.path.parent() {
+        if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).context("failed to create vault directory")?;
         }
 
         // Rename replaces the target on every platform, so a failure is
         // surfaced as-is. Never fall back to deleting the old vault first: a
         // failed retry would then destroy the only good copy on disk.
-        let temp = self.path.with_extension("tmp");
+        let temp = path.with_extension("tmp");
         let mut temp_file =
             std::fs::File::create(&temp).context("failed to create credential vault temp file")?;
         temp_file
@@ -246,13 +351,13 @@ impl VaultManager {
             .sync_all()
             .context("failed to flush credential vault")?;
         drop(temp_file);
-        std::fs::rename(&temp, &self.path).context("failed to replace credential vault")?;
+        std::fs::rename(&temp, path).context("failed to replace credential vault")?;
 
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(0o600));
-            if let Some(parent) = self.path.parent() {
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+            if let Some(parent) = path.parent() {
                 if let Ok(dir) = std::fs::File::open(parent) {
                     let _ = dir.sync_all();
                 }
@@ -277,11 +382,31 @@ fn validate_master_password(password: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn derive_key(password: &str, salt: &[u8; SALT_LEN]) -> anyhow::Result<[u8; KEY_LEN]> {
+fn derive_key_with_params(
+    password: &str,
+    salt: &[u8; SALT_LEN],
+    params: &KdfParams,
+) -> anyhow::Result<[u8; KEY_LEN]> {
+    let params = Params::new(params.m_cost, params.t_cost, params.p_cost, None)
+        .map_err(|err| anyhow!("无效的 KDF 参数: {err}"))?;
     let mut key = [0u8; KEY_LEN];
-    Argon2::default()
+    Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
         .hash_password_into(password.as_bytes(), salt, &mut key)
         .map_err(|err| anyhow!("无法派生保险库密钥: {err}"))?;
+    Ok(key)
+}
+
+/// Argon2id is memory-hard enough to stall the UI thread for hundreds of
+/// milliseconds; run it on the blocking pool instead.
+async fn derive_key_async(
+    password: String,
+    salt: [u8; SALT_LEN],
+    params: KdfParams,
+) -> anyhow::Result<[u8; KEY_LEN]> {
+    let key =
+        tokio::task::spawn_blocking(move || derive_key_with_params(&password, &salt, &params))
+            .await
+            .map_err(|err| anyhow!("无法派生保险库密钥: {err}"))??;
     Ok(key)
 }
 
@@ -307,22 +432,31 @@ fn decrypt(key: &[u8; KEY_LEN], nonce: &str, data: &str) -> anyhow::Result<Vec<u
 mod tests {
     use super::VaultManager;
 
-    #[test]
-    fn round_trip_encrypted_entries() {
+    #[tokio::test]
+    async fn round_trip_encrypted_entries() {
         let dir = tempfile::tempdir().expect("temp dir");
-        let manager = VaultManager::new(dir.path().join("vault.json"));
+        let manager = VaultManager::new(Some(dir.path().join("vault.json")));
 
         assert!(!manager.status().initialized);
-        assert!(manager.set("a", "b").is_err());
+        assert!(manager.set("a", "b").await.is_err());
 
-        manager.initialize("correct horse").expect("initialize");
-        manager.set("session:one:password", "secret").expect("set");
-        manager.lock();
+        manager
+            .initialize("correct horse")
+            .await
+            .expect("initialize");
+        manager
+            .set("session:one:password", "secret")
+            .await
+            .expect("set");
+        manager.lock().await;
         assert!(manager.get("session:one:password").is_err());
 
-        assert!(!manager.unlock("wrong password").expect("unlock wrong"));
+        assert!(!manager
+            .unlock("wrong password")
+            .await
+            .expect("unlock wrong"));
         assert!(!manager.status().unlocked);
-        assert!(manager.unlock("correct horse").expect("unlock"));
+        assert!(manager.unlock("correct horse").await.expect("unlock"));
         assert_eq!(
             manager.get("session:one:password").expect("get"),
             Some("secret".to_string())
@@ -332,19 +466,111 @@ mod tests {
         assert!(!raw.contains("secret"));
     }
 
-    #[test]
-    fn change_password_reencrypts() {
+    #[tokio::test]
+    async fn change_password_reencrypts() {
         let dir = tempfile::tempdir().expect("temp dir");
-        let manager = VaultManager::new(dir.path().join("vault.json"));
-        manager.initialize("first password").expect("initialize");
-        manager.set("key", "value").expect("set");
+        let manager = VaultManager::new(Some(dir.path().join("vault.json")));
+        manager
+            .initialize("first password")
+            .await
+            .expect("initialize");
+        manager.set("key", "value").await.expect("set");
         manager
             .change_password("first password", "second password")
+            .await
             .expect("change");
-        manager.lock();
+        manager.lock().await;
 
-        assert!(!manager.unlock("first password").expect("old password"));
-        assert!(manager.unlock("second password").expect("new password"));
+        assert!(!manager
+            .unlock("first password")
+            .await
+            .expect("old password"));
+        assert!(manager
+            .unlock("second password")
+            .await
+            .expect("new password"));
         assert_eq!(manager.get("key").expect("get"), Some("value".to_string()));
+    }
+
+    #[tokio::test]
+    async fn kdf_params_persisted_and_legacy_files_still_unlock() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("vault.json");
+        let manager = VaultManager::new(Some(path.clone()));
+        manager
+            .initialize("correct horse")
+            .await
+            .expect("initialize");
+        manager.set("key", "value").await.expect("set");
+        manager.lock().await;
+
+        let raw: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).expect("read vault"))
+                .expect("parse vault");
+        assert_eq!(raw["kdf_params"]["m_cost"], 19456);
+        assert_eq!(raw["kdf_params"]["t_cost"], 2);
+        assert_eq!(raw["kdf_params"]["p_cost"], 1);
+
+        // Simulate a vault written by an older build without persisted params.
+        let mut legacy = raw;
+        legacy.as_object_mut().expect("object").remove("kdf_params");
+        std::fs::write(
+            &path,
+            serde_json::to_vec_pretty(&legacy).expect("serialize"),
+        )
+        .expect("write legacy vault");
+
+        assert!(manager.unlock("correct horse").await.expect("unlock"));
+        assert_eq!(manager.get("key").expect("get"), Some("value".to_string()));
+        assert!(!manager
+            .unlock("wrong password")
+            .await
+            .expect("unlock wrong"));
+    }
+
+    #[tokio::test]
+    async fn failed_persist_rolls_back_memory_changes() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("vault.json");
+        let manager = VaultManager::new(Some(path.clone()));
+        manager
+            .initialize("correct horse")
+            .await
+            .expect("initialize");
+        manager.set("a", "1").await.expect("set");
+
+        // A directory where the temp file should go makes every persist fail.
+        std::fs::create_dir(path.with_extension("tmp")).expect("block temp file");
+
+        assert!(manager.set("b", "2").await.is_err());
+        assert_eq!(manager.get("b").expect("get"), None);
+
+        assert!(manager.delete("a").await.is_err());
+        assert_eq!(manager.get("a").expect("get").as_deref(), Some("1"));
+
+        assert!(manager.clear().await.is_err());
+        assert_eq!(manager.get("a").expect("get").as_deref(), Some("1"));
+
+        assert!(manager
+            .change_password("correct horse", "new password")
+            .await
+            .is_err());
+        assert_eq!(manager.get("a").expect("get").as_deref(), Some("1"));
+
+        // Disk still holds the last successfully persisted state.
+        manager.lock().await;
+        assert!(manager.unlock("correct horse").await.expect("unlock"));
+        assert_eq!(manager.get("a").expect("get").as_deref(), Some("1"));
+        assert_eq!(manager.get("b").expect("get"), None);
+    }
+
+    #[tokio::test]
+    async fn missing_config_dir_disables_the_vault() {
+        let manager = VaultManager::new(None);
+
+        assert!(!manager.status().initialized);
+        assert!(manager.initialize("correct horse").await.is_err());
+        assert!(manager.unlock("correct horse").await.is_err());
+        assert!(manager.set("a", "b").await.is_err());
     }
 }

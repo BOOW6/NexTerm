@@ -3,6 +3,21 @@ import { create } from 'zustand';
 export type ConnectionStatus = 'connecting' | 'connected' | 'error';
 
 export interface ConnectionEntry {
+  /** Every live backend connection of the session (each split pane opens
+   * its own). The last id is the most recent connection. */
+  sshIds: string[];
+  status: ConnectionStatus;
+  error?: string;
+}
+
+/** The sshId SFTP/forward panels should operate on: the most recent live
+ * connection of the session, or undefined while nothing is connected. */
+export function currentSshId(entry: ConnectionEntry | undefined): string | undefined {
+  const sshId = entry?.sshIds[entry.sshIds.length - 1];
+  return entry?.status === 'connected' && sshId ? sshId : undefined;
+}
+
+interface SetConnectionPayload {
   sshId: string;
   status: ConnectionStatus;
   error?: string;
@@ -10,24 +25,54 @@ export interface ConnectionEntry {
 
 interface ConnectionState {
   connections: Record<string, ConnectionEntry>;
-  setConnection: (sessionId: string, entry: ConnectionEntry) => void;
+  setConnection: (sessionId: string, payload: SetConnectionPayload) => void;
   removeConnection: (sessionId: string, sshId?: string) => void;
 }
 
 export const useConnectionStore = create<ConnectionState>((set) => ({
   connections: {},
-  setConnection: (sessionId, entry) =>
-    set((state) => ({
-      connections: { ...state.connections, [sessionId]: entry }
-    })),
+  setConnection: (sessionId, payload) =>
+    set((state) => {
+      const previous = state.connections[sessionId];
+      const sshIds = previous ? previous.sshIds.filter((id) => id !== payload.sshId) : [];
+      return {
+        connections: {
+          ...state.connections,
+          [sessionId]: {
+            sshIds: [...sshIds, payload.sshId],
+            status: payload.status,
+            error: payload.error
+          }
+        }
+      };
+    }),
   removeConnection: (sessionId, sshId) =>
     set((state) => {
       const current = state.connections[sessionId];
-      if (!current || (sshId && current.sshId !== sshId)) {
+      if (!current) {
         return state;
       }
-      const connections = { ...state.connections };
-      delete connections[sessionId];
-      return { connections };
+      // Without an sshId this is a catch-all reset: drop the whole entry.
+      if (!sshId) {
+        const connections = { ...state.connections };
+        delete connections[sessionId];
+        return { connections };
+      }
+      if (!current.sshIds.includes(sshId)) {
+        return state;
+      }
+      const sshIds = current.sshIds.filter((id) => id !== sshId);
+      if (sshIds.length === 0) {
+        const connections = { ...state.connections };
+        delete connections[sessionId];
+        return { connections };
+      }
+      // Sibling panes keep their own live connections to the session.
+      return {
+        connections: {
+          ...state.connections,
+          [sessionId]: { ...current, sshIds, status: 'connected' }
+        }
+      };
     })
 }));

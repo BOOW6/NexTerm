@@ -217,9 +217,9 @@ pub async fn open_modal_window(
         }
     };
 
-    install_context_menu_listener(&window);
-    crate::windows_ext::disable_webview_autofill(&window);
-
+    // Register the close handler FIRST: the window is visible and closable
+    // the instant build() returns, and a Destroyed event before this handler
+    // exists would leave the invoking promise pending forever.
     let app_handle = app.clone();
     let close_id = id.clone();
     window.on_window_event(move |event| {
@@ -232,6 +232,9 @@ pub async fn open_modal_window(
             }
         }
     });
+
+    install_context_menu_listener(&window);
+    crate::windows_ext::disable_webview_autofill(&window);
 
     let result = receiver.await.map_err(|_| "窗口已关闭".to_string())?;
     app.state::<ModalManager>().remove(&id);
@@ -267,7 +270,21 @@ pub async fn open_settings_window(app: AppHandle, tab: Option<String>) -> Result
         builder = builder.title_bar_style(tauri::TitleBarStyle::Visible);
     }
 
-    let window = builder.build().map_err(|err| err.to_string())?;
+    // Two concurrent invocations can both pass the existence check above;
+    // the loser of the build race just focuses the winner instead of
+    // surfacing a meaningless "label already exists" error.
+    let window = match builder.build() {
+        Ok(window) => window,
+        Err(error) => {
+            if let Some(existing) = app.get_webview_window("settings") {
+                let _ = existing.unminimize();
+                let _ = existing.show();
+                let _ = existing.set_focus();
+                return Ok(());
+            }
+            return Err(error.to_string());
+        }
+    };
     install_context_menu_listener(&window);
     crate::windows_ext::disable_webview_autofill(&window);
     Ok(())

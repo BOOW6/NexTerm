@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ShieldAlert, ShieldQuestion } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { cancelModal, getModalPayload, submitModal } from '../lib/appWindows';
+import { listenHostKeyTimeout } from '../hooks/useTauriSsh';
 import type { HostKeyMismatchPayload, HostKeyPromptPayload } from '../hooks/useTauriSsh';
 
 type HostKeyPayload =
@@ -31,6 +32,37 @@ export default function HostKeyWindow() {
       cancelled = true;
     };
   }, []);
+
+  // The backend gives up on the fingerprint after 120s and broadcasts the
+  // timeout; close this dialog so a late "trust" click can't be silently
+  // dropped while the window lingers.
+  useEffect(() => {
+    if (payload?.mode !== 'prompt') {
+      return;
+    }
+    const requestId = payload.prompt.request_id;
+    let disposed = false;
+    let dispose: (() => void) | undefined;
+
+    listenHostKeyTimeout((event) => {
+      if (event.request_id === requestId) {
+        void cancelModal();
+      }
+    })
+      .then((unlisten) => {
+        if (disposed) {
+          unlisten();
+        } else {
+          dispose = unlisten;
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      dispose?.();
+    };
+  }, [payload]);
 
   if (!payload) {
     return <div className="h-full bg-background" />;

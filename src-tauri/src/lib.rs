@@ -2,6 +2,7 @@ pub mod commands;
 pub mod fonts;
 pub mod pty;
 pub mod ssh;
+pub mod text_stream;
 pub mod vault;
 pub mod windows;
 pub mod windows_ext;
@@ -60,14 +61,13 @@ pub fn run() {
 
             app.manage(SshManager::new(known_hosts_path));
 
-            let vault_path = app
-                .path()
-                .app_config_dir()
-                .map(|dir| {
-                    let _ = std::fs::create_dir_all(&dir);
-                    dir.join("credentials.vault.json")
-                })
-                .unwrap_or_else(|_| std::env::temp_dir().join("nexterm-credentials.vault.json"));
+            // Without a config directory the vault refuses to operate (the
+            // manager reports clear errors) instead of silently degrading to
+            // a temp directory that periodic cleanups may wipe.
+            let vault_path = app.path().app_config_dir().ok().and_then(|dir| {
+                std::fs::create_dir_all(&dir).ok()?;
+                Some(dir.join("credentials.vault.json"))
+            });
             app.manage(VaultManager::new(vault_path));
 
             Ok(())

@@ -87,10 +87,26 @@ export default function DockLayout() {
   const { setApi } = useWorkspace();
   const disposablesRef = useRef<Disposable[]>([]);
   const persistTimerRef = useRef<number | null>(null);
+  const apiRef = useRef<DockviewApi | null>(null);
   const [panelCount, setPanelCount] = useState(0);
 
   useEffect(() => {
+    // A layout change inside the 250ms debounce window would otherwise be
+    // lost on exit; flush the current layout before the window goes away.
+    const flush = () => {
+      const api = apiRef.current;
+      if (!api) {
+        return;
+      }
+      try {
+        window.localStorage.setItem(LAYOUT_KEY, JSON.stringify(api.toJSON()));
+      } catch (error) {
+        console.warn('failed to persist workspace layout', error);
+      }
+    };
+    window.addEventListener('beforeunload', flush);
     return () => {
+      window.removeEventListener('beforeunload', flush);
       disposablesRef.current.forEach((disposable) => disposable.dispose());
       disposablesRef.current = [];
       if (persistTimerRef.current !== null) {
@@ -115,6 +131,7 @@ export default function DockLayout() {
   const onReady = useCallback(
     (event: DockviewReadyEvent) => {
       const api = event.api;
+      apiRef.current = api;
       setApi(api);
 
       disposablesRef.current.forEach((disposable) => disposable.dispose());

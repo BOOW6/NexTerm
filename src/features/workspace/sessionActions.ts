@@ -19,6 +19,12 @@ function sessionIdOf(panel: IDockviewPanel): string | undefined {
   return (panel.params as { sessionId?: string } | undefined)?.sessionId;
 }
 
+function isTerminalPanel(panel: IDockviewPanel): boolean {
+  // Terminal panels get `panel-*` ids; SFTP/forward/transfer panels use their
+  // own prefixes and must never be mistaken for a session's terminal.
+  return panel.id.startsWith('panel-');
+}
+
 export function findPanelsForSession(api: DockviewApi, sessionId: string): IDockviewPanel[] {
   return api.panels.filter((panel) => sessionIdOf(panel) === sessionId);
 }
@@ -28,6 +34,13 @@ export function findPanelForSession(
   sessionId: string
 ): IDockviewPanel | undefined {
   return findPanelsForSession(api, sessionId)[0];
+}
+
+export function findTerminalPanelForSession(
+  api: DockviewApi,
+  sessionId: string
+): IDockviewPanel | undefined {
+  return api.panels.find((panel) => isTerminalPanel(panel) && sessionIdOf(panel) === sessionId);
 }
 
 export function openSessionPanel(
@@ -42,7 +55,10 @@ export function openSessionPanel(
   }
 
   if (!options.forceNew) {
-    const existing = findPanelForSession(api, sessionId);
+    // Only a terminal panel counts as "the session is open": activating a
+    // leftover SFTP panel instead of opening the terminal would make the
+    // session impossible to open from the sidebar or palette.
+    const existing = findTerminalPanelForSession(api, sessionId);
     if (existing) {
       existing.api.setActive();
       store.markUsed(sessionId);

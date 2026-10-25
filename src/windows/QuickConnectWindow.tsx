@@ -113,6 +113,13 @@ export default function QuickConnectWindow() {
       setError('请选择私钥文件');
       return;
     }
+    if (isRemote && form.port) {
+      const port = Number(form.port);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        setError('端口必须是 1–65535 之间的数字');
+        return;
+      }
+    }
 
     setBusy(true);
     setError(null);

@@ -130,7 +130,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 ## 开发约定
 
 - 设置项统一放 `src/stores/settingsStore.ts`，持久化键名 `nexterm.settings.v1`。
-- 主题由 `src/theme/ThemeProvider.tsx` 管理，UI 通过 `useTheme()` 读写。
+- 主题由 `src/theme/ThemeProvider.tsx` 管理，UI 通过 `useTheme()` 读写；任何绕过设置窗口直接修改设置的路径（如命令面板切主题）必须广播 `nexterm-settings-applied`，供设置窗口合并进其草稿。
 - 安全相关数据（known_hosts）由 Rust 后端持久化，前端只通过命令读写。
 - 新增设置项：先加 store 字段 → 在设置面板加控件 → 在使用处读取，避免散落的 localStorage 键。
 - known_hosts 为本项目自有 JSON 格式，暂不与 OpenSSH 的 `~/.ssh/known_hosts` 互通。
@@ -151,6 +151,8 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 ### 3. 数据流与 IPC 传输节流 (Stream Throttling & Batching)
 - **防止主线程雪崩**：当 Rust 后端通过 Tauri 事件高频向前端推送终端标准输出（Stdout）时，前端严禁“来一条写一条（`term.write()`）”。
 - **批处理与帧同步**：对后端传来的高频文本数据进行队列缓存（Buffer Queue），利用 `requestAnimationFrame` 或定时节流（如每 16ms / 32ms 批量写入一次），合并渲染帧，保证终端滚动的 60fps 流畅度。
+- **跨块 UTF-8 边界解码**：后端推送前必须经 `text_stream::Utf8StreamDecoder` 增量解码（PTY 与 SSH 两侧均已接入；SSH 的 stdout/stderr 各用独立解码器），多字节字符跨读取边界时不得把两半替换成 U+FFFD 烧入滚动缓冲。
+- **阻塞操作不得进入主线程**：可能阻塞的 IPC 命令（PTY 管道写、大文件读写、Argon2 派生）必须是 async 命令并配合 `spawn_blocking`/`tokio::fs`，禁止在 UI 主线程同步执行。
 
 ### 4. 缓冲区与尺寸突变防丢行/防重复策略 (Buffer Safety & Mutation Strategy)
 
@@ -165,7 +167,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
   - Windows 端随包加载 Microsoft ConPTY 1.25（`conpty-assets`），确保 `PSEUDOCONSOLE_RESIZE_QUIRK` 生效，避免系统 ConPTY 在 resize 时重印整屏；许可证与哈希见 `src-tauri/THIRD_PARTY_NOTICES.md`。
   - 创建 Terminal 时注入真实的 `windowsPty: { backend, buildNumber }`，启用 xterm 针对 ConPTY 的行增长与 reflow 策略。
   - resize 前同步空 `alt` buffer 的 `lines.maxLength` 到目标行数，规避 xtermjs/xterm.js#6163 在垂直 grow 时把幻影行拉回视口造成的重影。
-  - 针对 Windows ConPTY 在 resize 时发送的重绘与清屏控制符（如 `\x1b[2J` / 光标定位符），前端在 resize 期间**严禁主动清空或截断 `xterm.js` 的 `write` 缓存队列**。
+  - 针对 Windows ConPTY 在 resize 时发送的重绘与清屏控制符（如 `\x1b[2J` / 光标定位符），前端在 resize 期间**严禁主动清空或截断 `xterm.js` 的 `write` 缓存队列**；通知类直写（断线/重连提示等）在冻结期必须等待解冻后再写，保持 FIFO。
   - 数据流接收必须保证**FIFO（先进先出）严格顺序**，防止 resize 事件与 PTY 吐出的重绘数据发生乱序交织。
 - **状态切换防抖清理 (Debounce Flush on Unmount/State Change)**：
   - 在标签页切换、窗口状态改变前，必须显式调用防抖函数的 `.flush()`，确保队列中积压的最后一次 `resize` 指令无条件送达 Rust PTY，避免出现“DOM 已变大但 PTY 停留在旧尺寸”导致的中间行丢失。
@@ -178,15 +180,15 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - [x] 会话管理、分屏、命令面板与布局持久化
 - [x] Web 2.0 主题系统（明亮 / 暗黑 / 跟随系统）
 - [x] SSH 密码 / 私钥认证
-- [x] known_hosts 校验与首次指纹确认、OpenSSH 格式导入/导出
+- [x] known_hosts 校验与首次指纹确认、OpenSSH 格式导入/导出（原子写 + 损坏保留、裸 IPv6 导入、指纹确认超时自动关窗、握手期间可取消的连接占位）
 - [x] SSH Agent 认证
 - [x] 端口转发（本地 / 远程 / 动态 SOCKS5）
 - [x] SFTP 目录浏览、上传/下载与传输队列
 - [x] SFTP 新建 / 重命名 / 删除
 - [x] 设置面板（主题 / 终端外观 / SSH 默认值 / 快捷键 / known_hosts）
 - [x] 递归传输、断点续传、暂停/取消/重试、冲突策略
-- [x] SSH 保活（30s / 3 次）与断线自动重连（指数退避）
-- [x] 加密凭据保险库（主密码、Argon2id + AES-256-GCM）
+- [x] SSH 保活（30s / 3 次）、断线自动重连（指数退避）、断线后端口转发清理与会话状态回收
+- [x] 加密凭据保险库（主密码、Argon2id + AES-256-GCM、KDF 参数随文件持久化、异步命令 + 磁盘操作互斥）
 - [x] 会话导入（SSH config / MobaXterm / PuTTY）、JSON 备份、树形分组
 - [x] 终端 WebLinks / Unicode11 / 选中即复制 / 滚动缓冲恢复
 - [x] i18n 骨架（中 / 英核心工作区）

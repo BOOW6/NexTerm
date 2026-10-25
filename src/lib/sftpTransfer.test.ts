@@ -16,7 +16,7 @@ const setConnection = (sessionId: string, sshId: string | null) => {
   useConnectionStore.setState((state) => {
     const connections = { ...state.connections };
     if (sshId) {
-      connections[sessionId] = { sshId, status: 'connected' };
+      connections[sessionId] = { sshIds: [sshId], status: 'connected' };
     } else {
       delete connections[sessionId];
     }

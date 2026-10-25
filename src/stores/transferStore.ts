@@ -6,13 +6,7 @@ import type {
 } from '../hooks/useTauriSsh';
 
 export type TransferDirection = 'upload' | 'download';
-export type TransferStatus =
-  | 'running'
-  | 'paused'
-  | 'done'
-  | 'error'
-  | 'cancelled'
-  | 'interrupted';
+export type TransferStatus = 'running' | 'paused' | 'done' | 'error' | 'cancelled' | 'interrupted';
 
 export const INTERRUPTED_MESSAGE = '连接已断开，重连后将自动续传';
 
@@ -185,7 +179,7 @@ export const useTransferStore = create<TransferState>((set) => ({
           ? undefined
           : payload.disconnected
             ? INTERRUPTED_MESSAGE
-            : payload.error ?? undefined,
+            : (payload.error ?? undefined),
         startedAt: current?.startedAt ?? now,
         updatedAt: now,
         speed: 0,

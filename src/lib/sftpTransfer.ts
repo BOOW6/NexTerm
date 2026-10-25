@@ -1,5 +1,5 @@
 import { downloadSftp, uploadSftp, type SftpConflictPolicy } from '../hooks/useTauriSsh';
-import { useConnectionStore } from '../stores/connectionStore';
+import { currentSshId, useConnectionStore } from '../stores/connectionStore';
 import {
   useTransferStore,
   type TransferDirection,
@@ -19,8 +19,8 @@ export interface StartSftpTransferPayload {
 }
 
 function connectedSshId(sessionId: string): string | null {
-  const connection = useConnectionStore.getState().connections[sessionId];
-  return connection && connection.status === 'connected' ? connection.sshId : null;
+  const entry = useConnectionStore.getState().connections[sessionId];
+  return currentSshId(entry) ?? null;
 }
 
 export async function startSftpTransfer(payload: StartSftpTransferPayload): Promise<string> {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import {
   ArrowUpDown,
@@ -22,8 +22,9 @@ import {
   type SftpEntry
 } from '../../hooks/useTauriSsh';
 import { startSftpTransfer } from '../../lib/sftpTransfer';
-import { useConnectionStore } from '../../stores/connectionStore';
+import { currentSshId, useConnectionStore } from '../../stores/connectionStore';
 import { useSessionStore } from '../../stores/sessionStore';
+import { useTransferStore } from '../../stores/transferStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useWorkspace } from '../../features/workspace/WorkspaceContext';
 import { Button } from '../ui/button';
@@ -83,6 +84,9 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
   const initialSessionId =
     (params as { sessionId?: string } | undefined)?.sessionId ?? activeSessionId ?? undefined;
   const [boundSessionId, setBoundSessionId] = useState<string | undefined>(initialSessionId);
+  // Distinguishes an explicit "选择会话" (unbind) from the initial unbound
+  // state so the auto-bind effect does not immediately re-bind.
+  const userUnboundRef = useRef(false);
 
   const session = sessions.find((item) => item.id === boundSessionId);
   const connection = useConnectionStore((state) =>
@@ -90,7 +94,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
   );
   const { openTransferPanel } = useWorkspace();
 
-  const sshId = connection?.status === 'connected' ? connection.sshId : undefined;
+  const sshId = currentSshId(connection);
   const sessionTitle = session?.title;
   const remoteSessions = sessions.filter((item) => item.kind !== 'local');
 
@@ -115,8 +119,9 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
 
   useEffect(() => {
     if (boundSessionId && !sessions.some((item) => item.id === boundSessionId)) {
+      userUnboundRef.current = false;
       setBoundSessionId(undefined);
-    } else if (!boundSessionId && activeSessionId) {
+    } else if (!boundSessionId && activeSessionId && !userUnboundRef.current) {
       setBoundSessionId(activeSessionId);
     }
   }, [activeSessionId, boundSessionId, sessions]);
@@ -371,6 +376,29 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
       return;
     }
 
+    // Deleting a path that is still being written (upload target) or read
+    // (download source) silently loses data: on Linux the transfer keeps
+    // writing to the unlinked inode and reports success.
+    const activeTransfer = useTransferStore.getState().transfers.find((item) => {
+      const request = item.request;
+      if (!request) {
+        return false;
+      }
+      return (
+        (item.status === 'running' || item.status === 'paused') &&
+        request.sessionId === boundSessionId &&
+        (request.remotePath === entry.path || request.remotePath.startsWith(`${entry.path}/`))
+      );
+    });
+    if (activeTransfer) {
+      toast({
+        title: '该路径有传输任务进行中',
+        description: '请先在传输队列取消相关任务，再删除该文件。',
+        variant: 'error'
+      });
+      return;
+    }
+
     const ok = await confirmAction(`确定删除「${entry.name}」吗？此操作不可撤销。`, {
       title: '删除确认',
       okLabel: '删除'
@@ -490,7 +518,10 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         <Select
           aria-label="SFTP 会话"
           value={boundSessionId ?? ''}
-          onChange={(event) => setBoundSessionId(event.target.value || undefined)}
+          onChange={(event) => {
+            userUnboundRef.current = event.target.value === '';
+            setBoundSessionId(event.target.value || undefined);
+          }}
           size="sm"
           width={128}
           className="shrink-0"

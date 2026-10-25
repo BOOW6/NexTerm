@@ -98,13 +98,14 @@ impl PtySessionManager {
 
         std::thread::spawn(move || {
             let mut buffer = [0_u8; READ_BUFFER_SIZE];
+            let mut decoder = crate::text_stream::Utf8StreamDecoder::new();
             loop {
                 match reader.read(&mut buffer) {
                     Ok(0) => break,
                     Ok(size) => {
                         let payload = PtyOutputPayload {
                             id: event_id.clone(),
-                            data: String::from_utf8_lossy(&buffer[..size]).to_string(),
+                            data: decoder.feed(&buffer[..size]),
                         };
 
                         let _ = app_handle.emit(&format!("pty-output-{}", event_id), payload);
@@ -131,17 +132,23 @@ impl PtySessionManager {
         Ok(id)
     }
 
-    pub fn write_session(&self, id: &str, data: &[u8]) -> anyhow::Result<()> {
+    pub async fn write_session(&self, id: &str, data: Vec<u8>) -> anyhow::Result<()> {
         // Clone the Arc out of the map so the global session map lock is not
-        // held while a potentially blocking PTY write is in flight.
+        // held while a potentially blocking PTY write is in flight, and run
+        // the write on the blocking pool: a shell that stops consuming stdin
+        // fills the pipe and would otherwise stall the IPC main thread.
         let session = self.session(id)?;
-        let mut writer = session
-            .writer
-            .lock()
-            .map_err(|_| anyhow!("failed to lock pty writer"))?;
-        writer.write_all(data).context("failed to write pty")?;
-        writer.flush().context("failed to flush pty")?;
-        Ok(())
+        tokio::task::spawn_blocking(move || {
+            let mut writer = session
+                .writer
+                .lock()
+                .map_err(|_| anyhow!("failed to lock pty writer"))?;
+            writer.write_all(&data).context("failed to write pty")?;
+            writer.flush().context("failed to flush pty")?;
+            anyhow::Ok(())
+        })
+        .await
+        .map_err(|err| anyhow!("failed to write pty: {err}"))?
     }
 
     pub fn resize_session(&self, id: &str, cols: u16, rows: u16) -> anyhow::Result<()> {

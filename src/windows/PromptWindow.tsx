@@ -55,7 +55,9 @@ export default function PromptWindow() {
           placeholder={payload?.placeholder}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') {
+            // Confirming an IME composition (e.g. picking a candidate in a
+            // Chinese input method) also fires Enter — it must not submit.
+            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
               event.preventDefault();
               void submit();
             }

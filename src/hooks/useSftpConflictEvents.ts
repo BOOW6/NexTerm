@@ -1,9 +1,5 @@
 import { useEffect } from 'react';
-import {
-  listenSftpConflict,
-  respondSftpConflict,
-  type SftpConflictPayload
-} from './useTauriSsh';
+import { listenSftpConflict, respondSftpConflict, type SftpConflictPayload } from './useTauriSsh';
 import { openModalWindow } from '../lib/appWindows';
 
 /**

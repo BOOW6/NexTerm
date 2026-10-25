@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { Network, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import {
@@ -9,7 +9,7 @@ import {
   type PortForwardInfo,
   type PortForwardKind
 } from '../../hooks/useTauriSsh';
-import { useConnectionStore } from '../../stores/connectionStore';
+import { currentSshId, useConnectionStore } from '../../stores/connectionStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { Button } from '../ui/button';
@@ -36,13 +36,16 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
     (params as { sessionId?: string } | undefined)?.sessionId ?? activeSessionId ?? undefined;
 
   const [boundSessionId, setBoundSessionId] = useState<string | undefined>(initialSessionId);
+  // Distinguishes an explicit "选择会话" (unbind) from the initial unbound
+  // state so the auto-bind effect does not immediately re-bind.
+  const userUnboundRef = useRef(false);
   const remoteSessions = sessions.filter((item) => item.kind !== 'local');
   const session = sessions.find((item) => item.id === boundSessionId);
   const sessionTitle = session?.title;
   const connection = useConnectionStore((state) =>
     boundSessionId ? state.connections[boundSessionId] : undefined
   );
-  const sshId = connection?.status === 'connected' ? connection.sshId : undefined;
+  const sshId = currentSshId(connection);
 
   const [forwards, setForwards] = useState<PortForwardInfo[]>([]);
   const [kind, setKind] = useState<PortForwardKind>('local');
@@ -83,8 +86,9 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
 
   useEffect(() => {
     if (boundSessionId && !sessions.some((item) => item.id === boundSessionId)) {
+      userUnboundRef.current = false;
       setBoundSessionId(undefined);
-    } else if (!boundSessionId && activeSessionId) {
+    } else if (!boundSessionId && activeSessionId && !userUnboundRef.current) {
       setBoundSessionId(activeSessionId);
     }
   }, [activeSessionId, boundSessionId, sessions]);
@@ -93,7 +97,13 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
     void api.setTitle(sessionTitle ? `端口转发 · ${sessionTitle}` : '端口转发');
   }, [api, sessionTitle]);
 
-  const visibleForwards = sshId ? forwards.filter((forward) => forward.ssh_id === sshId) : forwards;
+  // A bound-but-disconnected session shows its own (empty) list; only an
+  // explicitly unbound panel shows every session's forwards.
+  const visibleForwards = boundSessionId
+    ? sshId
+      ? forwards.filter((forward) => forward.ssh_id === sshId)
+      : []
+    : forwards;
 
   const handleStart = async () => {
     if (!sshId) {
@@ -153,7 +163,10 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
         <Select
           aria-label="SSH 会话"
           value={boundSessionId ?? ''}
-          onChange={(event) => setBoundSessionId(event.target.value || undefined)}
+          onChange={(event) => {
+            userUnboundRef.current = event.target.value === '';
+            setBoundSessionId(event.target.value || undefined);
+          }}
           size="sm"
           width={144}
           className="shrink-0"

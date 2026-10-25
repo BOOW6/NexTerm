@@ -65,7 +65,6 @@ export default function CommandPalette() {
   const { themeLabel, cycle } = useTheme();
   const {
     openSession,
-    closeSessionPanel,
     reconnectSession,
     splitSession,
     duplicateSession,
@@ -209,7 +208,10 @@ export default function CommandPalette() {
           label: '关闭当前标签页',
           icon: X,
           keywords: 'close 关闭',
-          run: () => closeSessionPanel(activeSession.id)
+          // Close only the active panel (matching the title bar), not every
+          // panel of the session — a session may have SFTP/forward panels
+          // with live transfers attached.
+          run: () => getApi()?.activePanel?.api.close()
         }
       );
     }
@@ -225,7 +227,6 @@ export default function CommandPalette() {
     duplicateSession,
     reconnectSession,
     toggleFavorite,
-    closeSessionPanel,
     openSftpPanel,
     openPortForwardPanel,
     openTransferPanel,

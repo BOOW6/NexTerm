@@ -42,12 +42,12 @@ describe('connection store', () => {
     useConnectionStore.setState({ connections: {} });
   });
 
-  it('stores and replaces connection entries', () => {
+  it('accumulates connection entries per session and points at the newest', () => {
     useConnectionStore.getState().setConnection('s1', { sshId: 'a', status: 'connecting' });
     useConnectionStore.getState().setConnection('s1', { sshId: 'b', status: 'connected' });
 
     expect(useConnectionStore.getState().connections.s1).toEqual({
-      sshId: 'b',
+      sshIds: ['a', 'b'],
       status: 'connected'
     });
   });
