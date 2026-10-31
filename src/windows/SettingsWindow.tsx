@@ -208,11 +208,19 @@ export default function SettingsWindow() {
   const [vaultBusy, setVaultBusy] = useState(false);
   // What this window last believed the store holds. External changes (e.g. a
   // theme cycle in the main window) are merged into the draft per-field so
-  // unsaved local edits survive; the ref also drives the close guard.
+  // unsaved local edits survive.
   const lastKnownRef = useRef<SettingsSnapshot>(initialSnapshot);
-  const dirtyRef = useRef(false);
-  dirtyRef.current =
-    removedHosts.length > 0 || JSON.stringify(draft) !== JSON.stringify(lastKnownRef.current);
+  // Whether the draft holds user edits that have not been applied yet.
+  // Booked explicitly at every edit path and cleared by a successful apply —
+  // a draft-vs-store JSON diff cannot be used here because the two sides
+  // travel through IPC JSON round-trips, normalize-on-apply clamping and
+  // async listener updates, and any of those disagreeing fakes a dirty
+  // state right after the user applied.
+  const unsavedRef = useRef(false);
+  // Set once the user has applied, confirmed discarding, or the draft is
+  // verified clean: the next close request must go through without the
+  // unsaved-changes guard re-arming itself from an intervening re-render.
+  const forceCloseRef = useRef(false);
 
   const systemFonts = useFontCatalogStore((state) => state.families);
   const systemFontsLoading = useFontCatalogStore((state) => state.loading);
@@ -512,11 +520,13 @@ export default function SettingsWindow() {
   };
 
   const update = <K extends keyof SettingsSnapshot>(key: K, value: SettingsSnapshot[K]) => {
+    unsavedRef.current = true;
     setSavedAt(null);
     setDraft((current) => ({ ...current, [key]: value }));
   };
 
   const updateShortcut = (action: ShortcutAction, value: string) => {
+    unsavedRef.current = true;
     setSavedAt(null);
     setDraft((current) => ({
       ...current,
@@ -592,6 +602,12 @@ export default function SettingsWindow() {
       useSettingsStore.getState().applySettings(draft);
 
       const applied = snapshotOf();
+      // Move the dirty-check baseline synchronously. The window's own
+      // `nexterm-settings-applied` listener updates this ref too, but that
+      // delivery is an async IPC round-trip and only mutates a ref, so the
+      // close guard would otherwise still see the pre-apply snapshot and
+      // claim there are unsaved changes right after applying.
+      lastKnownRef.current = applied;
       setDraft({ ...applied, shortcuts: { ...applied.shortcuts } });
       await emit('nexterm-settings-applied', { settings: applied });
 
@@ -612,6 +628,9 @@ export default function SettingsWindow() {
         toast({ title: '部分已知主机删除失败', variant: 'error' });
       }
 
+      // Everything the draft held (settings + host deletions) is now applied;
+      // only a later edit may re-arm the unsaved-changes guard.
+      unsavedRef.current = false;
       setSavedAt(Date.now());
       return true;
     } catch (reason) {
@@ -634,23 +653,46 @@ export default function SettingsWindow() {
     if (!ok) {
       return;
     }
+    unsavedRef.current = true;
     setSavedAt(null);
     setDraft({ ...DEFAULT_SETTINGS, shortcuts: { ...DEFAULT_SETTINGS.shortcuts } });
   };
 
+  // Guards against stacked native dialogs when the user clicks 取消 or the
+  // window X repeatedly while the discard confirmation is still open.
+  const discardConfirmBusyRef = useRef(false);
+  const confirmDiscard = async (): Promise<boolean> => {
+    if (discardConfirmBusyRef.current) {
+      return false;
+    }
+    discardConfirmBusyRef.current = true;
+    try {
+      return await confirmAction('有未应用的修改，确定放弃并关闭吗？', {
+        title: '未保存的修改',
+        okLabel: '放弃修改'
+      });
+    } finally {
+      discardConfirmBusyRef.current = false;
+    }
+  };
+
+  // Every caller has either applied, confirmed discarding, or verified the
+  // draft is clean, so the close request must bypass the guard. The wrapper
+  // around onCloseRequested completes a non-prevented close request with
+  // window.destroy(), which needs `core:window:allow-destroy` in the
+  // capability file — without it the close request is silently dropped and
+  // the window never closes.
   const close = () => {
+    forceCloseRef.current = true;
     void getCurrentWindow().close();
   };
 
   const requestClose = async () => {
-    if (!dirtyRef.current) {
+    if (!unsavedRef.current) {
       close();
       return;
     }
-    const ok = await confirmAction('有未应用的修改，确定放弃并关闭吗？', {
-      title: '未保存的修改',
-      okLabel: '放弃修改'
-    });
+    const ok = await confirmDiscard();
     if (ok) {
       close();
     }
@@ -661,19 +703,15 @@ export default function SettingsWindow() {
     const currentWindow = getCurrentWindow();
     let disposed = false;
     const promise = currentWindow.onCloseRequested(async (event) => {
-      if (!dirtyRef.current) {
+      if (forceCloseRef.current || !unsavedRef.current) {
         return;
       }
+      // Always prevent first: skipping preventDefault makes the
+      // onCloseRequested wrapper destroy the window immediately.
       event.preventDefault();
-      const ok = await confirmAction('有未应用的修改，确定放弃并关闭吗？', {
-        title: '未保存的修改',
-        okLabel: '放弃修改'
-      });
+      const ok = await confirmDiscard();
       if (ok && !disposed) {
-        // Clear the flag and re-request the close; the second pass passes
-        // the guard (destroy() would need an extra capability).
-        dirtyRef.current = false;
-        void currentWindow.close();
+        close();
       }
     });
     return () => {
@@ -688,6 +726,7 @@ export default function SettingsWindow() {
       okLabel: '删除'
     });
     if (ok) {
+      unsavedRef.current = true;
       setRemovedHosts((current) => [...current, host]);
       setSavedAt(null);
     }

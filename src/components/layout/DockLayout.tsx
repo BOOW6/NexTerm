@@ -9,6 +9,7 @@ import 'dockview-react/dist/styles/dockview.css';
 import { Plus } from 'lucide-react';
 import TerminalTab from '../terminal/TerminalTab';
 import SessionTab from './SessionTab';
+import TabStripOverflow from './TabStripOverflow';
 import { useWorkspace } from '../../features/workspace/WorkspaceContext';
 import { openSessionPanel } from '../../features/workspace/sessionActions';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -85,10 +86,12 @@ function EmptyWorkspace() {
 
 export default function DockLayout() {
   const { setApi } = useWorkspace();
+  const { t } = useI18n();
   const disposablesRef = useRef<Disposable[]>([]);
   const persistTimerRef = useRef<number | null>(null);
   const apiRef = useRef<DockviewApi | null>(null);
   const [panelCount, setPanelCount] = useState(0);
+  const [dockviewApi, setDockviewApi] = useState<DockviewApi | null>(null);
 
   useEffect(() => {
     // A layout change inside the 250ms debounce window would otherwise be
@@ -133,6 +136,7 @@ export default function DockLayout() {
       const api = event.api;
       apiRef.current = api;
       setApi(api);
+      setDockviewApi(api);
 
       disposablesRef.current.forEach((disposable) => disposable.dispose());
       disposablesRef.current = [];
@@ -208,6 +212,13 @@ export default function DockLayout() {
         defaultTabComponent={SessionTab}
         defaultRenderer="always"
         onReady={onReady}
+      />
+      <TabStripOverflow
+        api={dockviewApi}
+        labels={{
+          scrollLeft: t('layout.scrollTabsLeft'),
+          scrollRight: t('layout.scrollTabsRight')
+        }}
       />
       {panelCount === 0 ? <EmptyWorkspace /> : null}
     </div>

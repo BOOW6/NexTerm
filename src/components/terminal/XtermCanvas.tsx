@@ -42,6 +42,12 @@ import {
   writeTerminalSnapshot
 } from '../../lib/terminalSnapshot';
 import { registerTerminalReconnect } from '../../lib/terminalReconnect';
+import {
+  NOTICE_RESET_PLACE_AT_BOTTOM,
+  buildNoticeScrollSequence,
+  buildNoticeWriteSequence,
+  computeNoticePlacement
+} from '../../lib/terminalNotice';
 
 export interface XtermHandle {
   clear: () => void;
@@ -315,6 +321,10 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       let desiredDimensions: { cols: number; rows: number; id: number } | null = null;
       let resizeRequestId = 0;
       let applyInProgress = false;
+      // Depth of direct-to-xterm write sequences (snapshot restore, notices).
+      // While active, resizes must not start: they would issue queued output
+      // between the sequence's writes and reflow a half-written buffer.
+      let directWriteDepth = 0;
 
       let resizeTarget: { id: string; transport: TerminalTransport } | null = null;
       let pendingBackendResize: { cols: number; rows: number } | null = null;
@@ -537,6 +547,13 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
        *
        * Retry notices (`placeAtBottom === false`) stay on the current screen so
        * the user can see reconnection progress.
+       *
+       * The cursor position is never trusted: after replaying a serialized
+       * snapshot it is wherever the snapshot's tail left it, and `\x1b[?1049l`
+       * restores a stale saved cursor. Both paths therefore position the
+       * cursor absolutely (CUP) after deriving the target row from the buffer
+       * itself. The whole sequence is frozen against the 16ms flush queue so
+       * concurrently enqueued output cannot interleave between the writes.
        */
       const writeScrollbackNotice = async (
         instance: Terminal,
@@ -558,12 +575,33 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           return;
         }
         flushPendingWrites();
-        // Save/reset/restore around the scroll-region reset: DECSTBM homes the
-        // cursor, which would place the divider over the restored history.
+        // Hold the queue for the whole sequence and block new resizes: the
+        // notice spans several asynchronous writes and interleaved output or
+        // a mid-sequence reflow would corrupt the placement.
+        directWriteDepth += 1;
+        writeFrozen = true;
+        cancelScheduledFlush();
+        // Exit the alternate buffer and reset modes/scroll region. DECSTBM
+        // homes the cursor; every subsequent position is absolute so the
+        // clobbered cursor state is irrelevant.
         const reset = placeAtBottom
-          ? '\x1b[?1049l\x1b7\x1b[0m\x1b[r\x1b[?6l\x1b[4l\x1b[?1l\x1b[?7h\x1b[?25h\x1b8'
+          ? NOTICE_RESET_PLACE_AT_BOTTOM
           : '\x1b[?1049l\x1b[0m\x1b[?6l\x1b[4l\x1b[?1l\x1b[?7h\x1b[?25h';
-        return new Promise((resolve) => {
+        return new Promise<void>((resolve) => {
+          const finishSequence = () => {
+            if (disposed) {
+              resolve();
+              return;
+            }
+            directWriteDepth = Math.max(0, directWriteDepth - 1);
+            writeFrozen = false;
+            const unfreezeWaiterList = unfreezeWaiters;
+            unfreezeWaiters = [];
+            unfreezeWaiterList.forEach((unfreezeWaiter) => unfreezeWaiter());
+            scheduleFlush();
+            resumePendingResize();
+            resolve();
+          };
           // Exit the alternate buffer first. Only then is the normal buffer's
           // cursor/scroll state final, so scroll to its live bottom.
           instance.write(reset, () => {
@@ -574,31 +612,28 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             instance.scrollToBottom();
 
             if (!placeAtBottom) {
-              instance.write(`${notice}\r\n`, () => resolve());
+              instance.write(`${notice}\r\n`, finishSequence);
               return;
             }
 
-            // Keep the divider on its own line, but do not insert an empty
-            // line when the cursor is already at the start of one.
-            const active = instance.buffer.active;
-            const currentLine = active.getLine(active.baseY + active.cursorY);
-            const hasContent = active.cursorX > 0 || Boolean(currentLine?.translateToString(true));
-            const prefix = hasContent ? '\r\n' : '';
-
-            instance.write(`${prefix}${notice}`, () => {
+            // Derive the notice row from the buffer, not the cursor: the
+            // notice must land on the first row below ALL content.
+            const buffer = instance.buffer.active;
+            const placement = computeNoticePlacement(
+              (row) => buffer.getLine(buffer.baseY + row)?.translateToString(true) ?? '',
+              buffer.cursorY,
+              instance.rows
+            );
+            instance.write(buildNoticeWriteSequence(notice, placement, instance.rows), () => {
               if (disposed) {
                 resolve();
                 return;
               }
-
               // Scroll exactly the lines that contain history + the divider.
               // The rows below the divider are blank and stay in the viewport,
               // so they never become empty scrollback lines.
-              const rows = instance.rows;
-              const noticeRow = instance.buffer.active.cursorY;
-              const scrollLines = Math.min(rows, Math.max(1, noticeRow + 1));
-              instance.write(`\x1b[${rows};1H${'\r\n'.repeat(scrollLines)}\x1b[2J\x1b[H`, () =>
-                resolve()
+              instance.write(buildNoticeScrollSequence(placement.targetRow, instance.rows), () =>
+                finishSequence()
               );
             });
           });
@@ -1109,6 +1144,10 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
               if (snapshot) {
                 restored = new Promise<void>((resolve) => {
                   try {
+                    // Hold resizes for the whole snapshot replay: the direct
+                    // write is not tracked by writesIssued, so a resize would
+                    // otherwise reflow the buffer mid-replay.
+                    directWriteDepth += 1;
                     instance.write(snapshot, () => {
                       void writeScrollbackNotice(
                         instance,
@@ -1118,6 +1157,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
                     });
                   } catch {
                     /* ignore malformed snapshot */
+                    directWriteDepth = Math.max(0, directWriteDepth - 1);
                     resolve();
                   }
                 });
@@ -1131,6 +1171,8 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
               if (disposed) {
                 return;
               }
+              directWriteDepth = Math.max(0, directWriteDepth - 1);
+              resumePendingResize();
               scheduleFlush();
               void run(instance);
             });
@@ -1184,7 +1226,10 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           return;
         }
         desiredDimensions = { cols, rows, id };
-        if (applyInProgress) {
+        // A restore or notice is writing directly to xterm: keep the request
+        // pending in desiredDimensions and let resumePendingResize() apply it
+        // once the sequence finishes, so the reflow cannot land mid-write.
+        if (applyInProgress || directWriteDepth > 0) {
           return;
         }
 
@@ -1258,6 +1303,22 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         };
 
         runResize();
+      };
+
+      // Re-run the newest resize request that was parked while a direct
+      // write sequence (snapshot restore, notice) held the buffer.
+      const resumePendingResize = () => {
+        if (
+          disposed ||
+          applyInProgress ||
+          directWriteDepth > 0 ||
+          !terminal ||
+          !desiredDimensions
+        ) {
+          return;
+        }
+        const next = desiredDimensions;
+        applyResize(next.cols, next.rows, next.id);
       };
 
       const flushPendingResize = () => {

@@ -94,6 +94,117 @@
   outline: none !important;
 }
 
+/* Tab strip overflow: a native scrollbar would eat into the 28px strip, so
+ * scrolling is driven by TabStripOverflow (edge buttons, wheel, fade) instead.
+ * The container stays scrollable for programmatic scrolls. */
+:root .dockview-theme-dark .dv-tabs-and-actions-container {
+  position: relative;
+}
+
+:root .dockview-theme-dark .dv-tabs-and-actions-container .dv-tabs-container {
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+:root .dockview-theme-dark .dv-tabs-and-actions-container .dv-tabs-container::-webkit-scrollbar {
+  display: none;
+}
+
+/* Overflow affordances injected by TabStripOverflow: edge scroll buttons and
+ * fade masks shown only while the strip overflows in that direction. Edges
+ * are pinned to their side so hiding one never shifts the other. */
+.nexterm-tab-overflow {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.nexterm-tab-overflow-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.nexterm-tab-overflow-edge-left {
+  left: 0;
+}
+
+.nexterm-tab-overflow-edge-right {
+  right: 0;
+}
+
+.nexterm-tab-overflow-edge[data-hidden='true'] {
+  display: none;
+}
+
+.nexterm-tab-overflow-fade {
+  width: 16px;
+}
+
+:root .nexterm-tab-overflow-edge-left .nexterm-tab-overflow-fade {
+  background: linear-gradient(to right, hsl(var(--surface-header)), hsl(var(--surface-header) / 0));
+}
+
+:root .nexterm-tab-overflow-edge-right .nexterm-tab-overflow-fade {
+  background: linear-gradient(to left, hsl(var(--surface-header)), hsl(var(--surface-header) / 0));
+}
+
+.nexterm-tab-overflow-btn {
+  display: flex;
+  width: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  pointer-events: auto;
+  color: hsl(var(--muted-foreground));
+  background-color: hsl(var(--surface-header));
+  transition:
+    background-color 0.1s,
+    color 0.1s;
+}
+
+.nexterm-tab-overflow-btn:hover {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--surface-hover));
+}
+
+.nexterm-tab-overflow-btn:focus-visible {
+  outline: 1px solid hsl(var(--accent));
+  outline-offset: -1px;
+}
+
+/* Skins with a gradient tab strip (eclair): the strip gradient is vertical,
+ * so painting the same gradient on buttons and fades keeps them seamless
+ * with the strip behind; fades mask it horizontally instead of scrimming. */
+:root[data-theme^='eclair'] .nexterm-tab-overflow-fade {
+  background-image: var(--gradient-panel-title);
+  -webkit-mask-image: linear-gradient(to right, #000, transparent);
+  mask-image: linear-gradient(to right, #000, transparent);
+}
+
+:root[data-theme^='eclair'] .nexterm-tab-overflow-edge-right .nexterm-tab-overflow-fade {
+  -webkit-mask-image: linear-gradient(to left, #000, transparent);
+  mask-image: linear-gradient(to left, #000, transparent);
+}
+
+:root[data-theme^='eclair'] .nexterm-tab-overflow-btn {
+  color: #e0e0e0;
+  background-color: transparent;
+  background-image: var(--gradient-panel-title);
+}
+
+:root[data-theme^='eclair'] .nexterm-tab-overflow-btn:hover {
+  color: #ffffff;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.16)),
+    var(--gradient-panel-title);
+}
+
 #decorum-titlebar-controls {
   position: fixed;
   top: 0;
