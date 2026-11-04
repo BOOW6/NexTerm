@@ -10,6 +10,8 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 pub(crate) mod conpty_bundle;
+#[cfg(test)]
+mod conpty_resize_probe;
 
 /// Larger reads keep the number of Tauri events (and therefore IPC framing
 /// overhead and scheduling jitter) low during bursty output such as `help`.

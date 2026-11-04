@@ -35,20 +35,13 @@ function buildEdge(position: 'left' | 'right', label: string): EdgeControls {
   edge.className = `nexterm-tab-overflow-edge nexterm-tab-overflow-edge-${position}`;
   edge.dataset.hidden = 'true';
 
-  const fade = document.createElement('div');
-  fade.className = 'nexterm-tab-overflow-fade';
-
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'nexterm-tab-overflow-btn';
   button.setAttribute('aria-label', label);
   button.innerHTML = position === 'left' ? CHEVRON_LEFT : CHEVRON_RIGHT;
 
-  if (position === 'left') {
-    edge.append(button, fade);
-  } else {
-    edge.append(fade, button);
-  }
+  edge.append(button);
   return { edge, button };
 }
 
@@ -127,7 +120,7 @@ function detachGroup(controls: GroupControls): void {
 
 /**
  * Per-group overflow controls for the dockview tab strip: the native
- * scrollbar is hidden in CSS, so edge buttons, fade masks, wheel-to-scroll
+ * scrollbar is hidden in CSS, so edge buttons, wheel-to-scroll
  * and active-tab reveal live here. Injected DOM is tracked per group and
  * fully torn down on group removal / unmount.
  */

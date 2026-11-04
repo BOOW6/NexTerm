@@ -43,6 +43,11 @@ import {
 } from '../../lib/terminalSnapshot';
 import { registerTerminalReconnect } from '../../lib/terminalReconnect';
 import {
+  buildCursorGroupResizePlan,
+  buildCursorRestore,
+  type CursorGroupResizePlan
+} from '../../lib/terminalCursorReflow';
+import {
   NOTICE_RESET_PLACE_AT_BOTTOM,
   buildNoticeScrollSequence,
   buildNoticeWriteSequence,
@@ -93,8 +98,6 @@ const MAX_PENDING_OUTPUT = 4 * 1024 * 1024;
  * 300ms is the value proposed in microsoft/vscode#334532 for that issue.
  */
 const RESIZE_X_DEBOUNCE_MS = 300;
-const LARGE_RESIZE_PX = 200;
-const SMALL_BUFFER_LINES = 200;
 
 interface XtermBufferLineList {
   length: number;
@@ -135,9 +138,10 @@ function syncEmptyBufferCapacity(terminal: Terminal, rows: number, scrollback: n
 }
 
 /**
- * xterm.write parses asynchronously if a chunk exceeds its time slice. Never
- * let a resize wait forever on a write callback that belongs to a disposed
- * renderer.
+ * xterm.write parses asynchronously if a chunk exceeds its time slice. A
+ * resize waits for issued writes to finish parsing, but a callback can be
+ * lost (e.g. a disposed renderer). The fallback is re-armed while the parser
+ * still makes progress; only a full window without any progress may proceed.
  */
 const RESIZE_PARSE_FALLBACK_MS = 250;
 
@@ -1257,6 +1261,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
           let settled = false;
           let fallbackTimer: number | null = null;
+          let cursorPlan: CursorGroupResizePlan | null = null;
           const finish = () => {
             if (settled) {
               return;
@@ -1281,10 +1286,23 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
                     : 1000;
                 syncEmptyBufferCapacity(instance, next.rows, scrollback);
                 instance.resize(next.cols, next.rows);
+                // Put the parked cursor where ConPTY's rewrap implies it: the
+                // parked row now sits directly below the reflowed group.
+                if (cursorPlan) {
+                  const restore = buildCursorRestore(
+                    instance.buffer.active,
+                    cursorPlan,
+                    instance.rows
+                  );
+                  if (restore) {
+                    issueWrite(restore);
+                  }
+                }
               } catch (error) {
                 console.warn('[terminal] resize failed', error);
               }
             }
+            cursorPlan = null;
 
             writeFrozen = false;
             applyInProgress = false;
@@ -1298,8 +1316,51 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             }
           };
 
-          fallbackTimer = window.setTimeout(finish, RESIZE_PARSE_FALLBACK_MS);
-          whenWritesParsed(finish);
+          // Re-arm while the parser is still draining issued writes. Resizing
+          // mid-parse splits the buffer into old-width and new-width halves;
+          // only a silent window (no completed write callback at all) means
+          // the callback is gone and waiting forever would stall resizes.
+          const armFallback = () => {
+            const parsedAtArmTime = writesParsed;
+            fallbackTimer = window.setTimeout(() => {
+              fallbackTimer = null;
+              if (settled) {
+                return;
+              }
+              if (writesParsed !== parsedAtArmTime) {
+                armFallback();
+                return;
+              }
+              finish();
+            }, RESIZE_PARSE_FALLBACK_MS);
+          };
+
+          // Once the parser has consumed everything issued, park the cursor
+          // on the blank row below its wrapped group so xterm's reflow —
+          // which skips the cursor's own group and would truncate it —
+          // processes that group like any other, then wait for the park to
+          // parse before the reflow.
+          const prepare = () => {
+            if (settled || disposed || !terminal) {
+              return;
+            }
+            if (next.cols !== terminal.cols) {
+              cursorPlan = buildCursorGroupResizePlan(
+                terminal.buffer.active,
+                next.cols,
+                terminal.rows
+              );
+              if (cursorPlan) {
+                issueWrite(cursorPlan.before);
+                whenWritesParsed(finish);
+                return;
+              }
+            }
+            finish();
+          };
+
+          armFallback();
+          whenWritesParsed(prepare);
         };
 
         runResize();
@@ -1363,10 +1424,10 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
         latestDimensions = { cols, rows, id };
 
-        // Explicit/discrete changes and small buffers resize immediately; the
-        // horizontal reflow is cheap enough there.
-        const bufferLines = terminal.buffer.normal.length;
-        if (immediate || bufferLines < SMALL_BUFFER_LINES) {
+        // Discrete one-shot changes (maximize/restore, tab activation, font
+        // changes) apply immediately; their reflow runs once and cannot
+        // interleave with itself.
+        if (immediate) {
           cancelResizeTimer();
           applyResize(cols, rows, id);
           return;
@@ -1378,9 +1439,12 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           applyResize(currentCols, rows, id);
         }
 
-        // Horizontal resize reflows the scrollback and causes the shell to
-        // redraw its prompt. Debounce it so consecutive SIGWINCHes cannot leave
-        // duplicated prompt lines behind.
+        // Horizontal resize reflows the scrollback and makes the shell redraw
+        // its prompt. Continuous layout changes (panel drag, window drag
+        // resize) fire the observer every frame, and resizing per frame makes
+        // xterm's reflow and ConPTY's repaint interleave into overwritten
+        // text — cols changes are always debounced here and converge on the
+        // trailing fire after the movement stops.
         if (cols !== currentCols) {
           cancelResizeTimer();
           resizeTimer = window.setTimeout(() => {
@@ -1489,6 +1553,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
       maybeStart();
 
+      // Observer-driven changes are always continuous (panel drag, window
+      // drag-resize, sidebar toggle): refit(false) keeps rows immediate while
+      // the horizontal reflow lands on the debounce. Discrete geometry jumps
+      // (maximize/restore) take the separate window-state path and call
+      // refit(true) directly.
       const observer = new ResizeObserver((entries) => {
         if (disposed || !visibleRef.current) {
           return;
@@ -1499,14 +1568,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         if (width === lastWidth && height === lastHeight) {
           return;
         }
-        const largeMutation =
-          lastWidth > 0 &&
-          lastHeight > 0 &&
-          (Math.abs(width - lastWidth) > LARGE_RESIZE_PX ||
-            Math.abs(height - lastHeight) > LARGE_RESIZE_PX);
         lastWidth = width;
         lastHeight = height;
-        refit(largeMutation);
+        refit(false);
       });
       observer.observe(container);
 
@@ -1706,7 +1770,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       [sessionId]
     );
 
-    return <div ref={containerRef} className="h-full w-full" />;
+    // overflow-hidden clips the not-yet-reflowed canvas during the horizontal
+    // debounce window instead of letting it spill over the splitter.
+    return <div ref={containerRef} className="h-full w-full overflow-hidden" />;
   }
 );
 

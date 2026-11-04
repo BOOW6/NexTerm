@@ -159,10 +159,14 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 在使用 ConPTY (Windows) 或 PTY (UNIX) 进行窗口尺寸调整时，必须严格遵守以下防止文本“重影/丢行”的交互策略：
 
 - **混合尺寸同步策略 (Hybrid Debounce Strategy)**：
+  - **按事件来源区分连续与离散**：ResizeObserver 驱动的变化（分屏拖拽、窗口拖拽缩放、侧栏开合）一律视为**连续变化**，即使单次跳变超过 200px 或缓冲区很小——逐帧 resize 会让 xterm reflow 与 ConPTY 重绘交错，造成文字叠印。
   - **垂直缩放（rows）**：立即应用。行变化不触发水平 reflow，且能避免 DOM 与 PTY 行数脱节。
-  - **水平缩放（cols）**：使用约 300ms 防抖，给 shell 留出处理 SIGWINCH 与重绘提示符的时间，避免提示符重影（对齐 VS Code `TerminalResizeDebouncer` 与 microsoft/vscode#334532）。
-  - **离散突变（窗口最大化 / 恢复 / 拖拽结束）**：**必须绕过防抖（Bypass Debounce）**，立即应用最新尺寸并强同步给 PTY。
+  - **水平缩放（cols）**：连续变化**始终**走约 300ms 防抖（按最新目标收敛），给 shell 留出处理 SIGWINCH 与重绘提示符的时间，避免提示符重影；拖拽/变化停止后由最后一次防抖尾火收敛到最终尺寸（对齐 VS Code `TerminalResizeDebouncer` 与 microsoft/vscode#334532）。
+  - **离散突变（窗口最大化 / 恢复、标签页激活、字体设置变更）**：**必须绕过防抖（Bypass Debounce）**，立即应用最新尺寸并强同步给 PTY。
   - **无变化不发送**：请求的 cols/rows 与当前网格一致时不得调用 `resize()`，避免无意义的 SIGWINCH 风暴。
+  - **防抖窗口内的视觉裁剪**：终端宿主容器必须 `overflow-hidden`，防抖生效前旧尺寸画布被裁剪而不是溢出到相邻面板。
+  - **解析等待回退是卡死检测而非超时硬切**：resize 等待已发出写入解析完成时，回退定时器在解析器仍有进展（有 write 回调完成）时必须重臂；只有整整一个窗口无任何进展才允许在未解析状态下 reflow。
+  - **resize 前寄存光标（cursor parking）**：xterm.js 的 reflow 会跳过包含光标的折行组并在收缩时把溢出内容截断（ConPTY quirk 模式无重印、cmd 不重画，截断即永久丢失，如提示符 `C:\Users\46838>` 变 `C:\Users\46`）。列数变化时必须先经 `buildCursorGroupResizePlan` 把光标 CUP 到组下方空行，让 xterm 自身 reflow 正常拆分/回并该组，resize 完成后再用 `buildCursorRestore` 把光标恢复到 ConPTY rewrap 对应的位置；计划不可用（备用缓冲、组不在视口内、组下方非空行）时回退到原行为。
 - **ConPTY 与缓冲区安全 (ConPTY Buffer Safety)**：
   - Windows 端随包加载 Microsoft ConPTY 1.25（`conpty-assets`），确保 `PSEUDOCONSOLE_RESIZE_QUIRK` 生效，避免系统 ConPTY 在 resize 时重印整屏；许可证与哈希见 `src-tauri/THIRD_PARTY_NOTICES.md`。
   - 创建 Terminal 时注入真实的 `windowsPty: { backend, buildNumber }`，启用 xterm 针对 ConPTY 的行增长与 reflow 策略。

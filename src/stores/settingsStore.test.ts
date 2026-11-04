@@ -135,8 +135,8 @@ describe('theme setters', () => {
     useSettingsStore.getState().setLightTheme('aqua-dark');
     expect(useSettingsStore.getState().lightTheme).toBe(DEFAULT_SETTINGS.lightTheme);
 
-    useSettingsStore.getState().setDarkTheme('eclair-dark');
-    expect(useSettingsStore.getState().darkTheme).toBe('eclair-dark');
+    useSettingsStore.getState().setDarkTheme('holo-dark');
+    expect(useSettingsStore.getState().darkTheme).toBe('holo-dark');
     useSettingsStore.getState().setDarkTheme('day');
     expect(useSettingsStore.getState().darkTheme).toBe(DEFAULT_SETTINGS.darkTheme);
   });

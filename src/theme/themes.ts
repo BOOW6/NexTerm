@@ -1,15 +1,7 @@
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type ThemeVariant = 'light' | 'dark';
 
-export type ThemeId =
-  | 'day'
-  | 'dim'
-  | 'aqua-light'
-  | 'aqua-dark'
-  | 'holo-light'
-  | 'holo-dark'
-  | 'eclair-light'
-  | 'eclair-dark';
+export type ThemeId = 'day' | 'dim' | 'aqua-light' | 'aqua-dark' | 'holo-light' | 'holo-dark';
 
 export interface ThemeDefinition {
   id: ThemeId;
@@ -40,13 +32,6 @@ export const LIGHT_THEMES: ThemeDefinition[] = [
     variant: 'light',
     description: 'Android 4.4 Holo 亮色',
     swatches: ['#f5f5f5', '#ffffff', '#33b5e5']
-  },
-  {
-    id: 'eclair-light',
-    name: 'Eclair',
-    variant: 'light',
-    description: 'Android 2.2 Eclair 亮色',
-    swatches: ['#f4f4f4', '#dedede', '#f5a623']
   }
 ];
 
@@ -71,13 +56,6 @@ export const DARK_THEMES: ThemeDefinition[] = [
     variant: 'dark',
     description: 'Android 4.4 Holo 暗色',
     swatches: ['#000000', '#1a1a1a', '#33b5e5']
-  },
-  {
-    id: 'eclair-dark',
-    name: 'Eclair',
-    variant: 'dark',
-    description: 'Android 2.2 Eclair 暗色',
-    swatches: ['#000000', '#383838', '#f5a623']
   }
 ];
 
@@ -112,13 +90,6 @@ export const THEME_FAMILIES: ThemeFamily[] = [
     description: 'Android 4.4 Holo 扁平高对比',
     light: 'holo-light',
     dark: 'holo-dark'
-  },
-  {
-    id: 'eclair',
-    name: 'Eclair',
-    description: 'Android 2.2 Eclair 哑光质感',
-    light: 'eclair-light',
-    dark: 'eclair-dark'
   }
 ];
 
