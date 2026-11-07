@@ -13,6 +13,8 @@ export interface Session {
   username?: string;
   authMethod?: SessionAuthMethod;
   keyPath?: string;
+  /** Optional SSH/SFTP session whose connection tunnels this one (ProxyJump). */
+  jumpSessionId?: string;
   group: string;
   favorite: boolean;
   status: SessionStatus;
@@ -28,6 +30,7 @@ export interface SessionDraft {
   username?: string;
   authMethod?: SessionAuthMethod;
   keyPath?: string;
+  jumpSessionId?: string;
   group: string;
   favorite?: boolean;
 }

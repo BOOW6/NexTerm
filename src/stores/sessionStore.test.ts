@@ -202,6 +202,33 @@ describe('session lifecycle helpers', () => {
   });
 });
 
+describe('jumpSessionId', () => {
+  it('is stored on add and cleared with an empty string on update', () => {
+    const jump = useSessionStore.getState().addSession({
+      kind: 'ssh',
+      title: 'Bastion',
+      host: 'bastion.example.com',
+      group: DEFAULT_GROUP
+    });
+    const created = useSessionStore.getState().addSession({
+      kind: 'ssh',
+      title: 'Target',
+      host: 'target.example.com',
+      jumpSessionId: jump.id,
+      group: DEFAULT_GROUP
+    });
+    expect(created.jumpSessionId).toBe(jump.id);
+
+    // Omitting the field keeps the old value.
+    useSessionStore.getState().updateSession(created.id, { title: 'Target2' });
+    expect(useSessionStore.getState().getSession(created.id)?.jumpSessionId).toBe(jump.id);
+
+    // An explicit empty string clears it.
+    useSessionStore.getState().updateSession(created.id, { jumpSessionId: '' });
+    expect(useSessionStore.getState().getSession(created.id)?.jumpSessionId).toBeUndefined();
+  });
+});
+
 describe('persistence', () => {
   it('resets transient connection status when rehydrating', async () => {
     useSessionStore.setState({ sessions: [] });

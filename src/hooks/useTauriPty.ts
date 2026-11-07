@@ -29,8 +29,13 @@ export function getPtyPlatformInfo(): Promise<PtyPlatformInfo> {
   return platformInfoPromise;
 }
 
-export async function createPtySession(id: string, cols: number, rows: number): Promise<string> {
-  return invoke<string>('create_pty_session', { id, cols, rows });
+export async function createPtySession(
+  id: string,
+  cols: number,
+  rows: number,
+  logPath?: string
+): Promise<string> {
+  return invoke<string>('create_pty_session', { id, cols, rows, logPath: logPath ?? null });
 }
 
 export async function writePty(id: string, data: string): Promise<void> {

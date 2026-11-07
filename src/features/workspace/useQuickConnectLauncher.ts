@@ -23,12 +23,54 @@ interface QuickConnectDefaults {
 export interface QuickConnectPayload {
   defaults: QuickConnectDefaults;
   session: Session | null;
+  /** Remote sessions the edited session may tunnel through (ProxyJump). */
+  jumpCandidates: Array<{ id: string; title: string }>;
 }
 
 export interface QuickConnectResult {
   draft: SessionDraft;
   password?: string;
   passphrase?: string;
+}
+
+/** Whether the jump chain starting at `startId` reaches `targetId`
+ * (which would make `targetId` its own jump host). */
+function jumpChainReaches(
+  startId: string,
+  targetId: string | undefined,
+  sessions: Session[]
+): boolean {
+  if (!targetId) {
+    return false;
+  }
+  let currentId: string | undefined = startId;
+  for (let hop = 0; hop < 8 && currentId; hop += 1) {
+    if (currentId === targetId) {
+      return true;
+    }
+    currentId = sessions.find((item) => item.id === currentId)?.jumpSessionId;
+  }
+  return false;
+}
+
+function buildJumpCandidates(sessions: Session[], editingId?: string): Array<{ id: string; title: string }> {
+  const candidates = sessions
+    .filter((item) => item.kind !== 'local' && item.id !== editingId)
+    .filter((item) => !jumpChainReaches(item.id, editingId, sessions))
+    .map((item) => ({ id: item.id, title: item.title }));
+
+  // Keep an already-selected jump host selectable even if its own chain was
+  // edited into a cycle afterwards; saving the edit then reports the cycle.
+  const current = editingId
+    ? sessions.find((item) => item.id === editingId)?.jumpSessionId
+    : undefined;
+  if (current && !candidates.some((item) => item.id === current)) {
+    const title = sessions.find((item) => item.id === current)?.title;
+    if (title) {
+      candidates.unshift({ id: current, title });
+    }
+  }
+  return candidates;
 }
 
 export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Promise<void> {
@@ -53,7 +95,8 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
             port: session?.port ?? settings.defaultPort,
             username: session?.username ?? settings.defaultUsername
           },
-          session
+          session,
+          jumpCandidates: buildJumpCandidates(sessionState.sessions, session?.id)
         } satisfies QuickConnectPayload
       });
 
@@ -62,6 +105,21 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
       }
 
       const isRemote = result.draft.kind !== 'local';
+
+      if (isRemote && result.draft.jumpSessionId) {
+        const jumpId = result.draft.jumpSessionId;
+        const selfReferenced = jumpId === session?.id;
+        const cycled =
+          !selfReferenced &&
+          sessionState.sessions.some(
+            (item) =>
+              item.id === jumpId && jumpChainReaches(item.id, session?.id, sessionState.sessions)
+          );
+        if (selfReferenced || cycled) {
+          toast({ title: '跳板机不能形成循环引用', variant: 'error' });
+          return;
+        }
+      }
 
       if (session) {
         const previousAuthMethod = session.authMethod ?? 'password';

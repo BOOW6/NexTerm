@@ -3,11 +3,14 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { emit, listen } from '@tauri-apps/api/event';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import {
+  FolderOpen,
   Keyboard,
   Moon,
   Palette,
+  Pencil,
   Server,
   Shield,
+  SquareTerminal,
   Sun,
   TerminalSquare,
   Trash2,
@@ -48,6 +51,7 @@ import { firstFontFamily, fontFamilyStack, type FontFamilyTarget } from '../lib/
 import type { SystemFontFamily } from '../lib/systemFonts';
 import { useFontCatalogStore } from '../stores/fontCatalogStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { useSnippetStore, type Snippet } from '../stores/snippetStore';
 import {
   exportKnownHosts,
   importKnownHosts,
@@ -57,11 +61,12 @@ import {
 } from '../hooks/useTauriSsh';
 import type { SessionAuthMethod } from '../types/session';
 
-type SettingsTab = 'appearance' | 'terminal' | 'ssh' | 'shortcuts' | 'security' | 'about';
+type SettingsTab = 'appearance' | 'terminal' | 'snippets' | 'ssh' | 'shortcuts' | 'security' | 'about';
 
 const TABS: Array<{ id: SettingsTab; label: string; icon: LucideIcon }> = [
   { id: 'appearance', label: '外观', icon: Palette },
   { id: 'terminal', label: '终端', icon: TerminalSquare },
+  { id: 'snippets', label: '片段', icon: SquareTerminal },
   { id: 'ssh', label: 'SSH', icon: Server },
   { id: 'shortcuts', label: '快捷键', icon: Keyboard },
   { id: 'security', label: '安全', icon: Shield },
@@ -227,6 +232,48 @@ export default function SettingsWindow() {
   const systemFontsError = useFontCatalogStore((state) => state.error);
   const loadSystemFonts = useFontCatalogStore((state) => state.load);
   const refreshSystemFonts = useFontCatalogStore((state) => state.refresh);
+
+  const snippets = useSnippetStore((state) => state.snippets);
+  const addSnippet = useSnippetStore((state) => state.addSnippet);
+  const updateSnippet = useSnippetStore((state) => state.updateSnippet);
+  const removeSnippet = useSnippetStore((state) => state.removeSnippet);
+  const [snippetName, setSnippetName] = useState('');
+  const [snippetCommand, setSnippetCommand] = useState('');
+  const [editingSnippetId, setEditingSnippetId] = useState<string | null>(null);
+
+  const resetSnippetForm = () => {
+    setEditingSnippetId(null);
+    setSnippetName('');
+    setSnippetCommand('');
+  };
+
+  const startSnippetEdit = (snippet: Snippet) => {
+    setEditingSnippetId(snippet.id);
+    setSnippetName(snippet.name);
+    setSnippetCommand(snippet.command);
+  };
+
+  const submitSnippet = () => {
+    const editing = editingSnippetId;
+    if (!snippetCommand.trim()) {
+      return;
+    }
+    if (editing) {
+      updateSnippet(editing, { name: snippetName, command: snippetCommand });
+      toast({ title: '片段已更新', variant: 'success' });
+    } else {
+      addSnippet({ name: snippetName, command: snippetCommand });
+      toast({ title: '片段已添加', variant: 'success' });
+    }
+    resetSnippetForm();
+  };
+
+  const deleteSnippet = (id: string) => {
+    removeSnippet(id);
+    if (editingSnippetId === id) {
+      resetSnippetForm();
+    }
+  };
 
   useEffect(() => {
     void loadSystemFonts();
@@ -532,6 +579,21 @@ export default function SettingsWindow() {
       ...current,
       shortcuts: { ...current.shortcuts, [action]: value }
     }));
+  };
+
+  const browseLogDir = async () => {
+    try {
+      const selected = await openDialog({
+        directory: true,
+        multiple: false,
+        title: '选择会话日志目录'
+      });
+      if (typeof selected === 'string') {
+        update('sessionLogDir', selected);
+      }
+    } catch {
+      /* dialog unavailable */
+    }
   };
 
   const selectTab = (next: SettingsTab) => {
@@ -1104,6 +1166,40 @@ export default function SettingsWindow() {
         localStorage，可能包含敏感输出；如不需要可关闭「重启后恢复滚动缓冲」。
       </p>
 
+      <div className="space-y-2 rounded-sm border border-border bg-surface p-3">
+        <label className="flex items-center gap-2 text-[11px] text-muted">
+          <input
+            type="checkbox"
+            className="app-checkbox h-3.5 w-3.5 accent-accent"
+            checked={draft.sessionLogEnabled}
+            onChange={(event) => update('sessionLogEnabled', event.target.checked)}
+          />
+          记录会话日志
+        </label>
+        <div className="flex items-stretch gap-1">
+          <Input
+            value={draft.sessionLogDir}
+            onChange={(event) => update('sessionLogDir', event.target.value)}
+            placeholder="选择或输入保存会话日志的目录"
+            className="flex-1"
+            aria-label="会话日志目录"
+          />
+          <Button
+            size="icon"
+            variant="secondary"
+            aria-label="选择会话日志目录"
+            title="选择会话日志目录"
+            onClick={() => void browseLogDir()}
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+        <p className="text-[10px] text-muted-foreground">
+          开启后终端输出（含 ANSI 控制序列）会追加写入目录下的「会话名-时间.log」。新建连接立即生效；
+          对已连接的会话切换开关即时生效，且不更换已有日志文件。日志可能包含敏感输出，请注意保存位置。
+        </p>
+      </div>
+
       <div>
         <Label htmlFor="terminal-font-feature-settings">Font Feature Settings</Label>
         <Input
@@ -1393,9 +1489,82 @@ export default function SettingsWindow() {
     </section>
   );
 
+  const renderSnippets = () => (
+    <section className="space-y-3">
+      <p className="text-[11px] text-muted">
+        片段保存在本地，可从命令面板（{DEFAULT_SETTINGS.shortcuts.commandPalette}）搜索并一键发送到当前终端，发送后自动执行回车。
+      </p>
+
+      <div className="space-y-2 rounded-sm border border-border bg-surface p-3">
+        <div className="grid grid-cols-[10rem_1fr] gap-2">
+          <Input
+            value={snippetName}
+            onChange={(event) => setSnippetName(event.target.value)}
+            placeholder="名称"
+            aria-label="片段名称"
+          />
+          <Input
+            value={snippetCommand}
+            onChange={(event) => setSnippetCommand(event.target.value)}
+            placeholder="命令，例如：tail -n 200 /var/log/syslog"
+            aria-label="片段命令"
+            className="font-mono"
+          />
+        </div>
+        <div className="flex justify-end gap-2">
+          {editingSnippetId ? (
+            <Button variant="ghost" onClick={resetSnippetForm}>
+              取消编辑
+            </Button>
+          ) : null}
+          <Button variant="primary" disabled={!snippetCommand.trim()} onClick={submitSnippet}>
+            {editingSnippetId ? '保存修改' : '添加片段'}
+          </Button>
+        </div>
+      </div>
+
+      {snippets.length === 0 ? (
+        <p className="px-2 py-6 text-center text-[11px] text-muted">还没有片段，先在上方添加一个。</p>
+      ) : (
+        <ul className="space-y-1">
+          {snippets.map((snippet) => (
+            <li
+              key={snippet.id}
+              className="flex items-center gap-2 rounded-sm border border-border bg-surface px-2 py-1.5"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-medium text-foreground">{snippet.name}</p>
+                <p className="truncate font-mono text-[10px] text-muted">{snippet.command}</p>
+              </div>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={`编辑片段 ${snippet.name}`}
+                title="编辑"
+                onClick={() => startSnippetEdit(snippet)}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={`删除片段 ${snippet.name}`}
+                title="删除"
+                onClick={() => deleteSnippet(snippet.id)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+
   const content = {
     appearance: renderAppearance,
     terminal: renderTerminal,
+    snippets: renderSnippets,
     ssh: renderSsh,
     shortcuts: renderShortcuts,
     security: renderSecurity,

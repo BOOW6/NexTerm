@@ -32,6 +32,8 @@ function buildSession(draft: SessionDraft): Session {
     username: draft.kind === 'local' ? undefined : draft.username?.trim() || undefined,
     authMethod: draft.kind === 'local' ? undefined : (draft.authMethod ?? 'password'),
     keyPath: draft.kind === 'local' ? undefined : draft.keyPath?.trim() || undefined,
+    jumpSessionId:
+      draft.kind === 'local' ? undefined : draft.jumpSessionId?.trim() || undefined,
     group: draft.group.trim() || DEFAULT_GROUP,
     favorite: draft.favorite ?? false,
     status: 'idle',
@@ -94,6 +96,14 @@ export const useSessionStore = create<SessionState>()(
                   : patch.keyPath !== undefined
                     ? patch.keyPath.trim() || undefined
                     : session.keyPath,
+              // An empty string clears the jump host (same explicit-clear
+              // semantics as username/keyPath); an omitted field keeps it.
+              jumpSessionId:
+                nextKind === 'local'
+                  ? undefined
+                  : patch.jumpSessionId !== undefined
+                    ? patch.jumpSessionId.trim() || undefined
+                    : session.jumpSessionId,
               group: patch.group !== undefined ? patch.group.trim() || DEFAULT_GROUP : session.group
             };
           })

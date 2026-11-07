@@ -38,6 +38,8 @@ use tokio::{
 use uuid::Uuid;
 use walkdir::WalkDir;
 
+use crate::log_sink::LogSink;
+
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|poison| poison.into_inner())
 }
@@ -64,6 +66,38 @@ fn home_dir() -> Option<PathBuf> {
         .filter(|value| !value.is_empty())
         .or_else(|| std::env::var_os("USERPROFILE").filter(|value| !value.is_empty()))
         .map(PathBuf::from)
+}
+
+/// Connection parameters of the jump (bastion) host a session tunnels
+/// through, resolved by the frontend from the referenced jump session.
+#[derive(Clone, Deserialize)]
+pub struct JumpTarget {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub auth_method: String,
+    #[serde(default)]
+    pub password: String,
+    #[serde(default)]
+    pub private_key_path: Option<String>,
+    #[serde(default)]
+    pub passphrase: Option<String>,
+}
+
+/// The fingerprint-wait cancellation shared by the jump and target
+/// handshakes: `ssh_disconnect` sends once, and whichever handshake is
+/// waiting for a host-key decision takes the receiver first.
+#[derive(Clone)]
+struct SharedCancel(Arc<Mutex<Option<oneshot::Receiver<()>>>>);
+
+impl SharedCancel {
+    fn new(receiver: oneshot::Receiver<()>) -> Self {
+        Self(Arc::new(Mutex::new(Some(receiver))))
+    }
+
+    fn take(&self) -> Option<oneshot::Receiver<()>> {
+        lock(&self.0).take()
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -272,6 +306,13 @@ struct SshConnection {
     writer: Arc<ChannelWriteHalf<client::Msg>>,
     sftp: tokio::sync::Mutex<Option<Arc<SftpSession>>>,
     remote_forwards: Arc<Mutex<RemoteForwardMap>>,
+    /// Session output log shared with the read loop; dropping the connection
+    /// closes the file.
+    log: Arc<LogSink>,
+    /// The jump-host transport the target connection tunnels through. Held
+    /// for the lifetime of the session: dropping it closes the tunnel and
+    /// with it the target connection.
+    jump_handle: Option<Arc<client::Handle<Client>>>,
 }
 
 struct ForwardHandle {
@@ -298,8 +339,9 @@ pub struct Client {
     host_label: String,
     remote_forwards: Arc<Mutex<RemoteForwardMap>>,
     /// Cancels the fingerprint wait when the session is disconnected while
-    /// the dialog is open. Consumed by `check_server_key`.
-    cancel: Option<oneshot::Receiver<()>>,
+    /// the dialog is open. Consumed by `check_server_key`; shared with the
+    /// jump-host handshake so both legs honor the same disconnect.
+    cancel: SharedCancel,
 }
 
 impl client::Handler for Client {
@@ -585,6 +627,58 @@ async fn stop_session_forwards(
     }
 }
 
+/// Authenticate an established SSH transport with the given credentials.
+/// Shared by the direct and the jump-host connection path.
+async fn authenticate(
+    handle: &mut client::Handle<Client>,
+    username: &str,
+    auth_method: &str,
+    password: &str,
+    private_key_path: Option<&str>,
+    passphrase: Option<&str>,
+) -> anyhow::Result<()> {
+    match auth_method {
+        "key" => {
+            let key_path = private_key_path.ok_or_else(|| anyhow!("请选择私钥文件"))?;
+            let key_path = expand_path(key_path);
+            let key_pair = russh::keys::load_secret_key(&key_path, passphrase)
+                .with_context(|| format!("failed to load private key: {}", key_path.display()))?;
+            let hash = handle
+                .best_supported_rsa_hash()
+                .await
+                .context("failed to query RSA hash algorithm")?
+                .flatten();
+
+            let auth = handle
+                .authenticate_publickey(
+                    username,
+                    russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key_pair), hash),
+                )
+                .await
+                .context("SSH key authentication failed")?;
+
+            if !auth.success() {
+                return Err(anyhow!("SSH 密钥认证失败，请检查私钥或用户名"));
+            }
+        }
+        "agent" => {
+            authenticate_with_agent(handle, username).await?;
+        }
+        _ => {
+            let auth = handle
+                .authenticate_password(username, password)
+                .await
+                .context("SSH authentication failed")?;
+
+            if !auth.success() {
+                return Err(anyhow!("SSH 认证失败，请检查用户名或密码"));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 impl SshManager {
     pub fn new(known_hosts_path: PathBuf) -> Self {
         Self {
@@ -640,6 +734,8 @@ impl SshManager {
         password: String,
         private_key_path: Option<String>,
         passphrase: Option<String>,
+        jump: Option<JumpTarget>,
+        log_path: Option<String>,
         cols: u16,
         rows: u16,
     ) -> anyhow::Result<String> {
@@ -691,55 +787,71 @@ impl SshManager {
             port,
             host_label: format!("{host}:{port}"),
             remote_forwards: remote_forwards.clone(),
-            cancel: Some(cancel_receiver),
+            cancel: SharedCancel::new(cancel_receiver),
         };
 
-        let mut handle = client::connect(config, (host.as_str(), port), client)
-            .await
-            .with_context(|| format!("failed to connect to {host}:{port}"))?;
+        // With a jump host the target handshake runs over a direct-tcpip
+        // channel of the jump connection (the `ssh -J` tunnel). The jump
+        // transport is kept alive alongside the session for as long as the
+        // target connection lives.
+        let (mut handle, jump_handle) = match jump {
+            None => (
+                client::connect(config.clone(), (host.as_str(), port), client)
+                    .await
+                    .with_context(|| format!("failed to connect to {host}:{port}"))?,
+                None,
+            ),
+            Some(jump) => {
+                let jump_client = Client {
+                    host_key: self.host_keys(),
+                    app: app.clone(),
+                    host: jump.host.clone(),
+                    port: jump.port,
+                    host_label: format!("{}:{}", jump.host, jump.port),
+                    remote_forwards: Arc::new(Mutex::new(HashMap::new())),
+                    cancel: client.cancel.clone(),
+                };
+                let mut jump_connection =
+                    client::connect(config.clone(), (jump.host.as_str(), jump.port), jump_client)
+                        .await
+                        .with_context(|| {
+                            format!("failed to connect to jump host {}:{}", jump.host, jump.port)
+                        })?;
 
-        match auth_method.as_str() {
-            "key" => {
-                let key_path = private_key_path
-                    .as_deref()
-                    .ok_or_else(|| anyhow!("请选择私钥文件"))?;
-                let key_path = expand_path(key_path);
-                let key_pair = russh::keys::load_secret_key(&key_path, passphrase.as_deref())
+                authenticate(
+                    &mut jump_connection,
+                    &jump.username,
+                    &jump.auth_method,
+                    &jump.password,
+                    jump.private_key_path.as_deref(),
+                    jump.passphrase.as_deref(),
+                )
+                .await
+                .with_context(|| format!("jump host authentication failed: {}", jump.host))?;
+
+                let channel = jump_connection
+                    .channel_open_direct_tcpip(host.clone(), port as u32, "127.0.0.1", 0)
+                    .await
+                    .context("failed to open tunnel through jump host")?;
+
+                let handle = client::connect_stream(config, channel.into_stream(), client)
+                    .await
                     .with_context(|| {
-                        format!("failed to load private key: {}", key_path.display())
+                        format!("failed to connect to {host}:{port} through jump host")
                     })?;
-                let hash = handle
-                    .best_supported_rsa_hash()
-                    .await
-                    .context("failed to query RSA hash algorithm")?
-                    .flatten();
-
-                let auth = handle
-                    .authenticate_publickey(
-                        username,
-                        russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key_pair), hash),
-                    )
-                    .await
-                    .context("SSH key authentication failed")?;
-
-                if !auth.success() {
-                    return Err(anyhow!("SSH 密钥认证失败，请检查私钥或用户名"));
-                }
+                (handle, Some(Arc::new(jump_connection)))
             }
-            "agent" => {
-                authenticate_with_agent(&mut handle, &username).await?;
-            }
-            _ => {
-                let auth = handle
-                    .authenticate_password(username, password)
-                    .await
-                    .context("SSH authentication failed")?;
+        };
 
-                if !auth.success() {
-                    return Err(anyhow!("SSH 认证失败，请检查用户名或密码"));
-                }
-            }
-        }
+        authenticate(
+            &mut handle,
+            &username,
+            &auth_method,
+            &password,
+            private_key_path.as_deref(),
+            passphrase.as_deref(),
+        )
+        .await?;
 
         let channel = handle
             .channel_open_session()
@@ -764,6 +876,8 @@ impl SshManager {
         let app_handle = app.clone();
         let reap_forwards = self.forwards.clone();
         let reap_sessions = self.sessions.clone();
+        let log = Arc::new(LogSink::new(log_path.as_deref()));
+        let read_log = log.clone();
 
         tokio::spawn(async move {
             // Separate decoders per stream: a stderr packet must not complete
@@ -778,9 +892,11 @@ impl SshManager {
                     ChannelMsg::Eof | ChannelMsg::Close => break,
                     _ => continue,
                 };
+                let decoded = decoder.feed(&data);
+                read_log.write(&decoded);
                 let payload = SshOutputPayload {
                     id: event_id.clone(),
-                    data: decoder.feed(&data),
+                    data: decoded,
                 };
                 let _ = app_handle.emit(&format!("ssh-output-{}", event_id), payload);
             }
@@ -814,6 +930,8 @@ impl SshManager {
                     writer,
                     sftp: tokio::sync::Mutex::new(None),
                     remote_forwards,
+                    log,
+                    jump_handle,
                 }),
             );
 
@@ -861,8 +979,20 @@ impl SshManager {
                 .handle
                 .disconnect(Disconnect::ByApplication, "", "en")
                 .await;
+            // The jump transport exists only to carry this session's tunnel.
+            if let Some(jump) = &connection.jump_handle {
+                let _ = jump.disconnect(Disconnect::ByApplication, "", "en").await;
+            }
         }
 
+        Ok(())
+    }
+
+    /// Re-point the session's output log mid-flight. Called when the user
+    /// toggles session logging while connections are already alive.
+    pub fn set_log(&self, id: &str, path: Option<&str>) -> anyhow::Result<()> {
+        let connection = self.connection(id)?;
+        connection.log.set_path(path);
         Ok(())
     }
 

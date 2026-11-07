@@ -15,9 +15,18 @@ export interface SshConnectOptions {
   password?: string;
   privateKeyPath?: string;
   passphrase?: string;
+  /** Optional jump (bastion) host the connection tunnels through. */
+  jump?: SshJumpOptions;
+  /** Append-mode file the backend tees decoded output into. */
+  logPath?: string;
   cols: number;
   rows: number;
 }
+
+export type SshJumpOptions = Pick<
+  SshConnectOptions,
+  'host' | 'port' | 'username' | 'authMethod' | 'password' | 'privateKeyPath' | 'passphrase'
+>;
 
 export interface HostKeyPromptPayload {
   request_id: string;
@@ -142,9 +151,26 @@ export async function connectSsh(options: SshConnectOptions): Promise<string> {
     password: options.password ?? '',
     privateKeyPath: options.privateKeyPath ?? null,
     passphrase: options.passphrase ?? null,
+    jump: options.jump
+      ? {
+          host: options.jump.host,
+          port: options.jump.port,
+          username: options.jump.username,
+          authMethod: options.jump.authMethod,
+          password: options.jump.password ?? '',
+          privateKeyPath: options.jump.privateKeyPath ?? null,
+          passphrase: options.jump.passphrase ?? null
+        }
+      : null,
+    logPath: options.logPath ?? null,
     cols: options.cols,
     rows: options.rows
   });
+}
+
+/** Re-point the output log of a live session (SSH or local PTY). */
+export async function setSessionLog(id: string, logPath: string | null): Promise<void> {
+  await invoke('set_session_log', { id, logPath });
 }
 
 export async function respondHostKey(requestId: string, accept: boolean): Promise<void> {

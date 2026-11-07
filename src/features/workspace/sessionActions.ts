@@ -120,6 +120,7 @@ export function duplicateSessionPanel(
     username: session.username,
     authMethod: session.authMethod,
     keyPath: session.keyPath,
+    jumpSessionId: session.jumpSessionId,
     group: session.group,
     favorite: false
   });

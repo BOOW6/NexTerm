@@ -25,6 +25,7 @@ import {
   listenSshClosed,
   listenSshOutput,
   resizeSsh,
+  setSessionLog,
   writeSsh
 } from '../../hooks/useTauriSsh';
 import { useConnectionStore } from '../../stores/connectionStore';
@@ -33,6 +34,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useTransferStore } from '../../stores/transferStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { resumeInterruptedTransfers } from '../../lib/sftpTransfer';
+import { sessionLogPath } from '../../lib/sessionLog';
 import { useTheme } from '../../theme/ThemeProvider';
 import { getTerminalTheme } from '../../theme/terminalTheme';
 import { NativeLigaturesAddon } from '../../theme/nativeLigaturesAddon';
@@ -59,6 +61,8 @@ export interface XtermHandle {
   copySelection: () => Promise<boolean>;
   hasSelection: () => boolean;
   paste: (data: string) => void;
+  /** Inject text as if typed; with `execute` also send a newline. */
+  sendText: (text: string, execute?: boolean) => void;
   selectAll: () => void;
   findNext: (query: string) => void;
   findPrevious: (query: string) => void;
@@ -77,6 +81,7 @@ export interface SshTarget {
   password?: string;
   privateKeyPath?: string;
   passphrase?: string;
+  jump?: SshTarget;
 }
 
 interface XtermCanvasProps {
@@ -85,6 +90,8 @@ interface XtermCanvasProps {
   transport?: TerminalTransport;
   ssh?: SshTarget;
   visible?: boolean;
+  /** Session title used for the session-log file name. */
+  logTitle?: string;
 }
 
 const WRITE_BATCH_INTERVAL_MS = 16;
@@ -160,9 +167,10 @@ function errorMessage(error: unknown): string {
 }
 
 const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
-  ({ sessionId, fontSize = 13, transport = 'local', ssh, visible = true }, ref) => {
+  ({ sessionId, fontSize = 13, transport = 'local', ssh, visible = true, logTitle = '' }, ref) => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const terminalRef = useRef<Terminal | null>(null);
+    const backendIdRef = useRef('');
     const reconnectRef = useRef<(() => void) | null>(null);
     const searchRef = useRef<SearchAddon | null>(null);
     const loadSearchRef = useRef<(() => Promise<SearchAddon | null>) | null>(null);
@@ -194,6 +202,33 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
     const privateKeyPath = ssh?.privateKeyPath ?? '';
     const passphrase = ssh?.passphrase ?? '';
 
+    const jump = ssh?.jump;
+    const jumpHost = jump?.host ?? '';
+    const jumpPort = jump?.port ?? 22;
+    const jumpUsername = jump?.username ?? '';
+    const jumpPassword = jump?.password ?? '';
+    const jumpAuthMethod = jump?.authMethod ?? 'password';
+    const jumpKeyPath = jump?.privateKeyPath ?? '';
+    const jumpPassphrase = jump?.passphrase ?? '';
+
+    const sessionLogEnabled = useSettingsStore((state) => state.sessionLogEnabled);
+    const sessionLogDir = useSettingsStore((state) => state.sessionLogDir);
+
+    useEffect(() => {
+      const backendId = backendIdRef.current;
+      if (!backendId) {
+        return;
+      }
+      void setSessionLog(backendId, sessionLogEnabled ? sessionLogPath(sessionLogDir, logTitle) : null).catch(
+        // The id may reference a connection that just dropped; logging
+        // simply stays off for it.
+        () => {}
+      );
+      // The path is intentionally not re-derived on `logTitle` changes; only
+      // a logging setting flip re-points the file of a live session.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sessionLogEnabled, sessionLogDir]);
+
     useEffect(() => {
       fontSizeRef.current = fontSize;
     }, [fontSize]);
@@ -224,6 +259,12 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       // Id of a connect attempt still in its handshake (typically waiting
       // for a host-key decision). Closing the panel cancels it explicitly.
       let pendingConnectId: string | null = null;
+      // One log file per terminal activation: auto-reconnects keep appending
+      // to the same file instead of scattering timestamped fragments.
+      const logSettings = useSettingsStore.getState();
+      const sessionLogTarget = logSettings.sessionLogEnabled
+        ? sessionLogPath(logSettings.sessionLogDir, logTitle)
+        : '';
       let unlistenOutput: (() => void) | undefined;
       let unlistenClosed: (() => void) | undefined;
       let dataDisposable: IDisposable | undefined;
@@ -693,6 +734,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           useConnectionStore.getState().removeConnection(sessionId, backendId);
           void disconnectSsh(backendId);
           backendId = '';
+          backendIdRef.current = '';
           resizeTarget = null;
         }
 
@@ -709,6 +751,17 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           }
           if (authMethod === 'key' && !privateKeyPath) {
             throw new Error('缺少私钥文件');
+          }
+          if (jumpHost) {
+            if (!jumpUsername) {
+              throw new Error('缺少跳板会话用户名');
+            }
+            if (jumpAuthMethod === 'password' && !jumpPassword) {
+              throw new Error('跳板会话缺少密码，请先连接一次该会话以保存凭据');
+            }
+            if (jumpAuthMethod === 'key' && !jumpKeyPath) {
+              throw new Error('跳板会话缺少私钥文件');
+            }
           }
 
           useSessionStore.getState().setStatus(sessionId, 'connecting');
@@ -738,6 +791,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             const uptime = connectedAt > 0 ? Date.now() - connectedAt : 0;
             clearTransportListeners();
             backendId = '';
+            backendIdRef.current = '';
             resizeTarget = null;
             useConnectionStore.getState().removeConnection(sessionId, id);
             // Another split pane of this session may still be connected;
@@ -782,6 +836,18 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             password,
             privateKeyPath: privateKeyPath || undefined,
             passphrase: passphrase || undefined,
+            jump: jumpHost
+              ? {
+                  host: jumpHost,
+                  port: jumpPort,
+                  username: jumpUsername,
+                  authMethod: jumpAuthMethod,
+                  password: jumpPassword,
+                  privateKeyPath: jumpKeyPath || undefined,
+                  passphrase: jumpPassphrase || undefined
+                }
+              : undefined,
+            logPath: sessionLogTarget || undefined,
             cols: instance.cols,
             rows: instance.rows
           });
@@ -803,6 +869,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           established = true;
           everEstablished = true;
           backendId = connectedId;
+          backendIdRef.current = connectedId;
           connectedAt = Date.now();
           resizeTarget = { id: connectedId, transport: 'ssh' };
           useConnectionStore
@@ -859,6 +926,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         if (backendId) {
           void closePtySession(backendId);
           backendId = '';
+          backendIdRef.current = '';
           resizeTarget = null;
         }
 
@@ -892,6 +960,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             }
             clearTransportListeners();
             backendId = '';
+            backendIdRef.current = '';
             resizeTarget = null;
             useSessionStore.getState().setStatus(sessionId, 'idle');
             void writeScrollbackNotice(instance, '\x1b[33m[本地 Shell 已退出]\x1b[0m', true);
@@ -902,7 +971,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           }
           unlistenClosed = stopClosed;
 
-          const createdId = await createPtySession(id, instance.cols, instance.rows);
+          const createdId = await createPtySession(id, instance.cols, instance.rows, sessionLogTarget || undefined);
           if (disposed || generation !== transportGeneration || closedEarly) {
             void closePtySession(createdId);
             if (closedEarly && !disposed && generation === transportGeneration) {
@@ -915,6 +984,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
           established = true;
           backendId = createdId;
+          backendIdRef.current = createdId;
           resizeTarget = { id: createdId, transport: 'local' };
           useSessionStore.getState().setStatus(sessionId, 'connected');
 
@@ -1657,6 +1727,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
         resizeTarget = null;
         pendingBackendResize = null;
+        backendIdRef.current = '';
 
         terminalRef.current = null;
         searchRef.current = null;
@@ -1681,7 +1752,14 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       authMethod,
       privateKeyPath,
       password,
-      passphrase
+      passphrase,
+      jumpHost,
+      jumpPort,
+      jumpUsername,
+      jumpAuthMethod,
+      jumpKeyPath,
+      jumpPassword,
+      jumpPassphrase
     ]);
 
     useEffect(() => {
@@ -1748,6 +1826,19 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         paste: (data: string) => {
           terminalRef.current?.paste(data);
           terminalRef.current?.focus();
+        },
+        sendText: (text: string, execute = false) => {
+          const terminal = terminalRef.current;
+          if (!terminal) {
+            return;
+          }
+          // `input()` routes through onData, so the text reaches the same
+          // writeSsh/writePty path as real keystrokes.
+          terminal.input(text);
+          if (execute) {
+            terminal.input('\r');
+          }
+          terminal.focus();
         },
         selectAll: () => {
           terminalRef.current?.selectAll();

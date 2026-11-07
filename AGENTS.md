@@ -33,15 +33,15 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 ### 会话管理与命令面板
 
 - 左侧会话管理器：搜索、收藏、分组、编辑、删除。
-- 快速连接：本地 / SSH / SFTP，支持密码与私钥认证。
-- 命令面板 `Ctrl+K`：搜索会话、创建会话、切换主题、分屏、重连、收藏、打开 SFTP/传输队列/设置。
+- 快速连接：本地 / SSH / SFTP，支持密码与私钥认证；远程会话可选择另一 SSH/SFTP 会话作为**跳板机（ProxyJump）**（编辑窗口内选择，构建时校验循环引用；跳板机认证沿用其自身配置）。
+- 命令面板 `Ctrl+K`：搜索会话、创建会话、切换主题、分屏、重连、收藏、打开 SFTP/传输队列/设置，以及**命令片段**（管理入口在设置 > 片段；发送到当前终端并自动执行回车）。
 - 会话数据与工作区布局持久化到 localStorage。
 
 ### SSH 与 SFTP（第三阶段）
 
-- 基于 `russh` 实现**密码认证**、**私钥认证**（可选 passphrase）与 **SSH Agent 认证**的交互式 SSH 终端。
+- 基于 `russh` 实现**密码认证**、**私钥认证**（可选 passphrase）与 **SSH Agent 认证**的交互式 SSH 终端。**ProxyJump** 在后端通过跳板连接上的 `direct-tcpip` 通道（`ssh -J` 语义）承载目标握手，跳板与目标两台主机分别做 known_hosts 校验；跳板传输随目标会话存亡。
 - **主机密钥校验（TOFU）**：首次连接弹出 SHA256 指纹确认，写入应用配置目录的 `known_hosts.json`；后续自动比对，不匹配则中止。支持 OpenSSH `known_hosts` 导入/导出（导出可选 hashed host 格式；导入会跳过哈希与通配符条目）。
-- 后端命令：`ssh_connect` / `ssh_write` / `ssh_resize` / `ssh_disconnect` / `ssh_host_key_response` / `known_hosts_list` / `known_hosts_remove` / `known_hosts_import` / `known_hosts_export`。
+- 后端命令：`ssh_connect` / `ssh_write` / `ssh_resize` / `ssh_disconnect` / `ssh_host_key_response` / `known_hosts_list` / `known_hosts_remove` / `known_hosts_import` / `known_hosts_export`；`set_session_log` 用于对活动会话即时切换输出日志。
 - 输出事件：`ssh-output-{id}`、`ssh-closed-{id}`；主机密钥事件：`ssh-host-key`、`ssh-host-key-mismatch`。
 - **端口转发**：命令 `port_forward_list` / `port_forward_start` / `port_forward_stop`，事件 `port-forwards-changed`；支持本地（`-L`）、远程（`-R`）与动态 SOCKS5（`-D`）。UI 为独立「端口转发」面板。
 - SFTP：
@@ -53,7 +53,8 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 ### 设置与主题（P4）
 
 - Web 2.0 视觉：CSS Variables + Tailwind 语义 token，支持明亮 / 暗黑 / 跟随系统。
-- 设置面板：外观、终端外观（字体/字号/光标/回滚/行高）、SSH 默认值、可配置快捷键、known_hosts 管理、恢复默认。
+- 设置面板：外观、终端外观（字体/字号/光标/回滚/行高）、命令片段管理、SSH 默认值、可配置快捷键、known_hosts 管理、恢复默认。
+- **会话日志**：设置 > 终端 开启并选择目录后，PTY 与 SSH 读循环把解码后的输出（含 ANSI 序列）追加写入 `会话名-时间.log`（`src-tauri/src/log_sink.rs`，`Arc<LogSink>` 挂在会话上，零额外 IPC）；日志路径在终端面板挂载时决定，自动重连续写同一文件，切换开关对活动会话即时生效。
 
 ## 技术栈
 

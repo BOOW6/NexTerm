@@ -26,6 +26,7 @@ interface FormState {
   password: string;
   keyPath: string;
   passphrase: string;
+  jumpSessionId: string;
   group: string;
 }
 
@@ -39,6 +40,7 @@ const EMPTY_FORM: FormState = {
   password: '',
   keyPath: '',
   passphrase: '',
+  jumpSessionId: '',
   group: DEFAULT_GROUP
 };
 
@@ -66,6 +68,7 @@ export default function QuickConnectWindow() {
           password: '',
           keyPath: data.session.keyPath ?? '',
           passphrase: '',
+          jumpSessionId: data.session.jumpSessionId ?? '',
           group: data.session.group
         });
       } else {
@@ -133,6 +136,7 @@ export default function QuickConnectWindow() {
           port: form.port ? Number(form.port) : undefined,
           authMethod: form.authMethod,
           keyPath: form.keyPath,
+          jumpSessionId: isRemote ? form.jumpSessionId : '',
           group: form.group
         },
         password: form.password,
@@ -277,6 +281,27 @@ export default function QuickConnectWindow() {
                 </>
               )}
             </>
+          ) : null}
+
+          {isRemote && payload?.jumpCandidates.length ? (
+            <div>
+              <Label htmlFor="session-jump">跳板机（可选）</Label>
+              <Select
+                id="session-jump"
+                value={form.jumpSessionId}
+                onChange={(event) => update('jumpSessionId', event.target.value)}
+              >
+                <option value="">无</option>
+                {payload.jumpCandidates.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.title}
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-1 text-[11px] text-muted">
+                连接将经由所选会话的主机转发（ProxyJump），跳板机的认证沿用其自身配置。
+              </p>
+            </div>
           ) : null}
 
           <div>

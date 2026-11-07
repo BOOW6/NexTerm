@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod fonts;
+pub mod log_sink;
 pub mod pty;
 pub mod ssh;
 pub mod text_stream;
@@ -85,6 +86,7 @@ pub fn run() {
             commands::ssh_write,
             commands::ssh_resize,
             commands::ssh_disconnect,
+            commands::set_session_log,
             commands::ssh_host_key_response,
             commands::known_hosts_list,
             commands::known_hosts_remove,

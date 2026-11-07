@@ -69,25 +69,25 @@ export function useGlobalShortcuts(): void {
 
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'c') {
         event.preventDefault();
-        dispatchTerminalAction('copy');
+        dispatchTerminalAction({ type: 'copy' });
         return;
       }
 
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'v') {
         event.preventDefault();
-        dispatchTerminalAction('paste');
+        dispatchTerminalAction({ type: 'paste' });
         return;
       }
 
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'a') {
         event.preventDefault();
-        dispatchTerminalAction('select-all');
+        dispatchTerminalAction({ type: 'select-all' });
         return;
       }
 
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'f') {
         event.preventDefault();
-        dispatchTerminalAction('find');
+        dispatchTerminalAction({ type: 'find' });
         return;
       }
 
@@ -98,19 +98,19 @@ export function useGlobalShortcuts(): void {
         (event.key === '=' || event.key === '+')
       ) {
         event.preventDefault();
-        dispatchTerminalAction('zoom-in');
+        dispatchTerminalAction({ type: 'zoom-in' });
         return;
       }
 
       if (event.ctrlKey && !event.altKey && !event.shiftKey && event.key === '-') {
         event.preventDefault();
-        dispatchTerminalAction('zoom-out');
+        dispatchTerminalAction({ type: 'zoom-out' });
         return;
       }
 
       if (event.ctrlKey && !event.altKey && !event.shiftKey && event.key === '0') {
         event.preventDefault();
-        dispatchTerminalAction('zoom-reset');
+        dispatchTerminalAction({ type: 'zoom-reset' });
       }
     };
 

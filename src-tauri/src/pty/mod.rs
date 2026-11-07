@@ -9,6 +9,8 @@ use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize}
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
+use crate::log_sink::LogSink;
+
 pub(crate) mod conpty_bundle;
 #[cfg(test)]
 mod conpty_resize_probe;
@@ -27,6 +29,9 @@ struct PtySession {
     writer: Mutex<Box<dyn Write + Send>>,
     child: Mutex<Box<dyn Child + Send + Sync>>,
     size: Mutex<PtySize>,
+    /// Session output log shared with the read thread; dropping the session
+    /// closes the file.
+    log: Arc<LogSink>,
 }
 
 #[derive(Clone, Serialize)]
@@ -49,6 +54,7 @@ impl PtySessionManager {
         id: String,
         cols: u16,
         rows: u16,
+        log_path: Option<String>,
     ) -> anyhow::Result<String> {
         // The frontend generates the id so it can register output listeners
         // before the shell starts. Validate it and reject duplicates so an
@@ -97,6 +103,8 @@ impl PtySessionManager {
         let event_id = id.clone();
         let closed_event_id = id.clone();
         let app_handle = app.clone();
+        let log = Arc::new(LogSink::new(log_path.as_deref()));
+        let read_log = log.clone();
 
         std::thread::spawn(move || {
             let mut buffer = [0_u8; READ_BUFFER_SIZE];
@@ -105,9 +113,11 @@ impl PtySessionManager {
                 match reader.read(&mut buffer) {
                     Ok(0) => break,
                     Ok(size) => {
+                        let decoded = decoder.feed(&buffer[..size]);
+                        read_log.write(&decoded);
                         let payload = PtyOutputPayload {
                             id: event_id.clone(),
-                            data: decoder.feed(&buffer[..size]),
+                            data: decoded,
                         };
 
                         let _ = app_handle.emit(&format!("pty-output-{}", event_id), payload);
@@ -124,6 +134,7 @@ impl PtySessionManager {
             writer: Mutex::new(writer),
             child: Mutex::new(child),
             size: Mutex::new(initial_size),
+            log,
         });
 
         self.sessions
@@ -204,6 +215,14 @@ impl PtySessionManager {
             }
         }
 
+        Ok(())
+    }
+
+    /// Re-point the session's output log mid-flight. Called when the user
+    /// toggles session logging while the shell is already running.
+    pub fn set_log(&self, id: &str, path: Option<&str>) -> anyhow::Result<()> {
+        let session = self.session(id)?;
+        session.log.set_path(path);
         Ok(())
     }
 

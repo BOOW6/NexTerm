@@ -10,7 +10,9 @@ import {
   RotateCw,
   Rows2,
   Search,
+  Send,
   Settings,
+  SquareTerminal,
   Star,
   SunMoon,
   X,
@@ -20,17 +22,20 @@ import {
 import { cn } from '../../lib/cn';
 import { useWorkspace } from '../../features/workspace/WorkspaceContext';
 import { useSessionStore } from '../../stores/sessionStore';
+import { useSnippetStore } from '../../stores/snippetStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useTheme } from '../../theme/ThemeProvider';
 import { openSettingsWindow } from '../../lib/appWindows';
 import { useQuickConnectLauncher } from '../../features/workspace/useQuickConnectLauncher';
+import { dispatchTerminalAction } from '../../lib/terminalCommands';
+import { toast } from '../ui/toast';
 import { SESSION_KIND_LABEL, sessionSubtitle } from '../../types/session';
 import { SESSION_KIND_ICON } from '../../lib/sessionVisuals';
 
 interface CommandItem {
   id: string;
-  group: '会话' | '命令';
+  group: '会话' | '命令' | '片段';
   label: string;
   hint?: string;
   keywords?: string;
@@ -61,6 +66,7 @@ export default function CommandPalette() {
 
   const sessions = useSessionStore((state) => state.sessions);
   const toggleFavorite = useSessionStore((state) => state.toggleFavorite);
+  const snippets = useSnippetStore((state) => state.snippets);
   const activeSessionId = useWorkspaceStore((state) => state.activeSessionId);
   const { themeLabel, cycle } = useTheme();
   const {
@@ -155,6 +161,14 @@ export default function CommandPalette() {
         icon: SunMoon,
         keywords: 'theme 主题 Day Dim Aqua Holo 亮色 暗色 跟随系统 dark light',
         run: () => cycle()
+      },
+      {
+        id: 'manage-snippets',
+        group: '命令',
+        label: '管理命令片段',
+        icon: SquareTerminal,
+        keywords: 'snippet 片段 命令 管理',
+        run: () => void openSettingsWindow('snippets')
       }
     ];
 
@@ -216,9 +230,27 @@ export default function CommandPalette() {
       );
     }
 
-    return [...sessionItems, ...commandItems];
+    const snippetItems: CommandItem[] = snippets.map((snippet) => ({
+      id: `snippet-${snippet.id}`,
+      group: '片段',
+      label: snippet.name,
+      hint: snippet.command.split('\n')[0],
+      keywords: snippet.command,
+      icon: Send,
+      run: () => {
+        const activePanelId = getApi()?.activePanel?.id;
+        if (!activePanelId || !activePanelId.startsWith('panel-')) {
+          toast({ title: '当前没有活动的终端面板', variant: 'warning' });
+          return;
+        }
+        dispatchTerminalAction({ type: 'send-text', text: snippet.command, execute: true });
+      }
+    }));
+
+    return [...sessionItems, ...commandItems, ...snippetItems];
   }, [
     sessions,
+    snippets,
     activeSession,
     themeLabel,
     cycle,

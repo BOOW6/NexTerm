@@ -35,6 +35,11 @@ export default function TerminalTab(props: IDockviewPanelProps) {
   const sessionId = params?.sessionId ?? props.api.id.replace(PANEL_PREFIX, '');
 
   const session = useSessionStore((state) => state.sessions.find((item) => item.id === sessionId));
+  const jumpSession = useSessionStore((state) =>
+    session?.jumpSessionId
+      ? state.sessions.find((item) => item.id === session.jumpSessionId)
+      : undefined
+  );
   const password = useCredentialStore((state) =>
     session ? (state.passwords[session.id] ?? '') : ''
   );
@@ -43,6 +48,12 @@ export default function TerminalTab(props: IDockviewPanelProps) {
   );
   const authorized = useCredentialStore((state) =>
     session ? Boolean(state.authorizations[session.id]) : false
+  );
+  const jumpPassword = useCredentialStore((state) =>
+    jumpSession ? (state.passwords[jumpSession.id] ?? '') : ''
+  );
+  const jumpPassphrase = useCredentialStore((state) =>
+    jumpSession ? (state.passphrases[jumpSession.id] ?? '') : ''
   );
   const clearCredentials = useCredentialStore((state) => state.clearCredentials);
 
@@ -79,14 +90,14 @@ export default function TerminalTab(props: IDockviewPanelProps) {
         return;
       }
       const action = (event as CustomEvent<TerminalAction>).detail;
-      if (action === 'copy') {
+      if (action.type === 'copy') {
         void terminalRef.current?.copySelection().then((copied) => {
           toast({
             title: copied ? t('terminal.copied') : t('terminal.nothingSelected'),
             variant: copied ? 'success' : 'default'
           });
         });
-      } else if (action === 'paste') {
+      } else if (action.type === 'paste') {
         void readClipboardText()
           .then((text) => {
             if (text) {
@@ -94,17 +105,19 @@ export default function TerminalTab(props: IDockviewPanelProps) {
             }
           })
           .catch(() => toast({ title: t('terminal.clipboardFailed'), variant: 'error' }));
-      } else if (action === 'select-all') {
+      } else if (action.type === 'send-text') {
+        terminalRef.current?.sendText(action.text, action.execute);
+      } else if (action.type === 'select-all') {
         terminalRef.current?.selectAll();
-      } else if (action === 'find') {
+      } else if (action.type === 'find') {
         setSearchOpen(true);
-      } else if (action === 'clear') {
+      } else if (action.type === 'clear') {
         terminalRef.current?.clear();
-      } else if (action === 'zoom-in') {
+      } else if (action.type === 'zoom-in') {
         setFontSize((current) => Math.min(MAX_FONT_SIZE, current + 1));
-      } else if (action === 'zoom-out') {
+      } else if (action.type === 'zoom-out') {
         setFontSize((current) => Math.max(MIN_FONT_SIZE, current - 1));
-      } else if (action === 'zoom-reset') {
+      } else if (action.type === 'zoom-reset') {
         setFontSize(defaultFontSize);
       }
     };
@@ -130,6 +143,21 @@ export default function TerminalTab(props: IDockviewPanelProps) {
   if (needsAuth) {
     return <SshConnectForm session={session} />;
   }
+
+  // The jump session tunnels this connection; its credentials come from the
+  // same in-memory store the jump session itself authenticates with. Missing
+  // jump credentials surface as a connect error naming the jump session.
+  const jumpTarget = jumpSession
+    ? {
+        host: jumpSession.host ?? '',
+        port: jumpSession.port ?? 22,
+        username: jumpSession.username ?? '',
+        authMethod: jumpSession.authMethod ?? 'password',
+        password: jumpPassword,
+        privateKeyPath: jumpSession.keyPath ?? '',
+        passphrase: jumpPassphrase
+      }
+    : undefined;
 
   const runSearch = (direction: 'next' | 'previous') => {
     if (!query) {
@@ -350,6 +378,7 @@ export default function TerminalTab(props: IDockviewPanelProps) {
           fontSize={fontSize}
           visible={isVisible}
           transport={isLocal ? 'local' : 'ssh'}
+          logTitle={session.title}
           ssh={
             isLocal
               ? undefined
@@ -360,7 +389,8 @@ export default function TerminalTab(props: IDockviewPanelProps) {
                   authMethod,
                   password,
                   privateKeyPath: keyPath,
-                  passphrase
+                  passphrase,
+                  jump: jumpTarget
                 }
           }
         />

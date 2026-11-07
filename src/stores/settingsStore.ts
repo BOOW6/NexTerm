@@ -51,6 +51,9 @@ export interface SettingsSnapshot {
   defaultAuthMethod: SessionAuthMethod;
   defaultPort: number;
   defaultUsername: string;
+  sessionLogEnabled: boolean;
+  /** Directory for session output logs; empty disables path-based logging. */
+  sessionLogDir: string;
   shortcuts: Record<ShortcutAction, string>;
 }
 
@@ -81,6 +84,8 @@ export const DEFAULT_SETTINGS: SettingsSnapshot = {
   defaultAuthMethod: 'password',
   defaultPort: 22,
   defaultUsername: '',
+  sessionLogEnabled: false,
+  sessionLogDir: '',
   shortcuts: DEFAULT_SHORTCUTS
 };
 
@@ -144,6 +149,8 @@ function normalizeSettings(input: SettingsSnapshot): SettingsSnapshot {
           : 'password',
     defaultPort: Math.min(65535, Math.max(1, Math.round(input.defaultPort) || 22)),
     defaultUsername: input.defaultUsername.trim(),
+    sessionLogEnabled: Boolean(input.sessionLogEnabled),
+    sessionLogDir: (input.sessionLogDir ?? '').trim(),
     shortcuts: {
       ...DEFAULT_SHORTCUTS,
       ...input.shortcuts
@@ -217,6 +224,8 @@ export function settingsSnapshot(): SettingsSnapshot {
     defaultAuthMethod: state.defaultAuthMethod,
     defaultPort: state.defaultPort,
     defaultUsername: state.defaultUsername,
+    sessionLogEnabled: state.sessionLogEnabled,
+    sessionLogDir: state.sessionLogDir,
     shortcuts: { ...state.shortcuts }
   };
 }

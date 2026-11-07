@@ -3,8 +3,8 @@ use tauri::{ipc::Response, AppHandle, Emitter, State};
 use crate::fonts::{FontManager, SystemFontFace, SystemFontFamily};
 use crate::pty::{PtyPlatformInfo, PtySessionManager};
 use crate::ssh::{
-    KnownHost, KnownHostsExportResult, KnownHostsImportResult, PortForwardInfo, SftpEntry,
-    SftpTransferOptions, SshManager,
+    JumpTarget, KnownHost, KnownHostsExportResult, KnownHostsImportResult, PortForwardInfo,
+    SftpEntry, SftpTransferOptions, SshManager,
 };
 use crate::vault::{VaultManager, VaultStatus};
 
@@ -45,9 +45,10 @@ pub fn create_pty_session(
     id: String,
     cols: u16,
     rows: u16,
+    log_path: Option<String>,
 ) -> Result<String, String> {
     state
-        .create_session(app, id, cols, rows)
+        .create_session(app, id, cols, rows, log_path)
         .map_err(|err| err.to_string())
 }
 
@@ -93,6 +94,8 @@ pub async fn ssh_connect(
     password: String,
     private_key_path: Option<String>,
     passphrase: Option<String>,
+    jump: Option<JumpTarget>,
+    log_path: Option<String>,
     cols: u16,
     rows: u16,
 ) -> Result<String, String> {
@@ -107,11 +110,31 @@ pub async fn ssh_connect(
             password,
             private_key_path,
             passphrase,
+            jump,
+            log_path,
             cols,
             rows,
         )
         .await
         .map_err(|err| err.to_string())
+}
+
+/// Re-point the output log of a live session (SSH or local PTY). The
+/// transports use distinct id spaces, so both managers are probed.
+#[tauri::command]
+pub fn set_session_log(
+    ssh: State<'_, SshManager>,
+    pty: State<'_, PtySessionManager>,
+    id: String,
+    log_path: Option<String>,
+) -> Result<(), String> {
+    if ssh.set_log(&id, log_path.as_deref()).is_ok() {
+        return Ok(());
+    }
+    if pty.set_log(&id, log_path.as_deref()).is_ok() {
+        return Ok(());
+    }
+    Err("session not found".to_string())
 }
 
 #[tauri::command]

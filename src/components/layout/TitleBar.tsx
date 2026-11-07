@@ -153,20 +153,20 @@ export default function TitleBar() {
     {
       label: '编辑',
       items: [
-        { label: '复制', shortcut: 'Ctrl+Shift+C', onSelect: () => dispatchTerminalAction('copy') },
+        { label: '复制', shortcut: 'Ctrl+Shift+C', onSelect: () => dispatchTerminalAction({ type: 'copy' }) },
         {
           label: '粘贴',
           shortcut: 'Ctrl+Shift+V',
-          onSelect: () => dispatchTerminalAction('paste')
+          onSelect: () => dispatchTerminalAction({ type: 'paste' })
         },
         {
           label: '全选',
           shortcut: 'Ctrl+Shift+A',
-          onSelect: () => dispatchTerminalAction('select-all')
+          onSelect: () => dispatchTerminalAction({ type: 'select-all' })
         },
-        { label: '查找', shortcut: 'Ctrl+Shift+F', onSelect: () => dispatchTerminalAction('find') },
+        { label: '查找', shortcut: 'Ctrl+Shift+F', onSelect: () => dispatchTerminalAction({ type: 'find' }) },
         { separator: true },
-        { label: '清屏', onSelect: () => dispatchTerminalAction('clear') }
+        { label: '清屏', onSelect: () => dispatchTerminalAction({ type: 'clear' }) }
       ]
     },
     {
@@ -175,17 +175,17 @@ export default function TitleBar() {
         {
           label: '放大字号',
           shortcut: 'Ctrl+=',
-          onSelect: () => dispatchTerminalAction('zoom-in')
+          onSelect: () => dispatchTerminalAction({ type: 'zoom-in' })
         },
         {
           label: '缩小字号',
           shortcut: 'Ctrl+-',
-          onSelect: () => dispatchTerminalAction('zoom-out')
+          onSelect: () => dispatchTerminalAction({ type: 'zoom-out' })
         },
         {
           label: '重置字号',
           shortcut: 'Ctrl+0',
-          onSelect: () => dispatchTerminalAction('zoom-reset')
+          onSelect: () => dispatchTerminalAction({ type: 'zoom-reset' })
         },
         { separator: true },
         {

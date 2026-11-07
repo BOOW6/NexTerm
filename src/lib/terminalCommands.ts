@@ -1,5 +1,14 @@
 export type TerminalAction =
-  'copy' | 'paste' | 'select-all' | 'find' | 'clear' | 'zoom-in' | 'zoom-out' | 'zoom-reset';
+  | { type: 'copy' }
+  | { type: 'paste' }
+  | { type: 'select-all' }
+  | { type: 'find' }
+  | { type: 'clear' }
+  | { type: 'zoom-in' }
+  | { type: 'zoom-out' }
+  | { type: 'zoom-reset' }
+  /** Inject text into the active terminal as if typed. */
+  | { type: 'send-text'; text: string; execute: boolean };
 
 export const TERMINAL_ACTION_EVENT = 'nexterm-terminal-action';
 
