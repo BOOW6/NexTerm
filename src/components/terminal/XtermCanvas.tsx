@@ -28,6 +28,14 @@ import {
   setSessionLog,
   writeSsh
 } from '../../hooks/useTauriSsh';
+import {
+  connectTelnet,
+  disconnectTelnet,
+  listenTelnetClosed,
+  listenTelnetOutput,
+  resizeTelnet,
+  writeTelnet
+} from '../../hooks/useTauriTelnet';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -71,7 +79,7 @@ export interface XtermHandle {
   reset: () => void;
 }
 
-export type TerminalTransport = 'local' | 'ssh';
+export type TerminalTransport = 'local' | 'ssh' | 'telnet';
 
 export interface SshTarget {
   host: string;
@@ -222,7 +230,10 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       if (!backendId) {
         return;
       }
-      void setSessionLog(backendId, sessionLogEnabled ? sessionLogPath(sessionLogDir, logTitle) : null).catch(
+      void setSessionLog(
+        backendId,
+        sessionLogEnabled ? sessionLogPath(sessionLogDir, logTitle) : null
+      ).catch(
         // The id may reference a connection that just dropped; logging
         // simply stays off for it.
         () => {}
@@ -540,11 +551,17 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           const request =
             target.transport === 'ssh'
               ? resizeSsh(target.id, next.cols, next.rows)
-              : resizePty(target.id, next.cols, next.rows);
+              : target.transport === 'telnet'
+                ? resizeTelnet(target.id, next.cols, next.rows)
+                : resizePty(target.id, next.cols, next.rows);
           void request
             .catch((error) => {
               logResizeError(
-                target.transport === 'ssh' ? 'SSH PTY' : 'PTY',
+                target.transport === 'ssh'
+                  ? 'SSH PTY'
+                  : target.transport === 'telnet'
+                    ? 'Telnet'
+                    : 'PTY',
                 next.cols,
                 next.rows,
                 error
@@ -982,7 +999,12 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           }
           unlistenClosed = stopClosed;
 
-          const createdId = await createPtySession(id, instance.cols, instance.rows, sessionLogTarget || undefined);
+          const createdId = await createPtySession(
+            id,
+            instance.cols,
+            instance.rows,
+            sessionLogTarget || undefined
+          );
           if (disposed || generation !== transportGeneration || closedEarly) {
             void closePtySession(createdId);
             if (closedEarly && !disposed && generation === transportGeneration) {
@@ -1020,9 +1042,106 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         }
       };
 
+      const connectTelnetTransport = async (instance: Terminal) => {
+        if (disposed) {
+          return;
+        }
+        clearTransportListeners();
+        const generation = ++transportGeneration;
+        if (backendId) {
+          void disconnectTelnet(backendId);
+          backendId = '';
+          backendIdRef.current = '';
+          resizeTarget = null;
+        }
+
+        const id = crypto.randomUUID();
+        let established = false;
+        let closedEarly = false;
+
+        try {
+          if (!host) {
+            throw new Error('缺少主机地址');
+          }
+          useSessionStore.getState().setStatus(sessionId, 'connecting');
+
+          // Attach listeners before connecting; the banner may arrive first.
+          const stopOutput = await listenTelnetOutput(id, ({ data }) => {
+            if (generation === transportGeneration && !disposed) {
+              enqueueWrite(data);
+            }
+          });
+          if (disposed || generation !== transportGeneration) {
+            stopOutput();
+            return;
+          }
+          unlistenOutput = stopOutput;
+
+          const stopClosed = await listenTelnetClosed(id, () => {
+            if (disposed || generation !== transportGeneration) {
+              return;
+            }
+            if (!established) {
+              closedEarly = true;
+              return;
+            }
+            clearTransportListeners();
+            backendId = '';
+            backendIdRef.current = '';
+            resizeTarget = null;
+            useSessionStore.getState().setStatus(sessionId, 'idle');
+            void writeScrollbackNotice(instance, '\x1b[33m[Telnet 连接已断开]\x1b[0m', true);
+          });
+          if (disposed || generation !== transportGeneration) {
+            stopClosed();
+            return;
+          }
+          unlistenClosed = stopClosed;
+
+          const connectedId = await connectTelnet({
+            id,
+            host,
+            port,
+            logPath: sessionLogTarget || undefined
+          });
+          if (disposed || generation !== transportGeneration || closedEarly) {
+            void disconnectTelnet(connectedId);
+            if (closedEarly && !disposed && generation === transportGeneration) {
+              clearTransportListeners();
+              useSessionStore.getState().setStatus(sessionId, 'idle');
+              void writeScrollbackNotice(instance, '\x1b[33m[Telnet 连接已断开]\x1b[0m', true);
+            }
+            return;
+          }
+
+          established = true;
+          backendId = connectedId;
+          backendIdRef.current = connectedId;
+          resizeTarget = { id: connectedId, transport: 'telnet' };
+          useSessionStore.getState().setStatus(sessionId, 'connected');
+
+          dataDisposable = instance.onData((data) => {
+            void writeTelnet(connectedId, data);
+          });
+          resizeDisposable = instance.onResize(({ cols, rows }) => {
+            sendBackendResize(cols, rows);
+          });
+
+          instance.focus();
+        } catch (error) {
+          if (!disposed && generation === transportGeneration) {
+            clearTransportListeners();
+            useSessionStore.getState().setStatus(sessionId, 'error');
+            enqueueWrite(`\r\n\x1b[31m无法建立 Telnet 连接：${errorMessage(error)}\x1b[0m\r\n`);
+          }
+        }
+      };
+
       const run = async (instance: Terminal) => {
         if (isSsh) {
           await connectSshTransport(instance);
+        } else if (transport === 'telnet') {
+          await connectTelnetTransport(instance);
         } else {
           await connectLocalTransport(instance);
         }
@@ -1044,6 +1163,8 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           }
           if (isSsh) {
             void connectSshTransport(instance);
+          } else if (transport === 'telnet') {
+            void connectTelnetTransport(instance);
           } else {
             void connectLocalTransport(instance);
           }
@@ -1720,6 +1841,8 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           if (isSsh) {
             useConnectionStore.getState().removeConnection(sessionId, backendId);
             void disconnectSsh(backendId);
+          } else if (transport === 'telnet') {
+            void disconnectTelnet(backendId);
           } else {
             void closePtySession(backendId);
           }

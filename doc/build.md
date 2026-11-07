@@ -138,7 +138,18 @@ closePtySession(id): Promise<void>
 setSessionLog(id, logPath): Promise<void>
 ```
 
-输出事件：`pty-output-{id}`。`ptyPlatformInfo` 返回 ConPTY 后端与 Windows build number，用于配置 xterm 的 `windowsPty` 兼容选项。`logPath` 指定会话日志文件（追加写，null 关闭）；`setSessionLog` 对活动会话（SSH 或本地 PTY）即时切换。
+输出事件：`pty-output-{id}`。`ptyPlatformInfo` 返回 ConPTY 后端与 Windows build number，用于配置 xterm 的 `windowsPty` 兼容选项。`logPath` 指定会话日志文件（追加写，null 关闭）；`setSessionLog` 对活动会话（SSH、本地 PTY 或 Telnet）即时切换。
+
+### Telnet
+
+```ts
+connectTelnet({ id, host, port, logPath? }): Promise<string>
+writeTelnet(id, data): Promise<void>
+resizeTelnet(id, cols, rows): Promise<void>   // 未协商窗口尺寸，no-op
+disconnectTelnet(id): Promise<void>
+```
+
+输出事件：`telnet-output-{id}`、`telnet-closed-{id}`。实现为最小 RFC 854 NVT（`src-tauri/src/telnet/mod.rs`）：拒绝所有选项协商，登录在终端内完成。
 
 ### SSH / SFTP
 

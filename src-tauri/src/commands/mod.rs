@@ -6,6 +6,7 @@ use crate::ssh::{
     JumpTarget, KnownHost, KnownHostsExportResult, KnownHostsImportResult, PortForwardInfo,
     SftpEntry, SftpTransferOptions, SshManager,
 };
+use crate::telnet::TelnetSessionManager;
 use crate::vault::{VaultManager, VaultStatus};
 
 #[tauri::command]
@@ -121,12 +122,13 @@ pub async fn ssh_connect(
         .map_err(|err| err.to_string())
 }
 
-/// Re-point the output log of a live session (SSH or local PTY). The
-/// transports use distinct id spaces, so both managers are probed.
+/// Re-point the output log of a live session (SSH, local PTY or Telnet). The
+/// transports use distinct id spaces, so all managers are probed.
 #[tauri::command]
 pub fn set_session_log(
     ssh: State<'_, SshManager>,
     pty: State<'_, PtySessionManager>,
+    telnet: State<'_, TelnetSessionManager>,
     id: String,
     log_path: Option<String>,
 ) -> Result<(), String> {
@@ -136,7 +138,55 @@ pub fn set_session_log(
     if pty.set_log(&id, log_path.as_deref()).is_ok() {
         return Ok(());
     }
+    if telnet.set_log(&id, log_path.as_deref()).is_ok() {
+        return Ok(());
+    }
     Err("session not found".to_string())
+}
+
+#[tauri::command]
+pub async fn telnet_connect(
+    app: AppHandle,
+    state: State<'_, TelnetSessionManager>,
+    id: String,
+    host: String,
+    port: u16,
+    log_path: Option<String>,
+) -> Result<String, String> {
+    state
+        .connect(app, id, host, port, log_path)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn telnet_write(
+    state: State<'_, TelnetSessionManager>,
+    id: String,
+    data: String,
+) -> Result<(), String> {
+    state
+        .write(&id, data.as_bytes())
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn telnet_resize(
+    state: State<'_, TelnetSessionManager>,
+    id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    state.resize(&id, cols, rows).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn telnet_disconnect(
+    state: State<'_, TelnetSessionManager>,
+    id: String,
+) -> Result<(), String> {
+    state.disconnect(&id).await.map_err(|err| err.to_string())
 }
 
 #[tauri::command]

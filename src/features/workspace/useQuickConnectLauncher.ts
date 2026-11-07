@@ -53,9 +53,12 @@ function jumpChainReaches(
   return false;
 }
 
-function buildJumpCandidates(sessions: Session[], editingId?: string): Array<{ id: string; title: string }> {
+function buildJumpCandidates(
+  sessions: Session[],
+  editingId?: string
+): Array<{ id: string; title: string }> {
   const candidates = sessions
-    .filter((item) => item.kind !== 'local' && item.id !== editingId)
+    .filter((item) => (item.kind === 'ssh' || item.kind === 'sftp') && item.id !== editingId)
     .filter((item) => !jumpChainReaches(item.id, editingId, sessions))
     .map((item) => ({ id: item.id, title: item.title }));
 
@@ -105,8 +108,10 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
       }
 
       const isRemote = result.draft.kind !== 'local';
+      // Telnet authenticates in-band; only SSH/SFTP carry NexTerm credentials.
+      const hasAuth = result.draft.kind === 'ssh' || result.draft.kind === 'sftp';
 
-      if (isRemote && result.draft.jumpSessionId) {
+      if (hasAuth && result.draft.jumpSessionId) {
         const jumpId = result.draft.jumpSessionId;
         const selfReferenced = jumpId === session?.id;
         const cycled =
@@ -133,7 +138,7 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
           // behind would silently reconnect with them if it is switched back.
           await forgetSessionCredentials(session.id);
         }
-        if (isRemote) {
+        if (hasAuth) {
           if (result.password?.trim()) {
             useCredentialStore.getState().setPassword(session.id, result.password);
           }
@@ -159,7 +164,7 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
       }
 
       const created = sessionState.addSession(result.draft);
-      if (isRemote) {
+      if (hasAuth) {
         if (result.draft.authMethod === 'password') {
           if (result.password?.trim()) {
             useCredentialStore.getState().setPassword(created.id, result.password);
@@ -179,15 +184,17 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
       toast({
         title: `已创建「${created.title}」`,
         description: isRemote
-          ? result.draft.authMethod === 'key'
-            ? '正在使用私钥建立 SSH 连接。'
-            : result.draft.authMethod === 'certificate'
-              ? '正在使用 OpenSSH 证书建立 SSH 连接。'
-              : result.draft.authMethod === 'agent'
-                ? '正在使用 SSH Agent 建立连接。'
-                : result.password?.trim()
-                  ? '正在建立 SSH 连接。'
-                  : '连接时将请求输入密码。'
+          ? result.draft.kind === 'telnet'
+            ? '正在建立 Telnet 连接。'
+            : result.draft.authMethod === 'key'
+              ? '正在使用私钥建立 SSH 连接。'
+              : result.draft.authMethod === 'certificate'
+                ? '正在使用 OpenSSH 证书建立 SSH 连接。'
+                : result.draft.authMethod === 'agent'
+                  ? '正在使用 SSH Agent 建立连接。'
+                  : result.password?.trim()
+                    ? '正在建立 SSH 连接。'
+                    : '连接时将请求输入密码。'
           : undefined,
         variant: 'success'
       });

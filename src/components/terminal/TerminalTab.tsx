@@ -378,7 +378,7 @@ export default function TerminalTab(props: IDockviewPanelProps) {
           sessionId={session.id}
           fontSize={fontSize}
           visible={isVisible}
-          transport={isLocal ? 'local' : 'ssh'}
+          transport={session.kind === 'telnet' ? 'telnet' : isLocal ? 'local' : 'ssh'}
           logTitle={session.title}
           ssh={
             isLocal

@@ -1,4 +1,4 @@
-export type SessionKind = 'local' | 'ssh' | 'sftp';
+export type SessionKind = 'local' | 'ssh' | 'sftp' | 'telnet';
 
 export type SessionStatus = 'idle' | 'connecting' | 'connected' | 'error';
 
@@ -43,7 +43,8 @@ export const DEFAULT_GROUP = '会话';
 export const SESSION_KIND_LABEL: Record<SessionKind, string> = {
   local: '本地终端',
   ssh: 'SSH',
-  sftp: 'SFTP'
+  sftp: 'SFTP',
+  telnet: 'Telnet'
 };
 
 export function sessionSubtitle(session: Session): string {

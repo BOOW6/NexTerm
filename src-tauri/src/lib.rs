@@ -3,6 +3,7 @@ pub mod fonts;
 pub mod log_sink;
 pub mod pty;
 pub mod ssh;
+pub mod telnet;
 pub mod text_stream;
 pub mod vault;
 pub mod windows;
@@ -24,6 +25,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_decorum::init())
         .manage(PtySessionManager::default())
+        .manage(telnet::TelnetSessionManager::default())
         .manage(ModalManager::default())
         .manage(FontManager::default())
         .setup(|app| {
@@ -88,6 +90,10 @@ pub fn run() {
             commands::ssh_resize,
             commands::ssh_disconnect,
             commands::set_session_log,
+            commands::telnet_connect,
+            commands::telnet_write,
+            commands::telnet_resize,
+            commands::telnet_disconnect,
             commands::ssh_host_key_response,
             commands::known_hosts_list,
             commands::known_hosts_remove,

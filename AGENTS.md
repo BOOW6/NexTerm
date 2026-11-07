@@ -33,7 +33,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 ### 会话管理与命令面板
 
 - 左侧会话管理器：搜索、收藏、分组、编辑、删除。
-- 快速连接：本地 / SSH / SFTP，支持密码与私钥认证；远程会话可选择另一 SSH/SFTP 会话作为**跳板机（ProxyJump）**（编辑窗口内选择，构建时校验循环引用；跳板机认证沿用其自身配置）。
+- 快速连接：本地 / SSH / SFTP / **Telnet**，支持密码与私钥认证；远程会话可选择另一 SSH/SFTP 会话作为**跳板机（ProxyJump）**（编辑窗口内选择，构建时校验循环引用；跳板机认证沿用其自身配置）。Telnet 在连接建立后于终端内登录，不保存凭据。
 - 命令面板 `Ctrl+K`：搜索会话、创建会话、切换主题、分屏、重连、收藏、打开 SFTP/传输队列/设置，以及**命令片段**（管理入口在设置 > 片段；发送到当前终端并自动执行回车）。
 - 会话数据与工作区布局持久化到 localStorage。
 
@@ -41,7 +41,8 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 
 - 基于 `russh` 实现**密码认证**、**私钥认证**（可选 passphrase）、**OpenSSH 用户证书认证**（私钥 + `*-cert.pub`，SSH config 导入识别 `CertificateFile`）与 **SSH Agent 认证**的交互式 SSH 终端。**ProxyJump** 在后端通过跳板连接上的 `direct-tcpip` 通道（`ssh -J` 语义）承载目标握手，跳板与目标两台主机分别做 known_hosts 校验；跳板传输随目标会话存亡。
 - **主机密钥校验（TOFU）**：首次连接弹出 SHA256 指纹确认，写入应用配置目录的 `known_hosts.json`；后续自动比对，不匹配则中止。支持 OpenSSH `known_hosts` 导入/导出（导出可选 hashed host 格式；导入会跳过哈希与通配符条目）。
-- 后端命令：`ssh_connect` / `ssh_write` / `ssh_resize` / `ssh_disconnect` / `ssh_host_key_response` / `known_hosts_list` / `known_hosts_remove` / `known_hosts_import` / `known_hosts_export`；`set_session_log` 用于对活动会话即时切换输出日志。
+- 后端命令：`ssh_connect` / `ssh_write` / `ssh_resize` / `ssh_disconnect` / `ssh_host_key_response` / `known_hosts_list` / `known_hosts_remove` / `known_hosts_import` / `known_hosts_export`；`set_session_log` 用于对活动会话（SSH / PTY / Telnet）即时切换输出日志。
+- **Telnet**（`src-tauri/src/telnet/mod.rs`）：最小 RFC 854 NVT 实现——拒绝一切选项协商（`decode_telnet` 纯函数处理 IAC 转义/子协商跨块、带单测），输出走同一解码/事件/日志管线，事件 `telnet-output-{id}`、`telnet-closed-{id}`；resize 为 no-op（未协商窗口尺寸）。
 - 输出事件：`ssh-output-{id}`、`ssh-closed-{id}`；主机密钥事件：`ssh-host-key`、`ssh-host-key-mismatch`。
 - **端口转发**：命令 `port_forward_list` / `port_forward_start` / `port_forward_stop`，事件 `port-forwards-changed`；支持本地（`-L`）、远程（`-R`）与动态 SOCKS5（`-D`）。UI 为独立「端口转发」面板。
 - SFTP：
@@ -200,4 +201,5 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - [x] i18n 骨架（中 / 英核心工作区）
 - [x] OpenSSH 证书认证、跳板机 / ProxyJump（单跳；SFTP 与端口转发复用隧道）
 - [x] 命令片段、会话日志、updater 自动更新脚手架（设置 > 关于 检查更新）
-- [ ] 国际化全量迁移、可访问性增强
+- [x] Telnet 会话（最小 NVT：协商全拒、终端内登录、复用日志管线）
+- [ ] 串口支持、国际化全量迁移、可访问性增强

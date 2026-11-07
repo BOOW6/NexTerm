@@ -94,6 +94,9 @@ export default function QuickConnectWindow() {
   };
 
   const isRemote = form.kind !== 'local';
+  // Telnet authenticates in-band after connecting; only SSH/SFTP sessions
+  // carry NexTerm-side credentials and jump hosts.
+  const hasAuth = form.kind === 'ssh' || form.kind === 'sftp';
 
   const browseKey = async () => {
     try {
@@ -126,15 +129,15 @@ export default function QuickConnectWindow() {
       setError('请填写主机地址');
       return;
     }
-    if (isRemote && form.authMethod === 'key' && !form.keyPath.trim()) {
+    if (hasAuth && form.authMethod === 'key' && !form.keyPath.trim()) {
       setError('请选择私钥文件');
       return;
     }
-    if (isRemote && form.authMethod === 'certificate' && !form.keyPath.trim()) {
+    if (hasAuth && form.authMethod === 'certificate' && !form.keyPath.trim()) {
       setError('请选择证书对应的私钥文件');
       return;
     }
-    if (isRemote && form.authMethod === 'certificate' && !form.certPath.trim()) {
+    if (hasAuth && form.authMethod === 'certificate' && !form.certPath.trim()) {
       setError('请选择证书文件（*-cert.pub）');
       return;
     }
@@ -156,10 +159,10 @@ export default function QuickConnectWindow() {
           host: form.host,
           username: form.username,
           port: form.port ? Number(form.port) : undefined,
-          authMethod: form.authMethod,
-          keyPath: form.keyPath,
-          certPath: form.certPath,
-          jumpSessionId: isRemote ? form.jumpSessionId : '',
+          authMethod: hasAuth ? form.authMethod : undefined,
+          keyPath: hasAuth ? form.keyPath : '',
+          certPath: hasAuth ? form.certPath : '',
+          jumpSessionId: hasAuth ? form.jumpSessionId : '',
           group: form.group
         },
         password: form.password,
@@ -185,6 +188,7 @@ export default function QuickConnectWindow() {
               <option value="local">{SESSION_KIND_LABEL.local}</option>
               <option value="ssh">{SESSION_KIND_LABEL.ssh}</option>
               <option value="sftp">{SESSION_KIND_LABEL.sftp}</option>
+              <option value="telnet">{SESSION_KIND_LABEL.telnet}</option>
             </Select>
           </div>
 
@@ -223,121 +227,130 @@ export default function QuickConnectWindow() {
                 </div>
               </div>
 
-              <div>
-                <Label htmlFor="session-username">用户名</Label>
-                <Input
-                  id="session-username"
-                  value={form.username}
-                  onChange={(event) => update('username', event.target.value)}
-                  placeholder="root"
-                  autoComplete="off"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="session-auth-method">认证方式</Label>
-                <Select
-                  id="session-auth-method"
-                  value={form.authMethod}
-                  onChange={(event) =>
-                    update('authMethod', event.target.value as SessionAuthMethod)
-                  }
-                >
-                  <option value="password">密码</option>
-                  <option value="key">私钥</option>
-                  <option value="certificate">OpenSSH 证书</option>
-                  <option value="agent">SSH Agent</option>
-                </Select>
-              </div>
-
-              {form.authMethod === 'agent' ? (
-                <div className="rounded-sm border border-border bg-background-alt px-2 py-2 text-[11px] text-muted">
-                  连接时使用系统 SSH Agent 中的密钥，无需在 NexTerm 中保存凭据。
-                </div>
-              ) : form.authMethod === 'password' ? (
-                <div>
-                  <Label htmlFor="session-password">密码</Label>
-                  <Input
-                    id="session-password"
-                    type="password"
-                    value={form.password}
-                    onChange={(event) => update('password', event.target.value)}
-                    placeholder={payload?.session ? '留空则沿用内存中的密码' : '仅保存在内存中'}
-                    autoComplete="new-password"
-                  />
-                </div>
-              ) : (
+              {hasAuth ? (
                 <>
                   <div>
-                    <Label htmlFor="session-key-path">
-                      {form.authMethod === 'certificate' ? '证书对应私钥' : '私钥文件'}
-                    </Label>
-                    <div className="flex items-stretch gap-1">
-                      <Input
-                        id="session-key-path"
-                        value={form.keyPath}
-                        onChange={(event) => update('keyPath', event.target.value)}
-                        placeholder="~/.ssh/id_ed25519"
-                        autoComplete="off"
-                        className="flex-1"
-                      />
-                      <Button
-                        size="icon"
-                        variant="secondary"
-                        aria-label="选择私钥文件"
-                        title="选择私钥文件"
-                        onClick={() => void browseKey()}
-                      >
-                        <FolderOpen className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  {form.authMethod === 'certificate' ? (
-                    <div>
-                      <Label htmlFor="session-cert-path">证书文件</Label>
-                      <div className="flex items-stretch gap-1">
-                        <Input
-                          id="session-cert-path"
-                          value={form.certPath}
-                          onChange={(event) => update('certPath', event.target.value)}
-                          placeholder="~/.ssh/id_ed25519-cert.pub"
-                          autoComplete="off"
-                          className="flex-1"
-                        />
-                        <Button
-                          size="icon"
-                          variant="secondary"
-                          aria-label="选择证书文件"
-                          title="选择证书文件"
-                          onClick={() => void browseCert()}
-                        >
-                          <FolderOpen className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                      <p className="mt-1 text-[11px] text-muted">
-                        使用 OpenSSH 用户证书（ssh-keygen 签发的 *-cert.pub）认证，服务器需信任对应的 CA。
-                      </p>
-                    </div>
-                  ) : null}
-
-                  <div>
-                    <Label htmlFor="session-passphrase">私钥口令（可选）</Label>
+                    <Label htmlFor="session-username">用户名</Label>
                     <Input
-                      id="session-passphrase"
-                      type="password"
-                      value={form.passphrase}
-                      onChange={(event) => update('passphrase', event.target.value)}
-                      placeholder="加密私钥需要填写"
+                      id="session-username"
+                      value={form.username}
+                      onChange={(event) => update('username', event.target.value)}
+                      placeholder="root"
                       autoComplete="off"
                     />
                   </div>
+
+                  <div>
+                    <Label htmlFor="session-auth-method">认证方式</Label>
+                    <Select
+                      id="session-auth-method"
+                      value={form.authMethod}
+                      onChange={(event) =>
+                        update('authMethod', event.target.value as SessionAuthMethod)
+                      }
+                    >
+                      <option value="password">密码</option>
+                      <option value="key">私钥</option>
+                      <option value="certificate">OpenSSH 证书</option>
+                      <option value="agent">SSH Agent</option>
+                    </Select>
+                  </div>
+
+                  {form.authMethod === 'agent' ? (
+                    <div className="rounded-sm border border-border bg-background-alt px-2 py-2 text-[11px] text-muted">
+                      连接时使用系统 SSH Agent 中的密钥，无需在 NexTerm 中保存凭据。
+                    </div>
+                  ) : form.authMethod === 'password' ? (
+                    <div>
+                      <Label htmlFor="session-password">密码</Label>
+                      <Input
+                        id="session-password"
+                        type="password"
+                        value={form.password}
+                        onChange={(event) => update('password', event.target.value)}
+                        placeholder={payload?.session ? '留空则沿用内存中的密码' : '仅保存在内存中'}
+                        autoComplete="new-password"
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <Label htmlFor="session-key-path">
+                          {form.authMethod === 'certificate' ? '证书对应私钥' : '私钥文件'}
+                        </Label>
+                        <div className="flex items-stretch gap-1">
+                          <Input
+                            id="session-key-path"
+                            value={form.keyPath}
+                            onChange={(event) => update('keyPath', event.target.value)}
+                            placeholder="~/.ssh/id_ed25519"
+                            autoComplete="off"
+                            className="flex-1"
+                          />
+                          <Button
+                            size="icon"
+                            variant="secondary"
+                            aria-label="选择私钥文件"
+                            title="选择私钥文件"
+                            onClick={() => void browseKey()}
+                          >
+                            <FolderOpen className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      {form.authMethod === 'certificate' ? (
+                        <div>
+                          <Label htmlFor="session-cert-path">证书文件</Label>
+                          <div className="flex items-stretch gap-1">
+                            <Input
+                              id="session-cert-path"
+                              value={form.certPath}
+                              onChange={(event) => update('certPath', event.target.value)}
+                              placeholder="~/.ssh/id_ed25519-cert.pub"
+                              autoComplete="off"
+                              className="flex-1"
+                            />
+                            <Button
+                              size="icon"
+                              variant="secondary"
+                              aria-label="选择证书文件"
+                              title="选择证书文件"
+                              onClick={() => void browseCert()}
+                            >
+                              <FolderOpen className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                          <p className="mt-1 text-[11px] text-muted">
+                            使用 OpenSSH 用户证书（ssh-keygen 签发的
+                            *-cert.pub）认证，服务器需信任对应的 CA。
+                          </p>
+                        </div>
+                      ) : null}
+
+                      <div>
+                        <Label htmlFor="session-passphrase">私钥口令（可选）</Label>
+                        <Input
+                          id="session-passphrase"
+                          type="password"
+                          value={form.passphrase}
+                          onChange={(event) => update('passphrase', event.target.value)}
+                          placeholder="加密私钥需要填写"
+                          autoComplete="off"
+                        />
+                      </div>
+                    </>
+                  )}
                 </>
+              ) : (
+                <p className="rounded-sm border border-border bg-background-alt px-2 py-2 text-[11px] text-muted">
+                  Telnet 连接建立后按服务器提示在终端内登录，NexTerm 不保存凭据。
+                </p>
               )}
             </>
           ) : null}
 
-          {isRemote && payload?.jumpCandidates.length ? (
+          {hasAuth && payload?.jumpCandidates.length ? (
             <div>
               <Label htmlFor="session-jump">跳板机（可选）</Label>
               <Select
