@@ -77,9 +77,10 @@ export interface SshTarget {
   host: string;
   port: number;
   username: string;
-  authMethod: 'password' | 'key' | 'agent';
+  authMethod: 'password' | 'key' | 'agent' | 'certificate';
   password?: string;
   privateKeyPath?: string;
+  certPath?: string;
   passphrase?: string;
   jump?: SshTarget;
 }
@@ -200,6 +201,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
     const password = ssh?.password ?? '';
     const authMethod = ssh?.authMethod ?? 'password';
     const privateKeyPath = ssh?.privateKeyPath ?? '';
+    const certPath = ssh?.certPath ?? '';
     const passphrase = ssh?.passphrase ?? '';
 
     const jump = ssh?.jump;
@@ -209,6 +211,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
     const jumpPassword = jump?.password ?? '';
     const jumpAuthMethod = jump?.authMethod ?? 'password';
     const jumpKeyPath = jump?.privateKeyPath ?? '';
+    const jumpCertPath = jump?.certPath ?? '';
     const jumpPassphrase = jump?.passphrase ?? '';
 
     const sessionLogEnabled = useSettingsStore((state) => state.sessionLogEnabled);
@@ -752,6 +755,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           if (authMethod === 'key' && !privateKeyPath) {
             throw new Error('缺少私钥文件');
           }
+          if (authMethod === 'certificate' && (!privateKeyPath || !certPath)) {
+            throw new Error('缺少私钥或证书文件');
+          }
           if (jumpHost) {
             if (!jumpUsername) {
               throw new Error('缺少跳板会话用户名');
@@ -761,6 +767,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             }
             if (jumpAuthMethod === 'key' && !jumpKeyPath) {
               throw new Error('跳板会话缺少私钥文件');
+            }
+            if (jumpAuthMethod === 'certificate' && (!jumpKeyPath || !jumpCertPath)) {
+              throw new Error('跳板会话缺少私钥或证书文件');
             }
           }
 
@@ -835,6 +844,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             authMethod,
             password,
             privateKeyPath: privateKeyPath || undefined,
+            certPath: certPath || undefined,
             passphrase: passphrase || undefined,
             jump: jumpHost
               ? {
@@ -844,6 +854,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
                   authMethod: jumpAuthMethod,
                   password: jumpPassword,
                   privateKeyPath: jumpKeyPath || undefined,
+                  certPath: jumpCertPath || undefined,
                   passphrase: jumpPassphrase || undefined
                 }
               : undefined,
@@ -1751,6 +1762,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       username,
       authMethod,
       privateKeyPath,
+      certPath,
       password,
       passphrase,
       jumpHost,
@@ -1758,6 +1770,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       jumpUsername,
       jumpAuthMethod,
       jumpKeyPath,
+      jumpCertPath,
       jumpPassword,
       jumpPassphrase
     ]);

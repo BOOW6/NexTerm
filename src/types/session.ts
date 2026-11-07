@@ -2,7 +2,7 @@ export type SessionKind = 'local' | 'ssh' | 'sftp';
 
 export type SessionStatus = 'idle' | 'connecting' | 'connected' | 'error';
 
-export type SessionAuthMethod = 'password' | 'key' | 'agent';
+export type SessionAuthMethod = 'password' | 'key' | 'agent' | 'certificate';
 
 export interface Session {
   id: string;
@@ -13,6 +13,8 @@ export interface Session {
   username?: string;
   authMethod?: SessionAuthMethod;
   keyPath?: string;
+  /** OpenSSH user certificate (`*-cert.pub`) for certificate auth. */
+  certPath?: string;
   /** Optional SSH/SFTP session whose connection tunnels this one (ProxyJump). */
   jumpSessionId?: string;
   group: string;
@@ -30,6 +32,7 @@ export interface SessionDraft {
   username?: string;
   authMethod?: SessionAuthMethod;
   keyPath?: string;
+  certPath?: string;
   jumpSessionId?: string;
   group: string;
   favorite?: boolean;

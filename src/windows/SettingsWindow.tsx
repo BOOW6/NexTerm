@@ -2,6 +2,8 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { emit, listen } from '@tauri-apps/api/event';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
+import { check as checkForAppUpdate } from '@tauri-apps/plugin-updater';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import {
   FolderOpen,
   Keyboard,
@@ -240,6 +242,34 @@ export default function SettingsWindow() {
   const [snippetName, setSnippetName] = useState('');
   const [snippetCommand, setSnippetCommand] = useState('');
   const [editingSnippetId, setEditingSnippetId] = useState<string | null>(null);
+
+  const [updateState, setUpdateState] = useState<'idle' | 'checking' | 'latest' | 'available'>(
+    'idle'
+  );
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+
+  const checkForUpdates = async () => {
+    if (updateState === 'checking') {
+      return;
+    }
+    setUpdateState('checking');
+    setUpdateError(null);
+    try {
+      // The updater stays silent until a release with a signed latest.json is
+      // published at the configured endpoint; failures surface here verbatim.
+      const update = await checkForAppUpdate();
+      if (update) {
+        setUpdateVersion(update.version);
+        setUpdateState('available');
+      } else {
+        setUpdateState('latest');
+      }
+    } catch (reason) {
+      setUpdateError(String(reason));
+      setUpdateState('idle');
+    }
+  };
 
   const resetSnippetForm = () => {
     setEditingSnippetId(null);
@@ -1250,6 +1280,7 @@ export default function SettingsWindow() {
         >
           <option value="password">密码</option>
           <option value="key">私钥</option>
+          <option value="certificate">OpenSSH 证书</option>
           <option value="agent">SSH Agent</option>
         </Select>
       </div>
@@ -1479,13 +1510,48 @@ export default function SettingsWindow() {
   };
 
   const renderAbout = () => (
-    <section className="space-y-2">
-      <h3 className="text-sm font-semibold text-foreground">NexTerm 0.1.0</h3>
-      <p className="text-[11px] text-muted">Tauri 2 + React 18 + Rust</p>
-      <p className="text-[11px] text-muted">
-        命令面板 {DEFAULT_SETTINGS.shortcuts.commandPalette} · 设置{' '}
-        {DEFAULT_SETTINGS.shortcuts.openSettings}
-      </p>
+    <section className="space-y-3">
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold text-foreground">NexTerm 0.1.0</h3>
+        <p className="text-[11px] text-muted">Tauri 2 + React 18 + Rust</p>
+        <p className="text-[11px] text-muted">
+          命令面板 {DEFAULT_SETTINGS.shortcuts.commandPalette} · 设置{' '}
+          {DEFAULT_SETTINGS.shortcuts.openSettings}
+        </p>
+      </div>
+
+      <div className="space-y-2 rounded-sm border border-border bg-surface p-3">
+        <div className="flex items-center gap-2">
+          <p className="flex-1 text-[11px] text-muted">检查新版本（更新源可在 tauri.conf.json 配置）</p>
+          <Button size="sm" variant="secondary" disabled={updateState === 'checking'} onClick={() => void checkForUpdates()}>
+            {updateState === 'checking' ? '正在检查…' : '检查更新'}
+          </Button>
+        </div>
+        {updateState === 'latest' ? (
+          <p className="text-[10px] text-muted-foreground">当前已是最新版本。</p>
+        ) : null}
+        {updateState === 'available' ? (
+          <div className="flex items-center gap-2">
+            <p className="flex-1 text-[10px] text-muted-foreground">
+              发现新版本 {updateVersion}，请前往发布页下载。
+            </p>
+            <Button
+              size="xs"
+              variant="secondary"
+              onClick={() =>
+                void openUrl('https://github.com/BOOW6/NexTerm/releases/latest').catch(
+                  () => undefined
+                )
+              }
+            >
+              打开发布页
+            </Button>
+          </div>
+        ) : null}
+        {updateError ? (
+          <p className="text-[10px] text-error">检查更新失败：{updateError}</p>
+        ) : null}
+      </div>
     </section>
   );
 

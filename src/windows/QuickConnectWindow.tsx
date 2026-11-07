@@ -25,6 +25,7 @@ interface FormState {
   authMethod: SessionAuthMethod;
   password: string;
   keyPath: string;
+  certPath: string;
   passphrase: string;
   jumpSessionId: string;
   group: string;
@@ -39,6 +40,7 @@ const EMPTY_FORM: FormState = {
   authMethod: 'password',
   password: '',
   keyPath: '',
+  certPath: '',
   passphrase: '',
   jumpSessionId: '',
   group: DEFAULT_GROUP
@@ -67,6 +69,7 @@ export default function QuickConnectWindow() {
           authMethod: data.session.authMethod ?? 'password',
           password: '',
           keyPath: data.session.keyPath ?? '',
+          certPath: data.session.certPath ?? '',
           passphrase: '',
           jumpSessionId: data.session.jumpSessionId ?? '',
           group: data.session.group
@@ -103,6 +106,17 @@ export default function QuickConnectWindow() {
     }
   };
 
+  const browseCert = async () => {
+    try {
+      const selected = await openDialog({ multiple: false, title: '选择证书文件' });
+      if (typeof selected === 'string') {
+        update('certPath', selected);
+      }
+    } catch {
+      /* dialog unavailable */
+    }
+  };
+
   const handleSubmit = async (event?: FormEvent) => {
     event?.preventDefault();
     if (!payload) {
@@ -114,6 +128,14 @@ export default function QuickConnectWindow() {
     }
     if (isRemote && form.authMethod === 'key' && !form.keyPath.trim()) {
       setError('请选择私钥文件');
+      return;
+    }
+    if (isRemote && form.authMethod === 'certificate' && !form.keyPath.trim()) {
+      setError('请选择证书对应的私钥文件');
+      return;
+    }
+    if (isRemote && form.authMethod === 'certificate' && !form.certPath.trim()) {
+      setError('请选择证书文件（*-cert.pub）');
       return;
     }
     if (isRemote && form.port) {
@@ -136,6 +158,7 @@ export default function QuickConnectWindow() {
           port: form.port ? Number(form.port) : undefined,
           authMethod: form.authMethod,
           keyPath: form.keyPath,
+          certPath: form.certPath,
           jumpSessionId: isRemote ? form.jumpSessionId : '',
           group: form.group
         },
@@ -222,6 +245,7 @@ export default function QuickConnectWindow() {
                 >
                   <option value="password">密码</option>
                   <option value="key">私钥</option>
+                  <option value="certificate">OpenSSH 证书</option>
                   <option value="agent">SSH Agent</option>
                 </Select>
               </div>
@@ -245,7 +269,9 @@ export default function QuickConnectWindow() {
               ) : (
                 <>
                   <div>
-                    <Label htmlFor="session-key-path">私钥文件</Label>
+                    <Label htmlFor="session-key-path">
+                      {form.authMethod === 'certificate' ? '证书对应私钥' : '私钥文件'}
+                    </Label>
                     <div className="flex items-stretch gap-1">
                       <Input
                         id="session-key-path"
@@ -266,6 +292,34 @@ export default function QuickConnectWindow() {
                       </Button>
                     </div>
                   </div>
+
+                  {form.authMethod === 'certificate' ? (
+                    <div>
+                      <Label htmlFor="session-cert-path">证书文件</Label>
+                      <div className="flex items-stretch gap-1">
+                        <Input
+                          id="session-cert-path"
+                          value={form.certPath}
+                          onChange={(event) => update('certPath', event.target.value)}
+                          placeholder="~/.ssh/id_ed25519-cert.pub"
+                          autoComplete="off"
+                          className="flex-1"
+                        />
+                        <Button
+                          size="icon"
+                          variant="secondary"
+                          aria-label="选择证书文件"
+                          title="选择证书文件"
+                          onClick={() => void browseCert()}
+                        >
+                          <FolderOpen className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted">
+                        使用 OpenSSH 用户证书（ssh-keygen 签发的 *-cert.pub）认证，服务器需信任对应的 CA。
+                      </p>
+                    </div>
+                  ) : null}
 
                   <div>
                     <Label htmlFor="session-passphrase">私钥口令（可选）</Label>

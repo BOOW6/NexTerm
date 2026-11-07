@@ -106,7 +106,7 @@ export async function rememberSessionCredentials(session: Session): Promise<Vaul
     if (password) {
       results.push(await saveSessionSecret(session.id, 'password', password));
     }
-  } else if (session.authMethod === 'key') {
+  } else if (session.authMethod === 'key' || session.authMethod === 'certificate') {
     results.push(
       await saveSessionSecret(session.id, 'passphrase', credentials.passphrases[session.id] ?? '')
     );

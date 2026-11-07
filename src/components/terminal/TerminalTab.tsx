@@ -155,6 +155,7 @@ export default function TerminalTab(props: IDockviewPanelProps) {
         authMethod: jumpSession.authMethod ?? 'password',
         password: jumpPassword,
         privateKeyPath: jumpSession.keyPath ?? '',
+        certPath: jumpSession.certPath ?? '',
         passphrase: jumpPassphrase
       }
     : undefined;
@@ -389,6 +390,7 @@ export default function TerminalTab(props: IDockviewPanelProps) {
                   authMethod,
                   password,
                   privateKeyPath: keyPath,
+                  certPath: session.certPath ?? '',
                   passphrase,
                   jump: jumpTarget
                 }

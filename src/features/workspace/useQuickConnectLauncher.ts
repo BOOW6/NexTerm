@@ -137,7 +137,7 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
           if (result.password?.trim()) {
             useCredentialStore.getState().setPassword(session.id, result.password);
           }
-          if (result.draft.authMethod === 'key') {
+          if (result.draft.authMethod === 'key' || result.draft.authMethod === 'certificate') {
             // An empty passphrase means "keep the stored one" (same guard as
             // the password field) — overwriting it with '' would lose the
             // vault entry for good.
@@ -164,7 +164,7 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
           if (result.password?.trim()) {
             useCredentialStore.getState().setPassword(created.id, result.password);
           }
-        } else if (result.draft.authMethod === 'key') {
+        } else if (result.draft.authMethod === 'key' || result.draft.authMethod === 'certificate') {
           useCredentialStore.getState().setPassphrase(created.id, result.passphrase ?? '');
           useCredentialStore.getState().authorize(created.id);
         } else {
@@ -181,11 +181,13 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
         description: isRemote
           ? result.draft.authMethod === 'key'
             ? '正在使用私钥建立 SSH 连接。'
-            : result.draft.authMethod === 'agent'
-              ? '正在使用 SSH Agent 建立连接。'
-              : result.password?.trim()
-                ? '正在建立 SSH 连接。'
-                : '连接时将请求输入密码。'
+            : result.draft.authMethod === 'certificate'
+              ? '正在使用 OpenSSH 证书建立 SSH 连接。'
+              : result.draft.authMethod === 'agent'
+                ? '正在使用 SSH Agent 建立连接。'
+                : result.password?.trim()
+                  ? '正在建立 SSH 连接。'
+                  : '连接时将请求输入密码。'
           : undefined,
         variant: 'success'
       });

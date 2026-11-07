@@ -2,11 +2,16 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default desktop capability",
-  "windows": ["main", "settings", "modal-*"],
+  "windows": [
+    "main",
+    "settings",
+    "modal-*"
+  ],
   "permissions": [
     "core:default",
     "dialog:default",
     "opener:default",
+    "updater:default",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
     "decorum:allow-show-snap-overlay",

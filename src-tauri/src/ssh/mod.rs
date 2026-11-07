@@ -81,6 +81,8 @@ pub struct JumpTarget {
     #[serde(default)]
     pub private_key_path: Option<String>,
     #[serde(default)]
+    pub cert_path: Option<String>,
+    #[serde(default)]
     pub passphrase: Option<String>,
 }
 
@@ -635,6 +637,7 @@ async fn authenticate(
     auth_method: &str,
     password: &str,
     private_key_path: Option<&str>,
+    cert_path: Option<&str>,
     passphrase: Option<&str>,
 ) -> anyhow::Result<()> {
     match auth_method {
@@ -659,6 +662,27 @@ async fn authenticate(
 
             if !auth.success() {
                 return Err(anyhow!("SSH 密钥认证失败，请检查私钥或用户名"));
+            }
+        }
+        // OpenSSH user certificate: the certified private key signs, the
+        // `*-cert.pub` blob proves the CA endorsement.
+        "certificate" => {
+            let key_path = private_key_path.ok_or_else(|| anyhow!("请选择私钥文件"))?;
+            let key_path = expand_path(key_path);
+            let cert_path = cert_path.ok_or_else(|| anyhow!("请选择证书文件"))?;
+            let cert_path = expand_path(cert_path);
+            let key_pair = russh::keys::load_secret_key(&key_path, passphrase)
+                .with_context(|| format!("failed to load private key: {}", key_path.display()))?;
+            let cert = russh::keys::load_openssh_certificate(&cert_path)
+                .with_context(|| format!("failed to load certificate: {}", cert_path.display()))?;
+
+            let auth = handle
+                .authenticate_openssh_cert(username, Arc::new(key_pair), cert)
+                .await
+                .context("SSH certificate authentication failed")?;
+
+            if !auth.success() {
+                return Err(anyhow!("SSH 证书认证失败，请检查证书、私钥或用户名"));
             }
         }
         "agent" => {
@@ -733,6 +757,7 @@ impl SshManager {
         auth_method: String,
         password: String,
         private_key_path: Option<String>,
+        cert_path: Option<String>,
         passphrase: Option<String>,
         jump: Option<JumpTarget>,
         log_path: Option<String>,
@@ -824,6 +849,7 @@ impl SshManager {
                     &jump.auth_method,
                     &jump.password,
                     jump.private_key_path.as_deref(),
+                    jump.cert_path.as_deref(),
                     jump.passphrase.as_deref(),
                 )
                 .await
@@ -849,6 +875,7 @@ impl SshManager {
             &auth_method,
             &password,
             private_key_path.as_deref(),
+            cert_path.as_deref(),
             passphrase.as_deref(),
         )
         .await?;

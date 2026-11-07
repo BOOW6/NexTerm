@@ -32,6 +32,7 @@ function buildSession(draft: SessionDraft): Session {
     username: draft.kind === 'local' ? undefined : draft.username?.trim() || undefined,
     authMethod: draft.kind === 'local' ? undefined : (draft.authMethod ?? 'password'),
     keyPath: draft.kind === 'local' ? undefined : draft.keyPath?.trim() || undefined,
+    certPath: draft.kind === 'local' ? undefined : draft.certPath?.trim() || undefined,
     jumpSessionId:
       draft.kind === 'local' ? undefined : draft.jumpSessionId?.trim() || undefined,
     group: draft.group.trim() || DEFAULT_GROUP,
@@ -96,6 +97,12 @@ export const useSessionStore = create<SessionState>()(
                   : patch.keyPath !== undefined
                     ? patch.keyPath.trim() || undefined
                     : session.keyPath,
+              certPath:
+                nextKind === 'local'
+                  ? undefined
+                  : patch.certPath !== undefined
+                    ? patch.certPath.trim() || undefined
+                    : session.certPath,
               // An empty string clears the jump host (same explicit-clear
               // semantics as username/keyPath); an omitted field keeps it.
               jumpSessionId:

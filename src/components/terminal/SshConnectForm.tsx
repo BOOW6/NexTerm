@@ -25,6 +25,7 @@ export default function SshConnectForm({ session }: { session: Session }) {
 
   const authMethod = session.authMethod ?? 'password';
   const keyPath = session.keyPath ?? '';
+  const certPath = session.certPath ?? '';
 
   const [password, setPasswordValue] = useState('');
   const [passphrase, setPassphraseValue] = useState('');
@@ -44,8 +45,8 @@ export default function SshConnectForm({ session }: { session: Session }) {
         return;
       }
       setPassword(session.id, password);
-    } else if (authMethod === 'key') {
-      if (!keyPath) {
+    } else if (authMethod === 'key' || authMethod === 'certificate') {
+      if (!keyPath || (authMethod === 'certificate' && !certPath)) {
         setError(t('ssh.pickKey'));
         return;
       }
@@ -122,7 +123,9 @@ export default function SshConnectForm({ session }: { session: Session }) {
               ? t('ssh.login')
               : authMethod === 'agent'
                 ? t('ssh.agentLogin')
-                : t('ssh.keyLogin')}
+                : authMethod === 'certificate'
+                  ? t('ssh.certLogin')
+                  : t('ssh.keyLogin')}
           </span>
         </div>
 
@@ -157,6 +160,12 @@ export default function SshConnectForm({ session }: { session: Session }) {
                 <Label htmlFor="ssh-key-path">{t('ssh.keyPath')}</Label>
                 <Input id="ssh-key-path" value={keyPath || t('ssh.noKey')} readOnly />
               </div>
+              {authMethod === 'certificate' ? (
+                <div>
+                  <Label htmlFor="ssh-cert-path">{t('ssh.certPath')}</Label>
+                  <Input id="ssh-cert-path" value={certPath || t('ssh.noKey')} readOnly />
+                </div>
+              ) : null}
               <div>
                 <Label htmlFor="ssh-passphrase">{t('ssh.passphrase')}</Label>
                 <Input

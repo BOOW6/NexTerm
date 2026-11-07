@@ -131,18 +131,24 @@ cargo check
 
 ```ts
 ptyPlatformInfo(): Promise<{ backend, buildNumber }>
-createPtySession(cols, rows): Promise<string>
+createPtySession(id, cols, rows, logPath?): Promise<string>
 writePty(id, data): Promise<void>
 resizePty(id, cols, rows): Promise<void>
 closePtySession(id): Promise<void>
+setSessionLog(id, logPath): Promise<void>
 ```
 
-输出事件：`pty-output-{id}`。`ptyPlatformInfo` 返回 ConPTY 后端与 Windows build number，用于配置 xterm 的 `windowsPty` 兼容选项。
+输出事件：`pty-output-{id}`。`ptyPlatformInfo` 返回 ConPTY 后端与 Windows build number，用于配置 xterm 的 `windowsPty` 兼容选项。`logPath` 指定会话日志文件（追加写，null 关闭）；`setSessionLog` 对活动会话（SSH 或本地 PTY）即时切换。
 
 ### SSH / SFTP
 
 ```ts
-sshConnect({ host, port, username, authMethod, password, privateKeyPath, passphrase, cols, rows }): Promise<string>
+sshConnect({
+  id, host, port, username, authMethod,   // password | key | certificate | agent
+  password, privateKeyPath, certPath, passphrase,
+  jump,                                   // 跳板机（ProxyJump）：由另一会话解析出的连接参数
+  logPath, cols, rows
+}): Promise<string>
 sshWrite(id, data): Promise<void>
 sshResize(id, cols, rows): Promise<void>
 sshDisconnect(id): Promise<void>
@@ -187,6 +193,23 @@ writeTextFile(path, contents): Promise<void>
 ```
 
 保险库文件为应用配置目录下的 `credentials.vault.json`，使用 Argon2id 派生密钥与 AES-256-GCM 加密；应用重启后默认锁定。会话导入解析在 `src/lib/sessionImport.ts` 中完成（SSH config / MobaXterm / PuTTY / NexTerm JSON），文件读写通过 `read_text_file` / `write_text_file`。
+
+## 自动更新（updater）
+
+应用接入 `tauri-plugin-updater`（tauri.conf.json 的 `plugins.updater` 配置公钥与更新源，capability 含 `updater:default`）。设置 > 关于 的「检查更新」会请求更新源；没有已发布的签名更新时提示失败属预期。
+
+发布一个新版本的流程：
+
+1. **签名私钥**：已生成于 `~/.tauri/nexterm-updater.key`（不在仓库内，务必备份；丢失则已发布的更新无法继续签名）。公钥随包内置在 `tauri.conf.json`。
+2. **构建签名产物**：发布构建时开启 updater 产物并签名——
+   ```bash
+   # bash
+   export TAURI_SIGNING_PRIVATE_KEY_PATH="$HOME/.tauri/nexterm-updater.key"
+   npx tauri build --config '{"bundle":{"createUpdaterArtifacts":true}}'
+   ```
+   产物为安装包 + `.sig` 签名。
+3. **发布**：在 GitHub Release 上传安装包与 `.sig`，并上传 `latest.json`（`version`、`pub_date`、`platforms.<target>` 的 `signature` 与 `url` 指向安装包资产）。
+4. 更新源默认指向 `https://github.com/BOOW6/NexTerm/releases/latest/download/latest.json`，仓库迁移时同步修改 `tauri.conf.json`。
 
 ## Windows ConPTY
 

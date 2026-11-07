@@ -261,6 +261,7 @@ export default function SessionSidebar() {
           username: item.username || useSettingsStore.getState().defaultUsername,
           authMethod: item.authMethod,
           keyPath: item.keyPath,
+          certPath: item.certPath,
           group: item.group,
           favorite: item.favorite
         });

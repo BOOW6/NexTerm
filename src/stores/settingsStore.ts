@@ -146,7 +146,9 @@ function normalizeSettings(input: SettingsSnapshot): SettingsSnapshot {
         ? 'key'
         : input.defaultAuthMethod === 'agent'
           ? 'agent'
-          : 'password',
+          : input.defaultAuthMethod === 'certificate'
+            ? 'certificate'
+            : 'password',
     defaultPort: Math.min(65535, Math.max(1, Math.round(input.defaultPort) || 22)),
     defaultUsername: input.defaultUsername.trim(),
     sessionLogEnabled: Boolean(input.sessionLogEnabled),

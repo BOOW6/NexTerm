@@ -11,9 +11,11 @@ export interface SshConnectOptions {
   host: string;
   port: number;
   username: string;
-  authMethod: 'password' | 'key' | 'agent';
+  authMethod: 'password' | 'key' | 'agent' | 'certificate';
   password?: string;
   privateKeyPath?: string;
+  /** OpenSSH user certificate (`*-cert.pub`) for certificate auth. */
+  certPath?: string;
   passphrase?: string;
   /** Optional jump (bastion) host the connection tunnels through. */
   jump?: SshJumpOptions;
@@ -25,7 +27,14 @@ export interface SshConnectOptions {
 
 export type SshJumpOptions = Pick<
   SshConnectOptions,
-  'host' | 'port' | 'username' | 'authMethod' | 'password' | 'privateKeyPath' | 'passphrase'
+  | 'host'
+  | 'port'
+  | 'username'
+  | 'authMethod'
+  | 'password'
+  | 'privateKeyPath'
+  | 'certPath'
+  | 'passphrase'
 >;
 
 export interface HostKeyPromptPayload {
@@ -150,6 +159,7 @@ export async function connectSsh(options: SshConnectOptions): Promise<string> {
     authMethod: options.authMethod,
     password: options.password ?? '',
     privateKeyPath: options.privateKeyPath ?? null,
+    certPath: options.certPath ?? null,
     passphrase: options.passphrase ?? null,
     jump: options.jump
       ? {
@@ -159,6 +169,7 @@ export async function connectSsh(options: SshConnectOptions): Promise<string> {
           authMethod: options.jump.authMethod,
           password: options.jump.password ?? '',
           privateKeyPath: options.jump.privateKeyPath ?? null,
+          certPath: options.jump.certPath ?? null,
           passphrase: options.jump.passphrase ?? null
         }
       : null,

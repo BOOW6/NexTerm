@@ -10,6 +10,7 @@ export interface ImportedSession {
   username?: string;
   authMethod: SessionAuthMethod;
   keyPath?: string;
+  certPath?: string;
   group: string;
   favorite?: boolean;
 }
@@ -65,6 +66,7 @@ export function parseSshConfig(text: string, group = 'SSH Config'): ImportedSess
     user?: string;
     port?: number;
     identity?: string;
+    certificate?: string;
   } | null = null;
   let inMatch = false;
   // Options from a `Host *` block apply to every concrete host below it
@@ -74,6 +76,7 @@ export function parseSshConfig(text: string, group = 'SSH Config'): ImportedSess
     user?: string;
     port?: number;
     identity?: string;
+    certificate?: string;
   } = {};
 
   const flush = () => {
@@ -86,7 +89,8 @@ export function parseSshConfig(text: string, group = 'SSH Config'): ImportedSess
         hostname: current.hostname ?? wildcardDefaults.hostname,
         user: current.user ?? wildcardDefaults.user,
         port: current.port ?? wildcardDefaults.port,
-        identity: current.identity ?? wildcardDefaults.identity
+        identity: current.identity ?? wildcardDefaults.identity,
+        certificate: current.certificate ?? wildcardDefaults.certificate
       };
       current = null;
       return;
@@ -101,14 +105,16 @@ export function parseSshConfig(text: string, group = 'SSH Config'): ImportedSess
     }
     const host = current.hostname || alias;
     const identity = current.identity ?? wildcardDefaults.identity;
+    const certificate = current.certificate ?? wildcardDefaults.certificate;
     sessions.push({
       kind: 'ssh',
       title: alias,
       host,
       port: current.port ?? wildcardDefaults.port ?? 22,
       username: current.user ?? wildcardDefaults.user ?? '',
-      authMethod: identity ? 'key' : 'password',
+      authMethod: certificate ? 'certificate' : identity ? 'key' : 'password',
       keyPath: identity,
+      certPath: certificate,
       group
     });
     current = null;
@@ -149,6 +155,8 @@ export function parseSshConfig(text: string, group = 'SSH Config'): ImportedSess
       current.port = normalizePort(value);
     } else if (keyword === 'identityfile' && !current.identity) {
       current.identity = value;
+    } else if (keyword === 'certificatefile' && !current.certificate) {
+      current.certificate = value;
     }
   }
 
