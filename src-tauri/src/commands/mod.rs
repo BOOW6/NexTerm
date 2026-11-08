@@ -41,7 +41,7 @@ pub fn pty_platform_info(state: State<'_, PtySessionManager>) -> PtyPlatformInfo
 }
 
 #[tauri::command]
-pub fn create_pty_session(
+pub async fn create_pty_session(
     app: AppHandle,
     state: State<'_, PtySessionManager>,
     id: String,
@@ -51,6 +51,7 @@ pub fn create_pty_session(
 ) -> Result<String, String> {
     state
         .create_session(app, id, cols, rows, log_path)
+        .await
         .map_err(|err| err.to_string())
 }
 
@@ -67,7 +68,7 @@ pub async fn write_pty(
 }
 
 #[tauri::command]
-pub fn resize_pty(
+pub async fn resize_pty(
     state: State<'_, PtySessionManager>,
     id: String,
     cols: u16,
@@ -75,12 +76,19 @@ pub fn resize_pty(
 ) -> Result<(), String> {
     state
         .resize_session(&id, cols, rows)
+        .await
         .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
-pub fn close_pty_session(state: State<'_, PtySessionManager>, id: String) -> Result<(), String> {
-    state.close_session(&id).map_err(|err| err.to_string())
+pub async fn close_pty_session(
+    state: State<'_, PtySessionManager>,
+    id: String,
+) -> Result<(), String> {
+    state
+        .close_session(&id)
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -126,7 +134,7 @@ pub async fn ssh_connect(
 /// Re-point the output log of a live session (SSH, local PTY or Telnet). The
 /// transports use distinct id spaces, so all managers are probed.
 #[tauri::command]
-pub fn set_session_log(
+pub async fn set_session_log(
     ssh: State<'_, SshManager>,
     pty: State<'_, PtySessionManager>,
     telnet: State<'_, TelnetSessionManager>,
@@ -136,7 +144,7 @@ pub fn set_session_log(
     if ssh.set_log(&id, log_path.as_deref()).is_ok() {
         return Ok(());
     }
-    if pty.set_log(&id, log_path.as_deref()).is_ok() {
+    if pty.set_log(&id, log_path.as_deref()).await.is_ok() {
         return Ok(());
     }
     if telnet.set_log(&id, log_path.as_deref()).is_ok() {
