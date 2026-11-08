@@ -44,6 +44,16 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|poison| poison.into_inner())
 }
 
+/// Length-safe constant-time byte comparison for secret material such as
+/// host-key fingerprints; the length check is fine to leak (fixed length).
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter().zip(b).fold(0u8, |diff, (x, y)| diff | (x ^ y)) == 0
+}
+
 fn now_unix() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -269,12 +279,6 @@ impl HostKeyState {
         self.persist(&known);
     }
 
-    fn upsert(&self, entry: KnownHost) {
-        let mut known = lock(&self.known);
-        known.insert(entry.host.clone(), entry);
-        self.persist(&known);
-    }
-
     fn persist(&self, known: &HashMap<String, KnownHost>) {
         let Some(path) = self.path.as_deref() else {
             // No usable config directory: keep the in-memory map, do not
@@ -388,12 +392,12 @@ impl client::Handler for Client {
     ) -> Result<bool, Self::Error> {
         let key = server_public_key.public_key();
         let fingerprint = key.fingerprint(HashAlg::Sha256).to_string();
-        let algorithm = format!("{:?}", key.algorithm());
+        let algorithm = key.algorithm().to_string();
 
         {
             let mut known = lock(&self.host_key.known);
             if let Some(entry) = known.get_mut(&self.host_label) {
-                if entry.fingerprint == fingerprint {
+                if constant_time_eq(&entry.fingerprint, &fingerprint) {
                     if entry.public_key.is_none() {
                         // Backfill keys recorded before OpenSSH export support.
                         entry.public_key = key.to_openssh().ok();
@@ -1382,8 +1386,14 @@ impl SshManager {
             .with_context(|| format!("failed to read known_hosts file: {path}"))?;
         let (entries, result) = parse_openssh_known_hosts(&content);
 
-        for entry in entries {
-            self.host_keys.upsert(entry);
+        // Merge in one pass and persist once: upsert-per-entry rewrote the
+        // whole file for every line of the imported file.
+        {
+            let mut known = lock(&self.host_keys.known);
+            for entry in entries {
+                known.insert(entry.host.clone(), entry);
+            }
+            self.host_keys.persist(&known);
         }
 
         Ok(result)
@@ -3134,7 +3144,7 @@ fn parse_openssh_known_hosts(content: &str) -> (Vec<KnownHost>, KnownHostsImport
                 continue;
             }
         };
-        let algorithm = format!("{:?}", key.algorithm());
+        let algorithm = key.algorithm().to_string();
         let fingerprint = key.fingerprint(HashAlg::Sha256).to_string();
         let public_key = key.to_openssh().ok();
 

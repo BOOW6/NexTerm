@@ -10,6 +10,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     sync::{Mutex, MutexGuard},
+    time::Duration,
 };
 
 use aes_gcm::{
@@ -22,6 +23,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex as AsyncMutex;
+use zeroize::Zeroize;
 
 const VAULT_VERSION: u8 = 1;
 const SALT_LEN: usize = 16;
@@ -82,6 +84,21 @@ struct VaultState {
     entries: BTreeMap<String, String>,
 }
 
+impl Drop for VaultState {
+    fn drop(&mut self) {
+        // Best-effort scrubbing: the AES key and the plaintext entries must
+        // not linger in freed heap memory after lock/reset/replace. IPC
+        // String parameters (master password, secrets) stay outside our
+        // control and are accepted residue.
+        self.key.zeroize();
+        self.salt.zeroize();
+        for value in self.entries.values_mut() {
+            value.zeroize();
+        }
+        self.entries.clear();
+    }
+}
+
 pub struct VaultManager {
     /// `None` when the platform could not provide an app config directory:
     /// the vault then refuses to operate instead of silently degrading to a
@@ -92,6 +109,9 @@ pub struct VaultManager {
     /// concurrently, so the main-thread ordering sync commands used to get
     /// for free has to be explicit here.
     io: AsyncMutex<()>,
+    /// Consecutive unlock failures, driving an escalating online-guessing
+    /// backoff.
+    unlock_failures: Mutex<u32>,
 }
 
 impl VaultManager {
@@ -100,6 +120,7 @@ impl VaultManager {
             path,
             state: Mutex::new(VaultState::default()),
             io: AsyncMutex::new(()),
+            unlock_failures: Mutex::new(0),
         }
     }
 
@@ -159,6 +180,26 @@ impl VaultManager {
     }
 
     async fn unlock_inner(&self, master_password: &str) -> anyhow::Result<bool> {
+        let result = self.unlock_attempt(master_password).await;
+        if matches!(&result, Ok(true)) {
+            *lock(&self.unlock_failures) = 0;
+        } else {
+            // Throttle online guessing of the master password. unlock_inner
+            // is shared by user unlock and the change-password oracle, and
+            // the io lock is held for the whole attempt, so parallel guesses
+            // through other vault commands queue behind the same delay.
+            let failures = {
+                let mut failures = lock(&self.unlock_failures);
+                *failures = failures.saturating_add(1);
+                *failures
+            };
+            let backoff = Duration::from_millis(250u64.saturating_mul(1u64 << failures.min(4)));
+            tokio::time::sleep(backoff).await;
+        }
+        result
+    }
+
+    async fn unlock_attempt(&self, master_password: &str) -> anyhow::Result<bool> {
         let path = self.vault_path()?;
         let text = std::fs::read_to_string(path).context("failed to read credential vault")?;
         let file: VaultFile =
@@ -296,12 +337,25 @@ impl VaultManager {
         })
     }
 
-    pub async fn reset(&self) -> anyhow::Result<()> {
+    pub async fn reset(&self, master_password: Option<&str>) -> anyhow::Result<()> {
         let _io = self.io.lock().await;
         let path = self.vault_path()?;
-        if path.exists() {
-            std::fs::remove_file(path).context("failed to remove credential vault")?;
+        if !path.exists() {
+            // Nothing persisted: resetting only clears in-memory state.
+            let mut state = lock(&self.state);
+            *state = VaultState::default();
+            return Ok(());
         }
+        // A vault file exists: destroying every stored credential requires
+        // proving the current master password (same bar as vault_clear).
+        let master_password = master_password
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| anyhow!("重置凭据保险库需要当前主密码"))?;
+        if !self.unlock_attempt(master_password).await? {
+            return Err(anyhow!("当前主密码错误"));
+        }
+        std::fs::remove_file(path).context("failed to remove credential vault")?;
         let mut state = lock(&self.state);
         *state = VaultState::default();
         Ok(())

@@ -130,7 +130,10 @@ export function parseSshConfig(text: string, group = 'SSH Config'): ImportedSess
       continue;
     }
     const keyword = match[1].toLowerCase();
-    const value = unquote(stripInlineComment(match[2]));
+    // A quoted value may legitimately contain '#' (e.g. IdentityFile
+    // "/path/with #hash") — only strip comments on unquoted values.
+    const raw = match[2].trim();
+    const value = unquote(raw.startsWith('"') ? raw : stripInlineComment(raw));
 
     if (keyword === 'host') {
       flush();
@@ -346,7 +349,9 @@ export function parseNexTermBackup(text: string): ImportedSession[] {
       kind,
       title: title ?? (kind === 'local' ? '本地终端' : (host ?? 'Session')),
       host,
-      port: typeof item.port === 'number' ? item.port : 22,
+      // NexTerm backups carry raw numbers; clamp to the valid port range
+      // like the other parsers do instead of trusting the file.
+      port: typeof item.port === 'number' ? normalizePort(String(item.port)) : 22,
       username: asString(item.username),
       authMethod: asAuthMethod(item.authMethod),
       keyPath: asString(item.keyPath),

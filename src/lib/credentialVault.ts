@@ -57,8 +57,8 @@ export async function changeVaultPassword(
   return invoke<VaultStatus>('vault_change_password', { oldPassword, newPassword });
 }
 
-export async function resetVault(): Promise<void> {
-  await invoke('vault_reset');
+export async function resetVault(masterPassword: string): Promise<void> {
+  await invoke('vault_reset', { masterPassword });
 }
 
 /** Save a session secret when "remember credentials" is enabled and unlocked. */

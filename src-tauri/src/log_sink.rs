@@ -47,12 +47,11 @@ impl LogSink {
     pub fn write(&self, data: &str) {
         let mut guard = lock(&self.file);
         if let Some(file) = guard.as_mut() {
-            if file
-                .write_all(data.as_bytes())
-                .and_then(|()| file.flush())
-                .is_err()
-            {
+            if let Err(error) = file.write_all(data.as_bytes()).and_then(|()| file.flush()) {
                 guard.take();
+                // A silently disabled recording is worse than an aborted one:
+                // the user believes they are still capturing output.
+                eprintln!("[session-log] write failed, logging disabled: {error}");
             }
         }
     }

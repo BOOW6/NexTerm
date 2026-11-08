@@ -63,7 +63,8 @@ import {
 } from '../hooks/useTauriSsh';
 import type { SessionAuthMethod } from '../types/session';
 
-type SettingsTab = 'appearance' | 'terminal' | 'snippets' | 'ssh' | 'shortcuts' | 'security' | 'about';
+type SettingsTab =
+  'appearance' | 'terminal' | 'snippets' | 'ssh' | 'shortcuts' | 'security' | 'about';
 
 const TABS: Array<{ id: SettingsTab; label: string; icon: LucideIcon }> = [
   { id: 'appearance', label: '外观', icon: Palette },
@@ -582,11 +583,17 @@ export default function SettingsWindow() {
     if (!ok) {
       return;
     }
+    // The backend requires the current master password before destroying
+    // every stored credential (same bar as clearing an unlocked vault).
+    const masterPassword = await promptSecret('输入当前主密码以重置保险库', '确认重置');
+    if (masterPassword === null || masterPassword.length === 0) {
+      return;
+    }
     setVaultBusy(true);
     try {
       const sessions = useSessionStore.getState().sessions;
       await Promise.all(sessions.map((session) => forgetSessionCredentials(session.id)));
-      await resetVault();
+      await resetVault(masterPassword);
       setVaultStatus(await getVaultStatus());
       toast({ title: '凭据保险库已重置', variant: 'success' });
     } catch (reason) {
@@ -1225,7 +1232,8 @@ export default function SettingsWindow() {
           </Button>
         </div>
         <p className="text-[10px] text-muted-foreground">
-          开启后终端输出（含 ANSI 控制序列）会追加写入目录下的「会话名-时间.log」。新建连接立即生效；
+          开启后终端输出（含 ANSI
+          控制序列）会追加写入目录下的「会话名-时间.log」。新建连接立即生效；
           对已连接的会话切换开关即时生效，且不更换已有日志文件。日志可能包含敏感输出，请注意保存位置。
         </p>
       </div>
@@ -1522,8 +1530,15 @@ export default function SettingsWindow() {
 
       <div className="space-y-2 rounded-sm border border-border bg-surface p-3">
         <div className="flex items-center gap-2">
-          <p className="flex-1 text-[11px] text-muted">检查新版本（更新源可在 tauri.conf.json 配置）</p>
-          <Button size="sm" variant="secondary" disabled={updateState === 'checking'} onClick={() => void checkForUpdates()}>
+          <p className="flex-1 text-[11px] text-muted">
+            检查新版本（更新源可在 tauri.conf.json 配置）
+          </p>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={updateState === 'checking'}
+            onClick={() => void checkForUpdates()}
+          >
             {updateState === 'checking' ? '正在检查…' : '检查更新'}
           </Button>
         </div>
@@ -1548,9 +1563,7 @@ export default function SettingsWindow() {
             </Button>
           </div>
         ) : null}
-        {updateError ? (
-          <p className="text-[10px] text-error">检查更新失败：{updateError}</p>
-        ) : null}
+        {updateError ? <p className="text-[10px] text-error">检查更新失败：{updateError}</p> : null}
       </div>
     </section>
   );
@@ -1558,7 +1571,8 @@ export default function SettingsWindow() {
   const renderSnippets = () => (
     <section className="space-y-3">
       <p className="text-[11px] text-muted">
-        片段保存在本地，可从命令面板（{DEFAULT_SETTINGS.shortcuts.commandPalette}）搜索并一键发送到当前终端，发送后自动执行回车。
+        片段保存在本地，可从命令面板（{DEFAULT_SETTINGS.shortcuts.commandPalette}
+        ）搜索并一键发送到当前终端，发送后自动执行回车。
       </p>
 
       <div className="space-y-2 rounded-sm border border-border bg-surface p-3">
@@ -1590,7 +1604,9 @@ export default function SettingsWindow() {
       </div>
 
       {snippets.length === 0 ? (
-        <p className="px-2 py-6 text-center text-[11px] text-muted">还没有片段，先在上方添加一个。</p>
+        <p className="px-2 py-6 text-center text-[11px] text-muted">
+          还没有片段，先在上方添加一个。
+        </p>
       ) : (
         <ul className="space-y-1">
           {snippets.map((snippet) => (

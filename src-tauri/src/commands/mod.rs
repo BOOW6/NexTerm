@@ -714,8 +714,15 @@ pub async fn vault_change_password(
 }
 
 #[tauri::command]
-pub async fn vault_reset(state: State<'_, VaultManager>, app: AppHandle) -> Result<(), String> {
-    state.reset().await.map_err(|err| err.to_string())?;
+pub async fn vault_reset(
+    state: State<'_, VaultManager>,
+    app: AppHandle,
+    master_password: Option<String>,
+) -> Result<(), String> {
+    state
+        .reset(master_password.as_deref())
+        .await
+        .map_err(|err| err.to_string())?;
     let _ = app.emit("nexterm-vault-cleared", ());
     Ok(())
 }

@@ -202,6 +202,10 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'nexterm.settings.v1',
+      version: 1,
+      // Future schema changes go through this hook; normalizeSettings in the
+      // merge below already repairs unknown/partial payloads.
+      migrate: (persisted) => persisted as SettingsState,
       merge: (persisted, current) => {
         const saved = (persisted as Partial<SettingsState> | undefined) ?? {};
         const merged = {

@@ -57,6 +57,17 @@ describe('parseSshConfig', () => {
     expect(sessions).toHaveLength(1);
     expect(sessions[0].title).toBe('same');
   });
+
+  it('preserves hashes inside quoted values', () => {
+    const sessions = parseSshConfig(`
+      Host prod
+        HostName 10.0.0.10
+        IdentityFile "/keys/with #hash/id"
+    `);
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].keyPath).toBe('/keys/with #hash/id');
+  });
 });
 
 describe('parseMobaXterm', () => {
@@ -139,5 +150,11 @@ describe('NexTerm backup', () => {
 
   it('rejects unrelated JSON', () => {
     expect(() => parseNexTermBackup('{"hello":true}')).toThrow();
+  });
+
+  it('clamps out-of-range backup ports to the default', () => {
+    const backup = serializeSessionBackup([{ ...session, port: 99999 }]);
+    const imported = parseNexTermBackup(backup);
+    expect(imported[0].port).toBe(22);
   });
 });
