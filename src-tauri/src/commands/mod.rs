@@ -1,4 +1,5 @@
 use tauri::{ipc::Response, AppHandle, Emitter, State};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::fonts::{FontManager, SystemFontFace, SystemFontFamily};
 use crate::pty::{PtyPlatformInfo, PtySessionManager};
@@ -419,19 +420,41 @@ pub async fn sftp_mkdir(
         .map_err(|err| err.to_string())
 }
 
+/// Backend-driven session import. The file path never crosses the IPC
+/// boundary: the dialog is opened from Rust and the picked file is read here,
+/// so no renderer context can use this command to read arbitrary files.
 #[tauri::command]
-pub async fn read_text_file(path: String) -> Result<String, String> {
+pub async fn import_sessions(
+    app: AppHandle,
+    format: String,
+    title: Option<String>,
+) -> Result<Option<String>, String> {
     const MAX_BYTES: u64 = 8 * 1024 * 1024;
-    let metadata = tokio::fs::metadata(&path)
-        .await
-        .map_err(|err| err.to_string())?;
-    if metadata.len() > MAX_BYTES {
-        return Err("文件过大（上限 8 MiB）".to_string());
-    }
-    let bytes = tokio::fs::read(&path)
-        .await
-        .map_err(|err| err.to_string())?;
-    Ok(decode_text(bytes))
+    tokio::task::spawn_blocking(move || {
+        let mut picker = app.dialog().file();
+        picker = match format.as_str() {
+            "putty" => picker.add_filter("PuTTY registry export", &["reg"]),
+            "mobaxterm" => picker.add_filter("MobaXterm sessions", &["ini", "mxtsessions"]),
+            "nexterm" => picker.add_filter("NexTerm backup", &["json"]),
+            // ssh-config: any text file may hold the config.
+            _ => picker,
+        };
+        if let Some(title) = title.as_deref() {
+            picker = picker.set_title(title);
+        }
+        let Some(selected) = picker.blocking_pick_file() else {
+            return Ok(None);
+        };
+        let path = selected.into_path().map_err(|err| err.to_string())?;
+        let metadata = std::fs::metadata(&path).map_err(|err| err.to_string())?;
+        if metadata.len() > MAX_BYTES {
+            return Err("文件过大（上限 8 MiB）".to_string());
+        }
+        let bytes = std::fs::read(&path).map_err(|err| err.to_string())?;
+        Ok(Some(decode_text(bytes)))
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }
 
 /// Import files such as PuTTY `.reg` exports are commonly UTF-16LE with a BOM,
@@ -468,11 +491,32 @@ fn decode_utf16(bytes: &[u8], little_endian: bool) -> String {
     String::from_utf16_lossy(&units)
 }
 
+/// Backend-driven session export. The save dialog and the write both happen
+/// in Rust; the renderer only hands over the serialized backup contents.
 #[tauri::command]
-pub async fn write_text_file(path: String, contents: String) -> Result<(), String> {
-    tokio::fs::write(&path, contents)
-        .await
-        .map_err(|err| err.to_string())
+pub async fn export_sessions(
+    app: AppHandle,
+    contents: String,
+    title: Option<String>,
+) -> Result<bool, String> {
+    tokio::task::spawn_blocking(move || {
+        let mut saver = app
+            .dialog()
+            .file()
+            .add_filter("JSON", &["json"])
+            .set_file_name("nexterm-sessions.json");
+        if let Some(title) = title.as_deref() {
+            saver = saver.set_title(title);
+        }
+        let Some(selected) = saver.blocking_save_file() else {
+            return Ok(false);
+        };
+        let path = selected.into_path().map_err(|err| err.to_string())?;
+        std::fs::write(&path, contents).map_err(|err| err.to_string())?;
+        Ok(true)
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }
 
 #[tauri::command]

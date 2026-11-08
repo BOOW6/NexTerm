@@ -1721,6 +1721,57 @@ struct RemoteFile {
     size: u64,
 }
 
+/// SFTP READDIR names are server-controlled and russh-sftp does not
+/// canonicalize them. Before a recursive download joins `relative` onto the
+/// local root, require a plain, traversal-free relative name: no separators
+/// other than the `/` we joined with, no `.`/`..` components, no absolute
+/// paths, no Windows drive/ADS colons and no reserved device names. Anything
+/// else is skipped (with a warning) rather than materialized.
+fn is_safe_remote_relative(relative: &str) -> bool {
+    if relative.is_empty()
+        || relative.starts_with('/')
+        || relative.starts_with('\\')
+        || relative.contains('\\')
+        || relative.contains(':')
+    {
+        return false;
+    }
+    relative.split('/').all(is_safe_remote_file_name)
+}
+
+fn is_safe_remote_file_name(name: &str) -> bool {
+    if name.is_empty() || name == "." || name == ".." || name.chars().any(char::is_control) {
+        return false;
+    }
+    // "nul.txt" and friends are devices on Windows regardless of extension.
+    let stem = name.split('.').next().unwrap_or(name);
+    !matches!(
+        stem.to_ascii_uppercase().as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    )
+}
+
 async fn collect_remote_files(
     sftp: &SftpSession,
     root: &str,
@@ -1738,6 +1789,13 @@ async fn collect_remote_files(
             } else {
                 format!("{relative_base}/{name}")
             };
+
+            if !is_safe_remote_relative(&relative) {
+                eprintln!(
+                    "[sftp] skipping entry with unsafe server-provided name in {directory}: {name:?}"
+                );
+                continue;
+            }
 
             if entry.file_type().is_dir() {
                 stack.push((entry.path(), relative));
@@ -1866,6 +1924,16 @@ async fn run_download(
             control.checkpoint().await?;
 
             let target = if is_dir {
+                // Defense in depth: `files` comes from `collect_remote_files`
+                // which already filters, but re-validate before joining a
+                // server-controlled string onto the local root.
+                if !is_safe_remote_relative(&file.relative) {
+                    eprintln!(
+                        "[sftp] refusing to materialize unsafe remote relative path: {:?}",
+                        file.relative
+                    );
+                    continue;
+                }
                 local_root.join(Path::new(&file.relative))
             } else {
                 local_root.clone()
@@ -3031,6 +3099,43 @@ mod tests {
         assert_eq!(basename("/home/user/dir/"), "");
         assert_eq!(basename("plain"), "plain");
         assert_eq!(basename(""), "");
+    }
+
+    #[test]
+    fn safe_remote_relative_accepts_plain_names() {
+        assert!(is_safe_remote_relative("a.txt"));
+        assert!(is_safe_remote_relative("dir/a.txt"));
+        assert!(is_safe_remote_relative("a/b/c.tar.gz"));
+        assert!(is_safe_remote_relative(".hidden"));
+        assert!(is_safe_remote_relative("数据.csv"));
+    }
+
+    #[test]
+    fn safe_remote_relative_rejects_traversal_and_absolute_paths() {
+        assert!(!is_safe_remote_relative(""));
+        assert!(!is_safe_remote_relative("."));
+        assert!(!is_safe_remote_relative(".."));
+        assert!(!is_safe_remote_relative("../etc/passwd"));
+        assert!(!is_safe_remote_relative("a/../b"));
+        assert!(!is_safe_remote_relative("a/../../b"));
+        assert!(!is_safe_remote_relative("dir/./x"));
+        assert!(!is_safe_remote_relative("a/"));
+        assert!(!is_safe_remote_relative("/etc/passwd"));
+        assert!(!is_safe_remote_relative(r"\server\share"));
+        assert!(!is_safe_remote_relative(r"C:\Users\x"));
+        assert!(!is_safe_remote_relative("a\\b"));
+        assert!(!is_safe_remote_relative("backup:notes"));
+        assert!(!is_safe_remote_relative("dir/with:colon/x"));
+    }
+
+    #[test]
+    fn safe_remote_relative_rejects_windows_device_and_control_names() {
+        assert!(!is_safe_remote_relative("NUL"));
+        assert!(!is_safe_remote_relative("nul.txt"));
+        assert!(!is_safe_remote_relative("COM1.log"));
+        assert!(!is_safe_remote_relative("lpt9"));
+        assert!(!is_safe_remote_relative("bad\u{0}name"));
+        assert!(!is_safe_remote_relative("bad\nname"));
     }
 
     #[test]

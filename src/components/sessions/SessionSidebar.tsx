@@ -12,7 +12,6 @@ import {
   Zap,
   type LucideIcon
 } from 'lucide-react';
-import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { useWorkspace } from '../../features/workspace/WorkspaceContext';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -21,7 +20,7 @@ import { toast } from '../ui/toast';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { DropdownMenu } from '../ui/dropdown-menu';
-import { readTextFile, writeTextFile } from '../../lib/fileText';
+import { invoke } from '@tauri-apps/api/core';
 import {
   importKey,
   importSessionsFromText,
@@ -216,24 +215,17 @@ export default function SessionSidebar() {
 
   const handleImport = async (format: ImportFormat) => {
     try {
-      const filters =
-        format === 'putty'
-          ? [{ name: 'PuTTY 注册表导出', extensions: ['reg'] }]
-          : format === 'mobaxterm'
-            ? [{ name: 'MobaXterm 会话', extensions: ['ini', 'mxtsessions'] }]
-            : format === 'nexterm'
-              ? [{ name: 'NexTerm 备份', extensions: ['json'] }]
-              : undefined;
-      const selected = await openDialog({
-        multiple: false,
-        title: t('sidebar.importPick'),
-        ...(filters ? { filters } : {})
+      // The backend opens the dialog and reads the file itself; the path never
+      // crosses the IPC boundary.
+      const content = await invoke<string | null>('import_sessions', {
+        format,
+        title: t('sidebar.importPick')
       });
-      if (typeof selected !== 'string') {
+      if (content === null) {
         return;
       }
 
-      const imported = importSessionsFromText(format, await readTextFile(selected));
+      const imported = importSessionsFromText(format, content);
       if (imported.length === 0) {
         toast({ title: t('sidebar.importNone'), variant: 'default' });
         return;
@@ -280,15 +272,15 @@ export default function SessionSidebar() {
 
   const handleExport = async () => {
     try {
-      const target = await saveDialog({
-        defaultPath: 'nexterm-sessions.json',
-        filters: [{ name: 'JSON', extensions: ['json'] }],
+      // The backend opens the save dialog and writes the file itself; the
+      // path never crosses the IPC boundary.
+      const saved = await invoke<boolean>('export_sessions', {
+        contents: serializeSessionBackup(useSessionStore.getState().sessions),
         title: t('sidebar.export')
       });
-      if (!target) {
+      if (!saved) {
         return;
       }
-      await writeTextFile(target, serializeSessionBackup(useSessionStore.getState().sessions));
       toast({ title: t('sidebar.exported'), variant: 'success' });
     } catch (reason) {
       toast({ title: t('sidebar.exportFailed'), description: String(reason), variant: 'error' });
