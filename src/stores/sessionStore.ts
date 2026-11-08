@@ -33,8 +33,7 @@ function buildSession(draft: SessionDraft): Session {
     authMethod: draft.kind === 'local' ? undefined : (draft.authMethod ?? 'password'),
     keyPath: draft.kind === 'local' ? undefined : draft.keyPath?.trim() || undefined,
     certPath: draft.kind === 'local' ? undefined : draft.certPath?.trim() || undefined,
-    jumpSessionId:
-      draft.kind === 'local' ? undefined : draft.jumpSessionId?.trim() || undefined,
+    jumpSessionId: draft.kind === 'local' ? undefined : draft.jumpSessionId?.trim() || undefined,
     group: draft.group.trim() || DEFAULT_GROUP,
     favorite: draft.favorite ?? false,
     status: 'idle',

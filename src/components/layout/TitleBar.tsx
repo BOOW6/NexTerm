@@ -153,7 +153,11 @@ export default function TitleBar() {
     {
       label: '编辑',
       items: [
-        { label: '复制', shortcut: 'Ctrl+Shift+C', onSelect: () => dispatchTerminalAction({ type: 'copy' }) },
+        {
+          label: '复制',
+          shortcut: 'Ctrl+Shift+C',
+          onSelect: () => dispatchTerminalAction({ type: 'copy' })
+        },
         {
           label: '粘贴',
           shortcut: 'Ctrl+Shift+V',
@@ -164,7 +168,11 @@ export default function TitleBar() {
           shortcut: 'Ctrl+Shift+A',
           onSelect: () => dispatchTerminalAction({ type: 'select-all' })
         },
-        { label: '查找', shortcut: 'Ctrl+Shift+F', onSelect: () => dispatchTerminalAction({ type: 'find' }) },
+        {
+          label: '查找',
+          shortcut: 'Ctrl+Shift+F',
+          onSelect: () => dispatchTerminalAction({ type: 'find' })
+        },
         { separator: true },
         { label: '清屏', onSelect: () => dispatchTerminalAction({ type: 'clear' }) }
       ]

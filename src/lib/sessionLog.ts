@@ -27,6 +27,7 @@ export function sessionLogPath(dir: string, title: string, at: Date = new Date()
     return '';
   }
   // Keep the platform flavor of the chosen directory path.
-  const separator = trimmed.endsWith('\\') || trimmed.endsWith('/') ? '' : trimmed.includes('\\') ? '\\' : '/';
+  const separator =
+    trimmed.endsWith('\\') || trimmed.endsWith('/') ? '' : trimmed.includes('\\') ? '\\' : '/';
   return `${trimmed}${separator}${sessionLogFileName(title, at)}`;
 }
