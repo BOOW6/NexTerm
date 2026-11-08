@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { emit } from '@tauri-apps/api/event';
 import type { SessionAuthMethod } from '../types/session';
 import {
   DEFAULT_DARK_THEME,
@@ -121,7 +122,10 @@ function normalizeSettings(input: SettingsSnapshot): SettingsSnapshot {
       DEFAULT_SETTINGS.terminalFontFeatureSettings,
     terminalColorScheme: normalizeTerminalColorSchemeId(input.terminalColorScheme),
     terminalFontSize: Math.min(20, Math.max(10, Math.round(input.terminalFontSize) || 13)),
-    terminalCursorStyle: input.terminalCursorStyle,
+    terminalCursorStyle:
+      input.terminalCursorStyle === 'underline' || input.terminalCursorStyle === 'bar'
+        ? input.terminalCursorStyle
+        : 'block',
     terminalCursorBlink: Boolean(input.terminalCursorBlink),
     terminalScrollback: Math.min(
       100000,
@@ -167,15 +171,34 @@ interface SettingsState extends SettingsSnapshot {
   setDarkTheme: (theme: ThemeId) => void;
 }
 
+/**
+ * Broadcast a settings change so the settings window merges it into its draft
+ * (AGENTS.md: every writer outside the settings window must announce itself).
+ * Sinking the broadcast into the store setters means call sites (command
+ * palette, title bar menu, …) cannot forget it.
+ */
+function broadcastSettingsApplied(): void {
+  void emit('nexterm-settings-applied', { settings: settingsSnapshot() }).catch(() => undefined);
+}
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       ...DEFAULT_SETTINGS,
       themeMode: readLegacyThemeMode() ?? DEFAULT_SETTINGS.themeMode,
       applySettings: (snapshot) => set(normalizeSettings(snapshot)),
-      setThemeMode: (themeMode) => set({ themeMode: normalizeThemeMode(themeMode) }),
-      setLightTheme: (lightTheme) => set({ lightTheme: normalizeThemeId(lightTheme, 'light') }),
-      setDarkTheme: (darkTheme) => set({ darkTheme: normalizeThemeId(darkTheme, 'dark') })
+      setThemeMode: (themeMode) => {
+        set({ themeMode: normalizeThemeMode(themeMode) });
+        broadcastSettingsApplied();
+      },
+      setLightTheme: (lightTheme) => {
+        set({ lightTheme: normalizeThemeId(lightTheme, 'light') });
+        broadcastSettingsApplied();
+      },
+      setDarkTheme: (darkTheme) => {
+        set({ darkTheme: normalizeThemeId(darkTheme, 'dark') });
+        broadcastSettingsApplied();
+      }
     }),
     {
       name: 'nexterm.settings.v1',

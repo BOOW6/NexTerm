@@ -53,6 +53,9 @@ interface TransferState {
   setPaused: (id: string, paused: boolean) => void;
   /** Mark a session's active transfers as interrupted (connection dropped). */
   markSessionDisconnected: (sessionId: string) => void;
+  /** Drop every transfer bound to a session (the session itself is gone —
+   * retries could never succeed again). */
+  removeSessionTransfers: (sessionId: string) => void;
   clearFinished: () => void;
   remove: (id: string) => void;
 }
@@ -225,6 +228,11 @@ export const useTransferStore = create<TransferState>((set) => ({
           updatedAt: Date.now()
         };
       })
+    })),
+
+  removeSessionTransfers: (sessionId) =>
+    set((state) => ({
+      transfers: state.transfers.filter((item) => item.request?.sessionId !== sessionId)
     })),
 
   clearFinished: () =>

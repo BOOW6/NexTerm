@@ -16,6 +16,7 @@ import { useWorkspace } from '../../features/workspace/WorkspaceContext';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
+import { useTransferStore } from '../../stores/transferStore';
 import { toast } from '../ui/toast';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -207,6 +208,8 @@ export default function SessionSidebar() {
     removeSession(sessionId);
     void forgetSessionCredentials(sessionId);
     clearTerminalSnapshot(sessionId);
+    // The session is gone: its transfer entries could never retry again.
+    useTransferStore.getState().removeSessionTransfers(sessionId);
     if (activeSessionId === sessionId) {
       setActiveSessionId(null);
     }

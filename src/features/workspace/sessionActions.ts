@@ -2,8 +2,30 @@ import type { DockviewApi, IDockviewPanel } from 'dockview-react';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { requestTerminalReconnect } from '../../lib/terminalReconnect';
+import type { Session, SessionDraft } from '../../types/session';
 
 export type SplitDirection = 'right' | 'below';
+
+/**
+ * Every user-visible field a copy must carry over. Kept in one place so a new
+ * Session field cannot silently drop out of duplication (the sessionActions
+ * test asserts this mapping stays complete).
+ */
+export function toSessionDraft(session: Session): SessionDraft {
+  return {
+    kind: session.kind,
+    title: session.title,
+    host: session.host,
+    port: session.port,
+    username: session.username,
+    authMethod: session.authMethod,
+    keyPath: session.keyPath,
+    certPath: session.certPath,
+    jumpSessionId: session.jumpSessionId,
+    group: session.group,
+    favorite: session.favorite
+  };
+}
 
 interface OpenSessionOptions {
   forceNew?: boolean;
@@ -113,15 +135,8 @@ export function duplicateSessionPanel(
   }
 
   const copy = store.addSession({
-    kind: session.kind,
+    ...toSessionDraft(session),
     title: `${session.title} 副本`,
-    host: session.host,
-    port: session.port,
-    username: session.username,
-    authMethod: session.authMethod,
-    keyPath: session.keyPath,
-    jumpSessionId: session.jumpSessionId,
-    group: session.group,
     favorite: false
   });
 

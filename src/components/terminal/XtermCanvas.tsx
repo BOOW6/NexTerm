@@ -275,10 +275,14 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       let pendingConnectId: string | null = null;
       // One log file per terminal activation: auto-reconnects keep appending
       // to the same file instead of scattering timestamped fragments.
-      const logSettings = useSettingsStore.getState();
-      const sessionLogTarget = logSettings.sessionLogEnabled
-        ? sessionLogPath(logSettings.sessionLogDir, logTitle)
-        : '';
+      // Computed at connect time so a settings flip during a (re)connect is
+      // not silently ignored for that session.
+      const sessionLogTarget = (): string => {
+        const logSettings = useSettingsStore.getState();
+        return logSettings.sessionLogEnabled
+          ? sessionLogPath(logSettings.sessionLogDir, logTitle)
+          : '';
+      };
       let unlistenOutput: (() => void) | undefined;
       let unlistenClosed: (() => void) | undefined;
       let dataDisposable: IDisposable | undefined;
@@ -631,10 +635,17 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         // A resize freeze is holding the write queue: the queued old-size
         // output must reach xterm BEFORE the divider, or the notice would
         // appear above history that is still pending.
-        if (writeFrozen) {
+        // Re-check in a loop: finish() resolves the waiters and then
+        // synchronously re-enters runResize(), which re-freezes the queue
+        // before this continuation runs — a single-shot wait would let the
+        // notice sequence interleave with that resize's reflow.
+        while (writeFrozen || applyInProgress) {
           await new Promise<void>((resolve) => {
             unfreezeWaiters.push(resolve);
           });
+          if (disposed) {
+            return;
+          }
         }
         if (disposed) {
           return;
@@ -875,7 +886,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
                   passphrase: jumpPassphrase || undefined
                 }
               : undefined,
-            logPath: sessionLogTarget || undefined,
+            logPath: sessionLogTarget() || undefined,
             cols: instance.cols,
             rows: instance.rows
           });
@@ -1003,7 +1014,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             id,
             instance.cols,
             instance.rows,
-            sessionLogTarget || undefined
+            sessionLogTarget() || undefined
           );
           if (disposed || generation !== transportGeneration || closedEarly) {
             void closePtySession(createdId);
@@ -1032,7 +1043,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             sendBackendResize(cols, rows);
           });
 
-          instance.focus();
+          // A background pane's connect must not steal focus from the pane
+          // the user is typing in (same rule as the SSH path).
+          if (useWorkspaceStore.getState().activeSessionId === sessionId) {
+            instance.focus();
+          }
         } catch (error) {
           if (!disposed && generation === transportGeneration) {
             clearTransportListeners();
@@ -1102,7 +1117,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             id,
             host,
             port,
-            logPath: sessionLogTarget || undefined
+            logPath: sessionLogTarget() || undefined
           });
           if (disposed || generation !== transportGeneration || closedEarly) {
             void disconnectTelnet(connectedId);
@@ -1127,7 +1142,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             sendBackendResize(cols, rows);
           });
 
-          instance.focus();
+          // Same rule as the SSH/local paths: do not steal focus from the
+          // pane the user is typing in.
+          if (useWorkspaceStore.getState().activeSessionId === sessionId) {
+            instance.focus();
+          }
         } catch (error) {
           if (!disposed && generation === transportGeneration) {
             clearTransportListeners();

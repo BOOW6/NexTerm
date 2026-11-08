@@ -7,8 +7,7 @@ import {
   useSyncExternalStore,
   type ReactNode
 } from 'react';
-import { emit } from '@tauri-apps/api/event';
-import { settingsSnapshot, useSettingsStore } from '../stores/settingsStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import { getTheme, type ThemeId, type ThemeMode, type ThemeVariant } from './themes';
 
 export type { ThemeId, ThemeMode, ThemeVariant } from './themes';
@@ -79,10 +78,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const cycle = useCallback(() => {
     const current = useSettingsStore.getState().themeMode;
+    // setThemeMode broadcasts nexterm-settings-applied itself (sunk into the
+    // store), so the settings window merges this into its draft.
     setThemeMode(current === 'light' ? 'dark' : current === 'dark' ? 'system' : 'light');
-    // Broadcast so the settings window merges the change into its draft —
-    // otherwise a stale draft would silently revert this on the next apply.
-    void emit('nexterm-settings-applied', { settings: settingsSnapshot() });
   }, [setThemeMode]);
 
   const value = useMemo<ThemeContextValue>(
