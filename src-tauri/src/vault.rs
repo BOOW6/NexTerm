@@ -487,6 +487,39 @@ mod tests {
     use super::VaultManager;
 
     #[tokio::test]
+    async fn reset_requires_current_master_password() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let manager = VaultManager::new(Some(dir.path().join("vault.json")));
+        manager.initialize("correct horse").await.unwrap();
+
+        // Without the current password the destructive reset refuses and the
+        // vault file survives.
+        assert!(manager.reset(None).await.is_err());
+        assert!(manager.reset(Some("wrong password")).await.is_err());
+        assert!(dir.path().join("vault.json").exists());
+
+        manager.reset(Some("correct horse")).await.unwrap();
+        assert!(!dir.path().join("vault.json").exists());
+        assert!(!manager.status().unlocked);
+        assert_eq!(manager.status().entry_count, 0);
+    }
+
+    #[tokio::test]
+    async fn unlock_failures_back_off() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let manager = VaultManager::new(Some(dir.path().join("vault.json")));
+        manager.initialize("correct horse").await.unwrap();
+
+        let started = std::time::Instant::now();
+        assert!(!manager.unlock("wrong-1").await.unwrap());
+        assert!(!manager.unlock("wrong-2").await.unwrap());
+        // 500ms + 1s of escalating backoff must have elapsed.
+        assert!(started.elapsed() >= std::time::Duration::from_millis(1400));
+        // A success resets the failure counter: the next attempt is instant.
+        assert!(manager.unlock("correct horse").await.unwrap());
+    }
+
+    #[tokio::test]
     async fn round_trip_encrypted_entries() {
         let dir = tempfile::tempdir().expect("temp dir");
         let manager = VaultManager::new(Some(dir.path().join("vault.json")));

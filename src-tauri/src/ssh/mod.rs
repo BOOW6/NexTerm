@@ -29,7 +29,7 @@ use russh::{
 use russh_sftp::{client::SftpSession, protocol::OpenFlags};
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Runtime, Wry};
 use tokio::{
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom},
     net::{TcpListener, TcpStream},
@@ -52,6 +52,33 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
         return false;
     }
     a.iter().zip(b).fold(0u8, |diff, (x, y)| diff | (x ^ y)) == 0
+}
+
+/// The pure, pre-dialog part of the TOFU decision: is this host known, and
+/// does the presented fingerprint match? Extracted so the state machine can
+/// be unit-tested without a live `AppHandle` (the `tauri::test` mock runtime
+/// breaks the test binary loader on Windows).
+#[derive(Debug)]
+enum HostKeyCheck {
+    /// Fingerprint matches the stored record.
+    KnownOk,
+    /// The host is known but the fingerprint differs; carries the expected one.
+    Mismatch { expected: String },
+    /// First contact with this host label.
+    Unknown,
+}
+
+fn classify_server_key(state: &HostKeyState, host_label: &str, fingerprint: &str) -> HostKeyCheck {
+    let known = lock(&state.known);
+    let Some(entry) = known.get(host_label) else {
+        return HostKeyCheck::Unknown;
+    };
+    if constant_time_eq(&entry.fingerprint, fingerprint) {
+        return HostKeyCheck::KnownOk;
+    }
+    HostKeyCheck::Mismatch {
+        expected: entry.fingerprint.clone(),
+    }
 }
 
 fn now_unix() -> u64 {
@@ -370,9 +397,11 @@ struct TransferControl {
     decision: Mutex<Option<ConflictDecision>>,
 }
 
-pub struct Client {
+/// Generic over the Tauri runtime so tests can drive `check_server_key`
+/// against a mock `AppHandle`; production always uses the default `Wry`.
+pub struct Client<R: Runtime = Wry> {
     host_key: Arc<HostKeyState>,
-    app: AppHandle,
+    app: AppHandle<R>,
     host: String,
     port: u16,
     host_label: String,
@@ -383,7 +412,7 @@ pub struct Client {
     cancel: SharedCancel,
 }
 
-impl client::Handler for Client {
+impl<R: Runtime> client::Handler for Client<R> {
     type Error = russh::Error;
 
     async fn check_server_key(
@@ -394,28 +423,30 @@ impl client::Handler for Client {
         let fingerprint = key.fingerprint(HashAlg::Sha256).to_string();
         let algorithm = key.algorithm().to_string();
 
-        {
-            let mut known = lock(&self.host_key.known);
-            if let Some(entry) = known.get_mut(&self.host_label) {
-                if constant_time_eq(&entry.fingerprint, &fingerprint) {
+        match classify_server_key(&self.host_key, &self.host_label, &fingerprint) {
+            HostKeyCheck::KnownOk => {
+                // Backfill keys recorded before OpenSSH export support.
+                let mut known = lock(&self.host_key.known);
+                if let Some(entry) = known.get_mut(&self.host_label) {
                     if entry.public_key.is_none() {
-                        // Backfill keys recorded before OpenSSH export support.
                         entry.public_key = key.to_openssh().ok();
                         self.host_key.persist(&known);
                     }
-                    return Ok(true);
                 }
-
+                return Ok(true);
+            }
+            HostKeyCheck::Mismatch { expected } => {
                 let _ = self.app.emit(
                     "ssh-host-key-mismatch",
                     HostKeyMismatchPayload {
                         host: self.host_label.clone(),
-                        expected: entry.fingerprint.clone(),
+                        expected,
                         actual: fingerprint,
                     },
                 );
                 return Ok(false);
             }
+            HostKeyCheck::Unknown => {}
         }
 
         let request_id = Uuid::new_v4().to_string();
@@ -2983,12 +3014,12 @@ async fn authenticate_with_agent(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn spawn_forward_listener(
-    app: AppHandle,
+fn spawn_forward_listener<R: Runtime>(
+    app: AppHandle<R>,
     forwards: Arc<Mutex<HashMap<String, ForwardHandle>>>,
     forward_id: String,
     listener: TcpListener,
-    handle: Arc<client::Handle<Client>>,
+    handle: Arc<client::Handle<Client<R>>>,
     dynamic: bool,
     target_host: String,
     target_port: u16,
@@ -3282,6 +3313,71 @@ mod tests {
     fn read_known_hosts(path: &std::path::Path) -> Vec<KnownHost> {
         let bytes = std::fs::read(path).expect("known_hosts file should exist");
         serde_json::from_slice(&bytes).expect("known_hosts should be valid JSON")
+    }
+
+    fn test_key() -> russh::keys::PublicKey {
+        russh::keys::PublicKey::from_openssh(
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINGF4nxcqidKQd9FQxlVweDSP+e0WiQVkdSHUHQgV1nP tofu-test",
+        )
+        .expect("fixed test key parses")
+    }
+
+    #[test]
+    fn host_key_classify_accepts_matching_fingerprints() {
+        let dir = tempdir().unwrap();
+        let state = HostKeyState::new(Some(dir.path().join("known_hosts.json")));
+        let key = test_key();
+        state.add(
+            "example.com:22".to_string(),
+            key.algorithm().to_string(),
+            key.fingerprint(HashAlg::Sha256).to_string(),
+            None,
+        );
+
+        assert!(matches!(
+            classify_server_key(
+                &state,
+                "example.com:22",
+                &key.fingerprint(HashAlg::Sha256).to_string()
+            ),
+            HostKeyCheck::KnownOk
+        ));
+        // A different host label stays unknown.
+        assert!(matches!(
+            classify_server_key(&state, "other.example.com:22", "SHA256:whatever"),
+            HostKeyCheck::Unknown
+        ));
+    }
+
+    #[test]
+    fn host_key_classify_reports_mismatch_with_expected_fingerprint() {
+        let dir = tempdir().unwrap();
+        let state = HostKeyState::new(Some(dir.path().join("known_hosts.json")));
+        let key = test_key();
+        state.add(
+            "example.com:22".to_string(),
+            key.algorithm().to_string(),
+            key.fingerprint(HashAlg::Sha256).to_string(),
+            None,
+        );
+
+        match classify_server_key(&state, "example.com:22", "SHA256:tampered") {
+            HostKeyCheck::Mismatch { expected } => {
+                assert_eq!(expected, key.fingerprint(HashAlg::Sha256).to_string());
+            }
+            other => panic!("expected Mismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn host_key_classify_flags_unknown_hosts() {
+        let dir = tempdir().unwrap();
+        let state = HostKeyState::new(Some(dir.path().join("known_hosts.json")));
+
+        assert!(matches!(
+            classify_server_key(&state, "example.com:22", "SHA256:whatever"),
+            HostKeyCheck::Unknown
+        ));
     }
 
     #[test]
