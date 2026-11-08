@@ -5,7 +5,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { getTerminalTheme } from '../../theme/terminalTheme';
 import { NativeLigaturesAddon } from '../../theme/nativeLigaturesAddon';
-import { useTheme } from '../../theme/ThemeProvider';
+import { useTheme } from '../../theme/useTheme';
 import type { TerminalCursorStyle } from '../../stores/settingsStore';
 
 interface TerminalPreviewProps {

@@ -4,7 +4,7 @@ import { openSettingsWindow } from '../lib/appWindows';
 import { dispatchTerminalAction } from '../lib/terminalCommands';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useUIStore } from '../stores/uiStore';
-import { useWorkspace } from '../features/workspace/WorkspaceContext';
+import { useWorkspace } from '../features/workspace/useWorkspace';
 import { useQuickConnectLauncher } from '../features/workspace/useQuickConnectLauncher';
 
 function isEditableTarget(target: EventTarget | null): boolean {

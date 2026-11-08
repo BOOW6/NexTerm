@@ -24,7 +24,8 @@ import { EditableSelect } from '../components/ui/editable-select';
 import { Input, Label } from '../components/ui/input';
 import { Select } from '../components/ui/select';
 import { ShortcutInput } from '../components/settings/ShortcutInput';
-import { Toaster, toast } from '../components/ui/toast';
+import { Toaster } from '../components/ui/toast';
+import { toast } from '../components/ui/toastStore';
 import { cn } from '../lib/cn';
 import {
   DEFAULT_SETTINGS,

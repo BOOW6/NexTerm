@@ -43,7 +43,7 @@ import { useTransferStore } from '../../stores/transferStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { resumeInterruptedTransfers } from '../../lib/sftpTransfer';
 import { sessionLogPath } from '../../lib/sessionLog';
-import { useTheme } from '../../theme/ThemeProvider';
+import { useTheme } from '../../theme/useTheme';
 import { getTerminalTheme } from '../../theme/terminalTheme';
 import { NativeLigaturesAddon } from '../../theme/nativeLigaturesAddon';
 import {

@@ -3,10 +3,10 @@ import { openModalWindow } from '../../lib/appWindows';
 import { useCredentialStore } from '../../stores/credentialStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { toast } from '../../components/ui/toast';
+import { toast } from '../../components/ui/toastStore';
 import { forgetSessionCredentials, rememberSessionCredentials } from '../../lib/credentialVault';
 import type { Session, SessionAuthMethod, SessionDraft, SessionKind } from '../../types/session';
-import { useWorkspace } from './WorkspaceContext';
+import { useWorkspace } from './useWorkspace';
 
 export interface QuickConnectOptions {
   sessionId?: string;

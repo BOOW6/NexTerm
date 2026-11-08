@@ -1,14 +1,7 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useLayoutEffect,
-  useMemo,
-  useSyncExternalStore,
-  type ReactNode
-} from 'react';
+import { useCallback, useLayoutEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { useSettingsStore } from '../stores/settingsStore';
 import { getTheme, type ThemeId, type ThemeMode, type ThemeVariant } from './themes';
+import { ThemeContext, type ThemeContextValue } from './useTheme';
 
 export type { ThemeId, ThemeMode, ThemeVariant } from './themes';
 export type ResolvedTheme = ThemeVariant;
@@ -22,24 +15,6 @@ function subscribeSystemTheme(callback: () => void): () => void {
   media.addEventListener('change', callback);
   return () => media.removeEventListener('change', callback);
 }
-
-interface ThemeContextValue {
-  mode: ThemeMode;
-  resolved: ThemeVariant;
-  themeId: ThemeId;
-  themeName: string;
-  themeLabel: string;
-  lightTheme: ThemeId;
-  darkTheme: ThemeId;
-  lightThemeName: string;
-  darkThemeName: string;
-  setMode: (mode: ThemeMode) => void;
-  setLightTheme: (theme: ThemeId) => void;
-  setDarkTheme: (theme: ThemeId) => void;
-  cycle: () => void;
-}
-
-const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const mode = useSettingsStore((state) => state.themeMode);
@@ -117,12 +92,4 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
-}
-
-export function useTheme(): ThemeContextValue {
-  const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error('useTheme must be used within a ThemeProvider');
-  }
-  return context;
 }

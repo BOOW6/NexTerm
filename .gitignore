@@ -13,6 +13,8 @@ dist
 coverage
 src-tauri/target
 src-tauri/gen
+.husky/_
+.zcode
 *.tsbuildinfo
 *.log
 .env

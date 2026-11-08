@@ -12,12 +12,12 @@ import {
   Zap,
   type LucideIcon
 } from 'lucide-react';
-import { useWorkspace } from '../../features/workspace/WorkspaceContext';
+import { useWorkspace } from '../../features/workspace/useWorkspace';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useTransferStore } from '../../stores/transferStore';
-import { toast } from '../ui/toast';
+import { toast } from '../ui/toastStore';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { DropdownMenu } from '../ui/dropdown-menu';

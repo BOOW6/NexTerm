@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { openModalWindow } from '../lib/appWindows';
-import { toast } from '../components/ui/toast';
+import { toast } from '../components/ui/toastStore';
 import {
   listenHostKeyMismatch,
   listenHostKeyPrompt,

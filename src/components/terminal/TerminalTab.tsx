@@ -20,7 +20,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Tooltip } from '../ui/tooltip';
-import { toast } from '../ui/toast';
+import { toast } from '../ui/toastStore';
 import { showNativeContextMenu } from '../../lib/appWindows';
 import { readText as readClipboardText } from '@tauri-apps/plugin-clipboard-manager';
 import { TERMINAL_ACTION_EVENT, type TerminalAction } from '../../lib/terminalCommands';

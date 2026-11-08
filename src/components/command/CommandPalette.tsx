@@ -20,16 +20,16 @@ import {
   type LucideIcon
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { useWorkspace } from '../../features/workspace/WorkspaceContext';
+import { useWorkspace } from '../../features/workspace/useWorkspace';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSnippetStore } from '../../stores/snippetStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
-import { useTheme } from '../../theme/ThemeProvider';
+import { useTheme } from '../../theme/useTheme';
 import { openSettingsWindow } from '../../lib/appWindows';
 import { useQuickConnectLauncher } from '../../features/workspace/useQuickConnectLauncher';
 import { dispatchTerminalAction } from '../../lib/terminalCommands';
-import { toast } from '../ui/toast';
+import { toast } from '../ui/toastStore';
 import { SESSION_KIND_LABEL, sessionSubtitle } from '../../types/session';
 import { SESSION_KIND_ICON } from '../../lib/sessionVisuals';
 

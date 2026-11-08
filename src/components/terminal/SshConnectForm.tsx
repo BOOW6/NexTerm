@@ -6,7 +6,7 @@ import { useVaultStore } from '../../stores/vaultStore';
 import { useQuickConnectLauncher } from '../../features/workspace/useQuickConnectLauncher';
 import { rememberSessionCredentials } from '../../lib/credentialVault';
 import { openModalWindow } from '../../lib/appWindows';
-import { toast } from '../ui/toast';
+import { toast } from '../ui/toastStore';
 import { sessionSubtitle, type Session } from '../../types/session';
 import { useI18n } from '../../i18n';
 import { Button } from '../ui/button';

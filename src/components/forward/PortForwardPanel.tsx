@@ -15,7 +15,7 @@ import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { Button } from '../ui/button';
 import { Input, Label } from '../ui/input';
 import { Select } from '../ui/select';
-import { toast } from '../ui/toast';
+import { toast } from '../ui/toastStore';
 
 const KIND_LABEL: Record<PortForwardKind, string> = {
   local: '本地转发',

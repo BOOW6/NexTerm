@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useRef, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, type ReactNode } from 'react';
 import type { DockviewApi } from 'dockview-react';
 import {
   closeSessionPanels,
@@ -12,22 +12,7 @@ import {
   splitSessionPanel,
   type SplitDirection
 } from './sessionActions';
-
-interface WorkspaceContextValue {
-  setApi: (api: DockviewApi | null) => void;
-  getApi: () => DockviewApi | null;
-  openSession: (sessionId: string) => void;
-  closeSessionPanel: (sessionId: string) => void;
-  reconnectSession: (sessionId: string) => void;
-  splitSession: (sessionId: string, direction: SplitDirection, referencePanelId?: string) => void;
-  duplicateSession: (sessionId: string, referencePanelId?: string) => void;
-  openSftpPanel: (sessionId?: string) => void;
-  openPortForwardPanel: (sessionId?: string) => void;
-  openTransferPanel: () => void;
-  isSessionOpen: (sessionId: string) => boolean;
-}
-
-const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
+import { WorkspaceContext, type WorkspaceContextValue } from './useWorkspace';
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const apiRef = useRef<DockviewApi | null>(null);
@@ -132,12 +117,4 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
-}
-
-export function useWorkspace(): WorkspaceContextValue {
-  const context = useContext(WorkspaceContext);
-  if (!context) {
-    throw new Error('useWorkspace must be used within a WorkspaceProvider');
-  }
-  return context;
 }

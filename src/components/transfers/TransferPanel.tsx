@@ -19,7 +19,7 @@ import {
 } from '../../stores/transferStore';
 import { Button } from '../ui/button';
 import { Tooltip } from '../ui/tooltip';
-import { toast } from '../ui/toast';
+import { toast } from '../ui/toastStore';
 import { cn } from '../../lib/cn';
 import { formatBytes, formatSpeed } from '../../lib/format';
 

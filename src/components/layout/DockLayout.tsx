@@ -10,7 +10,7 @@ import { Plus } from 'lucide-react';
 import TerminalTab from '../terminal/TerminalTab';
 import SessionTab from './SessionTab';
 import TabStripOverflow from './TabStripOverflow';
-import { useWorkspace } from '../../features/workspace/WorkspaceContext';
+import { useWorkspace } from '../../features/workspace/useWorkspace';
 import { openSessionPanel } from '../../features/workspace/sessionActions';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';

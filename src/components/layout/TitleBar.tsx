@@ -4,14 +4,15 @@ import { Check } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { openSettingsWindow } from '../../lib/appWindows';
 import { dispatchTerminalAction } from '../../lib/terminalCommands';
-import { useWorkspace } from '../../features/workspace/WorkspaceContext';
+import { useWorkspace } from '../../features/workspace/useWorkspace';
 import { useQuickConnectLauncher } from '../../features/workspace/useQuickConnectLauncher';
 import { closeOtherPanels } from '../../features/workspace/sessionActions';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
-import { useTheme, type ThemeMode } from '../../theme/ThemeProvider';
+import { useTheme } from '../../theme/useTheme';
+import type { ThemeMode } from '../../theme/ThemeProvider';
 
 type MenuEntry =
   | { separator: true }
