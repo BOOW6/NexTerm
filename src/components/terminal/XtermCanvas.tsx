@@ -1896,6 +1896,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         webglAddon?.dispose();
         terminal?.dispose();
       };
+      // logTitle is intentionally fixed per terminal activation: the log
+      // file name must not change (and the session must not re-connect) when
+      // a rename lands mid-session. Re-deriving the enabled/dir state at
+      // connect time (sessionLogTarget()) covers settings flips.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
       sessionId,
       transport,

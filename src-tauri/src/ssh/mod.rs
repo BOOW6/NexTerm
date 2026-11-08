@@ -191,14 +191,17 @@ impl Default for SftpTransferOptions {
 }
 
 pub struct HostKeyState {
-    path: PathBuf,
+    /// `None` when no usable config directory exists: TOFU records then stay
+    /// in memory only instead of silently degrading to a world-readable temp
+    /// file that periodic cleanups may wipe (same policy as the vault).
+    path: Option<PathBuf>,
     known: Mutex<HashMap<String, KnownHost>>,
     pending: Mutex<HashMap<String, oneshot::Sender<bool>>>,
 }
 
 impl HostKeyState {
-    fn new(path: PathBuf) -> Self {
-        let known = Self::load(&path);
+    fn new(path: Option<PathBuf>) -> Self {
+        let known = path.as_deref().map(Self::load).unwrap_or_default();
 
         Self {
             path,
@@ -273,21 +276,26 @@ impl HostKeyState {
     }
 
     fn persist(&self, known: &HashMap<String, KnownHost>) {
+        let Some(path) = self.path.as_deref() else {
+            // No usable config directory: keep the in-memory map, do not
+            // degrade to a temp file.
+            return;
+        };
         let entries: Vec<&KnownHost> = known.values().collect();
         let Ok(json) = serde_json::to_vec_pretty(&entries) else {
             return;
         };
-        if let Some(parent) = self.path.parent() {
+        if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
         // Write-through-temp-then-rename: a crash mid-write leaves the
         // previous file intact instead of a truncated, unparsable one.
-        let temp = self.path.with_extension("json.tmp");
+        let temp = path.with_extension("json.tmp");
         if std::fs::write(&temp, json)
-            .and_then(|()| std::fs::rename(&temp, &self.path))
+            .and_then(|()| std::fs::rename(&temp, path))
             .is_err()
         {
-            eprintln!("[known_hosts] failed to persist {}", self.path.display());
+            eprintln!("[known_hosts] failed to persist {}", path.display());
         }
     }
 }
@@ -760,7 +768,7 @@ async fn authenticate(
 }
 
 impl SshManager {
-    pub fn new(known_hosts_path: PathBuf) -> Self {
+    pub fn new(known_hosts_path: Option<PathBuf>) -> Self {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             host_keys: Arc::new(HostKeyState::new(known_hosts_path)),
@@ -3315,7 +3323,7 @@ mod tests {
     #[test]
     fn known_hosts_starts_empty_when_file_is_missing() {
         let dir = tempdir().unwrap();
-        let state = HostKeyState::new(dir.path().join("known_hosts.json"));
+        let state = HostKeyState::new(Some(dir.path().join("known_hosts.json")));
 
         assert!(state.list().is_empty());
     }
@@ -3326,7 +3334,7 @@ mod tests {
         let path = dir.path().join("known_hosts.json");
         std::fs::write(&path, b"not json").unwrap();
 
-        let state = HostKeyState::new(path);
+        let state = HostKeyState::new(Some(path));
 
         assert!(state.list().is_empty());
     }
@@ -3335,7 +3343,7 @@ mod tests {
     fn add_persists_entries_and_sorts_them_by_host() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("nested").join("known_hosts.json");
-        let state = HostKeyState::new(path.clone());
+        let state = HostKeyState::new(Some(path.clone()));
 
         state.add("zeta:22".into(), "Rsa".into(), "SHA256:zeta".into(), None);
         state.add(
@@ -3363,7 +3371,7 @@ mod tests {
     #[test]
     fn add_replaces_an_existing_host_entry() {
         let dir = tempdir().unwrap();
-        let state = HostKeyState::new(dir.path().join("known_hosts.json"));
+        let state = HostKeyState::new(Some(dir.path().join("known_hosts.json")));
 
         state.add("host:22".into(), "Rsa".into(), "SHA256:old".into(), None);
         state.add("host:22".into(), "Rsa".into(), "SHA256:new".into(), None);
@@ -3377,14 +3385,14 @@ mod tests {
     fn remove_deletes_and_persists_the_change() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("known_hosts.json");
-        let state = HostKeyState::new(path.clone());
+        let state = HostKeyState::new(Some(path.clone()));
         state.add("keep:22".into(), "Rsa".into(), "SHA256:keep".into(), None);
         state.add("drop:22".into(), "Rsa".into(), "SHA256:drop".into(), None);
 
         state.remove("drop:22");
 
         assert_eq!(state.list().len(), 1);
-        let reloaded = HostKeyState::new(path);
+        let reloaded = HostKeyState::new(Some(path));
         let entries = reloaded.list();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].host, "keep:22");
@@ -3403,7 +3411,7 @@ mod tests {
         }];
         std::fs::write(&path, serde_json::to_vec(&saved).unwrap()).unwrap();
 
-        let state = HostKeyState::new(path);
+        let state = HostKeyState::new(Some(path));
         let entries = state.list();
 
         assert_eq!(entries.len(), 1);
@@ -3414,7 +3422,7 @@ mod tests {
     #[test]
     fn resolve_host_key_forwards_the_decision() {
         let dir = tempdir().unwrap();
-        let manager = SshManager::new(dir.path().join("known_hosts.json"));
+        let manager = SshManager::new(Some(dir.path().join("known_hosts.json")));
         let (sender, mut receiver) = oneshot::channel::<bool>();
         lock(&manager.host_keys.pending).insert("request-1".into(), sender);
 
@@ -3427,7 +3435,7 @@ mod tests {
     #[test]
     fn resolve_host_key_ignores_unknown_requests() {
         let dir = tempdir().unwrap();
-        let manager = SshManager::new(dir.path().join("known_hosts.json"));
+        let manager = SshManager::new(Some(dir.path().join("known_hosts.json")));
 
         manager.resolve_host_key("missing", false);
 
@@ -3723,7 +3731,7 @@ mod tests {
         let path = dir.path().join("known_hosts.json");
         std::fs::write(&path, b"{ definitely not json").unwrap();
 
-        let state = HostKeyState::new(path.clone());
+        let state = HostKeyState::new(Some(path.clone()));
 
         assert!(state.list().is_empty());
         // The unreadable original is kept for inspection, not deleted.

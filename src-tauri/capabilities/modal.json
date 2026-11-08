@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "modal",
+  "description": "Modal windows (host key, prompt, SFTP conflict) only need core APIs — plugin capabilities stay with main/settings",
+  "windows": [
+    "modal-*"
+  ],
+  "permissions": [
+    "core:default"
+  ]
+}

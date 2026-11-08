@@ -26,6 +26,7 @@ pub fn run() {
         .plugin(tauri_plugin_decorum::init())
         .manage(PtySessionManager::default())
         .manage(telnet::TelnetSessionManager::default())
+        .manage(commands::SessionLogRoot::default())
         .manage(ModalManager::default())
         .manage(FontManager::default())
         .setup(|app| {
@@ -54,15 +55,14 @@ pub fn run() {
                 });
             }
 
-            let known_hosts_path = app
-                .path()
-                .app_config_dir()
-                .map(|dir| {
-                    let _ = std::fs::create_dir_all(&dir);
-                    dir.join("known_hosts.json")
-                })
-                .unwrap_or_else(|_| std::env::temp_dir().join("nexterm-known_hosts.json"));
-
+            // Without a usable config directory the known-hosts store stays
+            // in memory only (TOFU re-prompts every session) instead of
+            // silently degrading to a world-readable temp file — same policy
+            // as the vault below.
+            let known_hosts_path = app.path().app_config_dir().ok().and_then(|dir| {
+                std::fs::create_dir_all(&dir).ok()?;
+                Some(dir.join("known_hosts.json"))
+            });
             app.manage(SshManager::new(known_hosts_path));
 
             // Without a config directory the vault refuses to operate (the
@@ -90,6 +90,7 @@ pub fn run() {
             commands::ssh_resize,
             commands::ssh_disconnect,
             commands::set_session_log,
+            commands::set_session_log_root,
             commands::telnet_connect,
             commands::telnet_write,
             commands::telnet_resize,

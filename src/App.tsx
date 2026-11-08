@@ -10,6 +10,7 @@ import { useSftpTransferEvents } from './hooks/useSftpTransferEvents';
 import { useSshHostKeyEvents } from './hooks/useSshHostKeyEvents';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
 import { useSettingsSync } from './hooks/useSettingsSync';
+import { useSessionLogRootSync } from './hooks/useSessionLogRootSync';
 import { useSnippetSync } from './hooks/useSnippetSync';
 import { useWindowState } from './hooks/useWindowState';
 import { useWindowTitle } from './hooks/useWindowTitle';
@@ -23,6 +24,7 @@ function AppShell() {
   useGlobalShortcuts();
   useSettingsSync();
   useSnippetSync();
+  useSessionLogRootSync();
   useVaultEvents();
   useWindowState();
   useWindowTitle();

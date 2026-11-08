@@ -1,11 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default desktop capability",
+  "description": "Default desktop capability for the main and settings windows",
   "windows": [
     "main",
-    "settings",
-    "modal-*"
+    "settings"
   ],
   "permissions": [
     "core:default",

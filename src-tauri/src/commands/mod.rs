@@ -1,5 +1,83 @@
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
 use tauri::{ipc::Response, AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
+
+/// Backend-held root directory for session output logs, synced from settings.
+/// Every `log_path` crossing IPC must live underneath it, so a compromised
+/// renderer cannot point session logging at arbitrary locations.
+#[derive(Default)]
+pub struct SessionLogRoot(Mutex<Option<PathBuf>>);
+
+impl SessionLogRoot {
+    fn set(&self, dir: Option<String>) {
+        let normalized = dir
+            .map(|dir| dir.trim().to_string())
+            .filter(|dir| !dir.is_empty())
+            .map(PathBuf::from);
+        *self.0.lock().unwrap_or_else(|poison| poison.into_inner()) = normalized;
+    }
+
+    /// Returns `false` when logging was requested but the path has no
+    /// configured root or escapes it.
+    fn allows(&self, path: &Option<String>) -> bool {
+        let Some(path) = path else {
+            return true; // logging disabled — nothing to confine
+        };
+        let Some(root) = self
+            .0
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .clone()
+        else {
+            return false;
+        };
+        validate_log_path(&root, path).is_ok()
+    }
+}
+
+fn validate_log_path(root: &Path, path: &str) -> Result<(), String> {
+    let path = PathBuf::from(path);
+    let Some(file_name) = path.file_name() else {
+        return Err("无效的日志文件名".to_string());
+    };
+    let name = file_name.to_string_lossy();
+    if name.chars().any(|c| {
+        c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
+    }) {
+        return Err("日志文件名包含非法字符".to_string());
+    }
+    if path
+        .extension()
+        .map(|ext| !ext.eq_ignore_ascii_case("log"))
+        .unwrap_or(true)
+    {
+        return Err("日志文件必须以 .log 结尾".to_string());
+    }
+    let Some(parent) = path.parent() else {
+        return Err("无效的日志路径".to_string());
+    };
+    // Canonicalize both sides: a lexical prefix check would accept
+    // `<root>\..\evil.log`.
+    let canon_parent = parent
+        .canonicalize()
+        .map_err(|err| format!("日志目录不可用: {err}"))?;
+    let canon_root = root
+        .canonicalize()
+        .map_err(|err| format!("日志目录不可用: {err}"))?;
+    if !canon_parent.starts_with(&canon_root) {
+        return Err("日志路径必须位于配置的日志目录内".to_string());
+    }
+    Ok(())
+}
+
+/// The frontend mirrors its configured log directory into the backend (both
+/// windows may call it; last writer wins with identical values).
+#[tauri::command]
+pub fn set_session_log_root(state: State<'_, SessionLogRoot>, dir: Option<String>) {
+    state.set(dir);
+}
 
 use crate::fonts::{FontManager, SystemFontFace, SystemFontFamily};
 use crate::pty::{PtyPlatformInfo, PtySessionManager};
@@ -44,11 +122,13 @@ pub fn pty_platform_info(state: State<'_, PtySessionManager>) -> PtyPlatformInfo
 pub async fn create_pty_session(
     app: AppHandle,
     state: State<'_, PtySessionManager>,
+    log_root: State<'_, SessionLogRoot>,
     id: String,
     cols: u16,
     rows: u16,
     log_path: Option<String>,
 ) -> Result<String, String> {
+    let log_path = confine_log_path(&log_root, log_path);
     state
         .create_session(app, id, cols, rows, log_path)
         .await
@@ -91,11 +171,22 @@ pub async fn close_pty_session(
         .map_err(|err| err.to_string())
 }
 
+/// A rejected log path only downgrades logging (with a console warning) —
+/// it must never fail the session itself.
+fn confine_log_path(log_root: &SessionLogRoot, log_path: Option<String>) -> Option<String> {
+    if log_root.allows(&log_path) {
+        return log_path;
+    }
+    eprintln!("[session-log] rejecting log path outside the configured log root");
+    None
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn ssh_connect(
     app: AppHandle,
     state: State<'_, SshManager>,
+    log_root: State<'_, SessionLogRoot>,
     id: String,
     host: String,
     port: u16,
@@ -110,6 +201,7 @@ pub async fn ssh_connect(
     cols: u16,
     rows: u16,
 ) -> Result<String, String> {
+    let log_path = confine_log_path(&log_root, log_path);
     state
         .connect(
             app,
@@ -138,9 +230,15 @@ pub async fn set_session_log(
     ssh: State<'_, SshManager>,
     pty: State<'_, PtySessionManager>,
     telnet: State<'_, TelnetSessionManager>,
+    log_root: State<'_, SessionLogRoot>,
     id: String,
     log_path: Option<String>,
 ) -> Result<(), String> {
+    // Explicit user action: a confined-out path is reported, not silently
+    // downgraded.
+    if !log_root.allows(&log_path) {
+        return Err("日志路径必须位于配置的日志目录内".to_string());
+    }
     if ssh.set_log(&id, log_path.as_deref()).is_ok() {
         return Ok(());
     }
@@ -157,11 +255,13 @@ pub async fn set_session_log(
 pub async fn telnet_connect(
     app: AppHandle,
     state: State<'_, TelnetSessionManager>,
+    log_root: State<'_, SessionLogRoot>,
     id: String,
     host: String,
     port: u16,
     log_path: Option<String>,
 ) -> Result<String, String> {
+    let log_path = confine_log_path(&log_root, log_path);
     state
         .connect(app, id, host, port, log_path)
         .await
