@@ -33,7 +33,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::{
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom},
     net::{TcpListener, TcpStream},
-    sync::oneshot,
+    sync::{oneshot, watch},
 };
 use uuid::Uuid;
 use walkdir::WalkDir;
@@ -86,19 +86,44 @@ pub struct JumpTarget {
     pub passphrase: Option<String>,
 }
 
-/// The fingerprint-wait cancellation shared by the jump and target
-/// handshakes: `ssh_disconnect` sends once, and whichever handshake is
-/// waiting for a host-key decision takes the receiver first.
+/// Cancellation shared by the jump and target handshakes: `ssh_disconnect`
+/// flips the flag once and every leg can subscribe independently. A one-shot
+/// receiver would be consumed by whichever handshake reaches the host-key
+/// wait first, leaving the other leg's decision uninterruptible.
 #[derive(Clone)]
-struct SharedCancel(Arc<Mutex<Option<oneshot::Receiver<()>>>>);
+struct SharedCancel {
+    tx: Arc<watch::Sender<bool>>,
+    rx: watch::Receiver<bool>,
+}
 
 impl SharedCancel {
-    fn new(receiver: oneshot::Receiver<()>) -> Self {
-        Self(Arc::new(Mutex::new(Some(receiver))))
+    fn new() -> Self {
+        let (tx, rx) = watch::channel(false);
+        Self {
+            tx: Arc::new(tx),
+            rx,
+        }
     }
 
-    fn take(&self) -> Option<oneshot::Receiver<()>> {
-        lock(&self.0).take()
+    fn cancel(&self) {
+        let _ = self.tx.send(true);
+    }
+
+    fn is_cancelled(&self) -> bool {
+        *self.rx.borrow()
+    }
+
+    async fn cancelled(&self) {
+        let mut rx = self.rx.clone();
+        loop {
+            if *rx.borrow_and_update() {
+                return;
+            }
+            if rx.changed().await.is_err() {
+                // Sender dropped (app shutting down) counts as cancellation.
+                return;
+            }
+        }
     }
 }
 
@@ -284,7 +309,7 @@ pub struct SshManager {
 }
 
 struct ConnectHandle {
-    cancel: oneshot::Sender<()>,
+    cancel: SharedCancel,
     cancelled: Arc<AtomicBool>,
 }
 
@@ -396,24 +421,13 @@ impl client::Handler for Client {
             },
         );
 
-        let mut cancel = self.cancel.take();
-        // A dropped sender (app shutting down) counts as a rejection.
         let response = async { receiver.await.unwrap_or_default() };
-        let cancelled = async {
-            match cancel.as_mut() {
-                // `&mut Receiver` is itself a Future.
-                Some(cancel) => {
-                    let _ = cancel.await;
-                }
-                None => std::future::pending::<()>().await,
-            }
-        };
 
         // The dialog waits for the user's answer, a disconnect while it is
         // open, or its 120s timeout — whichever comes first.
         let accepted = tokio::select! {
             accepted = response => accepted,
-            _ = cancelled => false,
+            _ = self.cancel.cancelled() => false,
             _ = tokio::time::sleep(Duration::from_secs(120)) => {
                 // Tell every window: the late "trust" click would otherwise be
                 // silently dropped while the dialog stays open.
@@ -432,6 +446,11 @@ impl client::Handler for Client {
         lock(&self.host_key.pending).remove(&request_id);
 
         if accepted {
+            // A cancel that races the user's "trust" click must not leave a
+            // TOFU record behind for a connection nobody is going to use.
+            if self.cancel.is_cancelled() {
+                return Ok(false);
+            }
             self.host_key.add(
                 self.host_label.clone(),
                 algorithm,
@@ -582,6 +601,43 @@ fn emit_progress(app: &AppHandle, payload: &SftpProgressPayload) {
 
 fn emit_done(app: &AppHandle, payload: &SftpTransferDonePayload) {
     let _ = app.emit("sftp-transfer-done", payload.clone());
+}
+
+/// Spawn a transfer task with a panic backstop: the done event and the
+/// transfers-map cleanup must happen even if the task panics, or the queue
+/// would list the transfer as running forever and pause/cancel would act on
+/// a dead entry.
+fn spawn_transfer_task(
+    app_handle: AppHandle,
+    controls: Arc<Mutex<HashMap<String, Arc<TransferControl>>>>,
+    event_id: String,
+    direction: &'static str,
+    name: String,
+    task: tokio::task::JoinHandle<SftpTransferDonePayload>,
+) {
+    tokio::spawn(async move {
+        let payload = match task.await {
+            Ok(payload) => payload,
+            Err(join_error) => {
+                eprintln!("[sftp] transfer task aborted: {join_error}");
+                SftpTransferDonePayload {
+                    transfer_id: event_id.clone(),
+                    direction: direction.to_string(),
+                    name,
+                    success: false,
+                    cancelled: false,
+                    disconnected: false,
+                    error: Some("传输任务异常终止".to_string()),
+                    transferred: 0,
+                    total: 0,
+                    files_done: 0,
+                    files_total: 0,
+                }
+            }
+        };
+        emit_done(&app_handle, &payload);
+        lock(&controls).remove(&event_id);
+    });
 }
 
 /// Stop every port forward bound to session `id` and notify the frontend.
@@ -778,7 +834,7 @@ impl SshManager {
             return Err(anyhow!("SSH session id already exists"));
         }
 
-        let (cancel_sender, cancel_receiver) = oneshot::channel();
+        let cancel_handle = SharedCancel::new();
         {
             let mut connecting = lock(&self.connecting);
             if connecting.contains_key(&id) {
@@ -787,7 +843,7 @@ impl SshManager {
             connecting.insert(
                 id.clone(),
                 ConnectHandle {
-                    cancel: cancel_sender,
+                    cancel: cancel_handle.clone(),
                     cancelled: Arc::new(AtomicBool::new(false)),
                 },
             );
@@ -797,8 +853,21 @@ impl SshManager {
             id: id.clone(),
         };
 
+        // Handshake timeouts, outermost first:
+        // - TCP: 15s, so a host that accepts nothing fails fast.
+        // - inactivity_timeout (russh): 30s, covers stalls after the banner
+        //   (KEX/auth). russh 0.63 arms it for the whole transport loop and
+        //   the timer only resets on loop iterations, so the 120s host-key
+        //   decision (which suspends the loop inside packet processing) does
+        //   not consume the budget.
+        // - CONNECT_DEADLINE: outer bound for a server that accepts TCP but
+        //   never sends its SSH banner — read_ssh_id runs before russh's
+        //   timers. 150s = the 120s host-key dialog + handshake slack.
+        const TCP_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+        const CONNECT_DEADLINE: Duration = Duration::from_secs(150);
+
         let config = Arc::new(client::Config {
-            inactivity_timeout: None,
+            inactivity_timeout: Some(Duration::from_secs(30)),
             keepalive_interval: Some(Duration::from_secs(30)),
             keepalive_max: 3,
             ..Default::default()
@@ -812,7 +881,7 @@ impl SshManager {
             port,
             host_label: format!("{host}:{port}"),
             remote_forwards: remote_forwards.clone(),
-            cancel: SharedCancel::new(cancel_receiver),
+            cancel: cancel_handle.clone(),
         };
 
         // With a jump host the target handshake runs over a direct-tcpip
@@ -820,13 +889,43 @@ impl SshManager {
         // transport is kept alive alongside the session for as long as the
         // target connection lives.
         let (mut handle, jump_handle) = match jump {
-            None => (
-                client::connect(config.clone(), (host.as_str(), port), client)
-                    .await
-                    .with_context(|| format!("failed to connect to {host}:{port}"))?,
-                None,
-            ),
+            None => {
+                let stream = tokio::time::timeout(
+                    TCP_CONNECT_TIMEOUT,
+                    TcpStream::connect((host.as_str(), port)),
+                )
+                .await
+                .map_err(|_| {
+                    anyhow!(
+                        "TCP connection to {host}:{port} timed out after {TCP_CONNECT_TIMEOUT:?}"
+                    )
+                })?
+                .with_context(|| format!("failed to connect to {host}:{port}"))?;
+                let handle = tokio::time::timeout(
+                    CONNECT_DEADLINE,
+                    client::connect_stream(config, stream, client),
+                )
+                .await
+                .map_err(|_| anyhow!("SSH handshake with {host}:{port} timed out"))?
+                .with_context(|| format!("failed to connect to {host}:{port}"))?;
+                (handle, None)
+            }
             Some(jump) => {
+                let jump_stream = tokio::time::timeout(
+                    TCP_CONNECT_TIMEOUT,
+                    TcpStream::connect((jump.host.as_str(), jump.port)),
+                )
+                .await
+                .map_err(|_| {
+                    anyhow!(
+                        "TCP connection to jump host {}:{} timed out after {TCP_CONNECT_TIMEOUT:?}",
+                        jump.host,
+                        jump.port
+                    )
+                })?
+                .with_context(|| {
+                    format!("failed to connect to jump host {}:{}", jump.host, jump.port)
+                })?;
                 let jump_client = Client {
                     host_key: self.host_keys(),
                     app: app.clone(),
@@ -836,12 +935,21 @@ impl SshManager {
                     remote_forwards: Arc::new(Mutex::new(HashMap::new())),
                     cancel: client.cancel.clone(),
                 };
-                let mut jump_connection =
-                    client::connect(config.clone(), (jump.host.as_str(), jump.port), jump_client)
-                        .await
-                        .with_context(|| {
-                            format!("failed to connect to jump host {}:{}", jump.host, jump.port)
-                        })?;
+                let mut jump_connection = tokio::time::timeout(
+                    CONNECT_DEADLINE,
+                    client::connect_stream(config.clone(), jump_stream, jump_client),
+                )
+                .await
+                .map_err(|_| {
+                    anyhow!(
+                        "SSH handshake with jump host {}:{} timed out",
+                        jump.host,
+                        jump.port
+                    )
+                })?
+                .with_context(|| {
+                    format!("failed to connect to jump host {}:{}", jump.host, jump.port)
+                })?;
 
                 authenticate(
                     &mut jump_connection,
@@ -860,11 +968,13 @@ impl SshManager {
                     .await
                     .context("failed to open tunnel through jump host")?;
 
-                let handle = client::connect_stream(config, channel.into_stream(), client)
-                    .await
-                    .with_context(|| {
-                        format!("failed to connect to {host}:{port} through jump host")
-                    })?;
+                let handle = tokio::time::timeout(
+                    CONNECT_DEADLINE,
+                    client::connect_stream(config, channel.into_stream(), client),
+                )
+                .await
+                .map_err(|_| anyhow!("SSH handshake with {host}:{port} timed out"))?
+                .with_context(|| format!("failed to connect to {host}:{port} through jump host"))?;
                 (handle, Some(Arc::new(jump_connection)))
             }
         };
@@ -988,7 +1098,7 @@ impl SshManager {
         // decision) has no live session yet — cancel it outright.
         if let Some(handle) = lock(&self.connecting).remove(id) {
             handle.cancelled.store(true, Ordering::SeqCst);
-            let _ = handle.cancel.send(());
+            handle.cancel.cancel();
             return Ok(());
         }
 
@@ -1070,59 +1180,63 @@ impl SshManager {
         let controls = self.transfers.clone();
         let conflicts = self.conflicts.clone();
 
-        tokio::spawn(async move {
+        let task = {
             let direction = "download".to_string();
-            let result = run_download(
-                sftp,
-                &app_handle,
-                &event_id,
-                &name,
-                &remote_path,
-                &local_path,
-                options,
-                control.clone(),
-                conflicts,
-            )
-            .await;
-            let cancelled = control.cancelled.load(Ordering::SeqCst);
-            let disconnected = result.is_err()
-                && !cancelled
-                && weak_handle
-                    .upgrade()
-                    .map(|handle| handle.is_closed())
-                    .unwrap_or(true);
+            let name = name.clone();
+            let event_id = event_id.clone();
+            let app_handle = app_handle.clone();
+            tokio::spawn(async move {
+                let result = run_download(
+                    sftp,
+                    &app_handle,
+                    &event_id,
+                    &name,
+                    &remote_path,
+                    &local_path,
+                    options,
+                    control.clone(),
+                    conflicts,
+                )
+                .await;
+                let cancelled = control.cancelled.load(Ordering::SeqCst);
+                let disconnected = result.is_err()
+                    && !cancelled
+                    && weak_handle
+                        .upgrade()
+                        .map(|handle| handle.is_closed())
+                        .unwrap_or(true);
 
-            let payload = match result {
-                Ok(report) => SftpTransferDonePayload {
-                    transfer_id: event_id.clone(),
-                    direction,
-                    name,
-                    success: true,
-                    cancelled: false,
-                    disconnected: false,
-                    error: None,
-                    transferred: report.transferred,
-                    total: report.total,
-                    files_done: report.files_done,
-                    files_total: report.files_total,
-                },
-                Err(failure) => SftpTransferDonePayload {
-                    transfer_id: event_id.clone(),
-                    direction,
-                    name,
-                    success: false,
-                    cancelled,
-                    disconnected,
-                    error: Some(failure.error.to_string()),
-                    transferred: failure.report.transferred,
-                    total: failure.report.total,
-                    files_done: failure.report.files_done,
-                    files_total: failure.report.files_total,
-                },
-            };
-            emit_done(&app_handle, &payload);
-            lock(&controls).remove(&event_id);
-        });
+                match result {
+                    Ok(report) => SftpTransferDonePayload {
+                        transfer_id: event_id,
+                        direction,
+                        name,
+                        success: true,
+                        cancelled: false,
+                        disconnected: false,
+                        error: None,
+                        transferred: report.transferred,
+                        total: report.total,
+                        files_done: report.files_done,
+                        files_total: report.files_total,
+                    },
+                    Err(failure) => SftpTransferDonePayload {
+                        transfer_id: event_id,
+                        direction,
+                        name,
+                        success: false,
+                        cancelled,
+                        disconnected,
+                        error: Some(failure.error.to_string()),
+                        transferred: failure.report.transferred,
+                        total: failure.report.total,
+                        files_done: failure.report.files_done,
+                        files_total: failure.report.files_total,
+                    },
+                }
+            })
+        };
+        spawn_transfer_task(app_handle, controls, event_id, "download", name, task);
 
         Ok(transfer_id)
     }
@@ -1144,59 +1258,63 @@ impl SshManager {
         let controls = self.transfers.clone();
         let conflicts = self.conflicts.clone();
 
-        tokio::spawn(async move {
+        let task = {
             let direction = "upload".to_string();
-            let result = run_upload(
-                sftp,
-                &app_handle,
-                &event_id,
-                &name,
-                &local_path,
-                &remote_path,
-                options,
-                control.clone(),
-                conflicts,
-            )
-            .await;
-            let cancelled = control.cancelled.load(Ordering::SeqCst);
-            let disconnected = result.is_err()
-                && !cancelled
-                && weak_handle
-                    .upgrade()
-                    .map(|handle| handle.is_closed())
-                    .unwrap_or(true);
+            let name = name.clone();
+            let event_id = event_id.clone();
+            let app_handle = app_handle.clone();
+            tokio::spawn(async move {
+                let result = run_upload(
+                    sftp,
+                    &app_handle,
+                    &event_id,
+                    &name,
+                    &local_path,
+                    &remote_path,
+                    options,
+                    control.clone(),
+                    conflicts,
+                )
+                .await;
+                let cancelled = control.cancelled.load(Ordering::SeqCst);
+                let disconnected = result.is_err()
+                    && !cancelled
+                    && weak_handle
+                        .upgrade()
+                        .map(|handle| handle.is_closed())
+                        .unwrap_or(true);
 
-            let payload = match result {
-                Ok(report) => SftpTransferDonePayload {
-                    transfer_id: event_id.clone(),
-                    direction,
-                    name,
-                    success: true,
-                    cancelled: false,
-                    disconnected: false,
-                    error: None,
-                    transferred: report.transferred,
-                    total: report.total,
-                    files_done: report.files_done,
-                    files_total: report.files_total,
-                },
-                Err(failure) => SftpTransferDonePayload {
-                    transfer_id: event_id.clone(),
-                    direction,
-                    name,
-                    success: false,
-                    cancelled,
-                    disconnected,
-                    error: Some(failure.error.to_string()),
-                    transferred: failure.report.transferred,
-                    total: failure.report.total,
-                    files_done: failure.report.files_done,
-                    files_total: failure.report.files_total,
-                },
-            };
-            emit_done(&app_handle, &payload);
-            lock(&controls).remove(&event_id);
-        });
+                match result {
+                    Ok(report) => SftpTransferDonePayload {
+                        transfer_id: event_id,
+                        direction,
+                        name,
+                        success: true,
+                        cancelled: false,
+                        disconnected: false,
+                        error: None,
+                        transferred: report.transferred,
+                        total: report.total,
+                        files_done: report.files_done,
+                        files_total: report.files_total,
+                    },
+                    Err(failure) => SftpTransferDonePayload {
+                        transfer_id: event_id,
+                        direction,
+                        name,
+                        success: false,
+                        cancelled,
+                        disconnected,
+                        error: Some(failure.error.to_string()),
+                        transferred: failure.report.transferred,
+                        total: failure.report.total,
+                        files_done: failure.report.files_done,
+                        files_total: failure.report.files_total,
+                    },
+                }
+            })
+        };
+        spawn_transfer_task(app_handle, controls, event_id, "upload", name, task);
 
         Ok(transfer_id)
     }
@@ -1321,6 +1439,9 @@ impl SshManager {
                     .context("failed to read bind address")?
                     .port();
                 let task = spawn_forward_listener(
+                    app.clone(),
+                    self.forwards.clone(),
+                    id.clone(),
                     listener,
                     connection.handle.clone(),
                     kind == "dynamic",
@@ -1423,7 +1544,17 @@ impl SshManager {
         let mut cached = connection.sftp.lock().await;
 
         if let Some(session) = cached.as_ref() {
-            return Ok(session.clone());
+            // The cached subsystem channel can die while the SSH transport
+            // stays up (server kills the subsystem, resource limits). Probe
+            // cheaply and reopen once instead of failing every file operation
+            // until a full reconnect.
+            match tokio::time::timeout(Duration::from_secs(10), session.metadata(".")).await {
+                Ok(Ok(_)) => return Ok(session.clone()),
+                _ => {
+                    eprintln!("[ssh] cached SFTP channel is no longer usable; reopening");
+                    *cached = None;
+                }
+            }
         }
 
         let channel = connection
@@ -1670,8 +1801,15 @@ async fn unique_remote_path(sftp: &SftpSession, path: &str) -> String {
             format!("{directory}/{candidate_name}")
         };
 
-        if !sftp.try_exists(&candidate).await.unwrap_or(false) {
-            return candidate;
+        match sftp.try_exists(&candidate).await {
+            Ok(false) => return candidate,
+            Ok(true) => {}
+            Err(error) => {
+                // An inconclusive probe must not hand out a name that may
+                // already exist for overwrite; keep searching (harmless) and
+                // surface the anomaly.
+                eprintln!("[sftp] failed to probe {candidate}: {error}");
+            }
         }
     }
 
@@ -1707,8 +1845,21 @@ async fn ensure_remote_dir(sftp: &SftpSession, path: &str) -> anyhow::Result<()>
             current.push_str(part);
         }
 
-        if !sftp.try_exists(&current).await.unwrap_or(false) {
-            let _ = sftp.create_dir(&current).await;
+        match sftp.try_exists(&current).await {
+            Ok(true) => {}
+            Ok(false) => {
+                if let Err(error) = sftp.create_dir(&current).await {
+                    eprintln!("[sftp] failed to create remote directory {current}: {error}");
+                }
+            }
+            Err(error) => {
+                // Probe failed: attempt the create anyway and surface the
+                // failure instead of leaving it to a confusing open error.
+                eprintln!("[sftp] failed to probe remote directory {current}: {error}");
+                if let Err(error) = sftp.create_dir(&current).await {
+                    eprintln!("[sftp] failed to create remote directory {current}: {error}");
+                }
+            }
         }
     }
 
@@ -2617,7 +2768,9 @@ async fn download_file(
     drop(local);
     drop(remote);
 
-    let _ = tokio::fs::remove_file(local_path).await;
+    // std/tokio rename already replaces an existing target on every platform
+    // (MOVEFILE_REPLACE_EXISTING on Windows); the previous pre-delete created
+    // a pointless window where the target is missing if the rename fails.
     tokio::fs::rename(&part_path, local_path)
         .await
         .context("failed to finalize local file")?;
@@ -2811,7 +2964,11 @@ async fn authenticate_with_agent(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_forward_listener(
+    app: AppHandle,
+    forwards: Arc<Mutex<HashMap<String, ForwardHandle>>>,
+    forward_id: String,
     listener: TcpListener,
     handle: Arc<client::Handle<Client>>,
     dynamic: bool,
@@ -2820,8 +2977,18 @@ fn spawn_forward_listener(
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         loop {
-            let Ok((mut socket, peer)) = listener.accept().await else {
-                break;
+            let (mut socket, peer) = match listener.accept().await {
+                Ok(accepted) => accepted,
+                Err(error) => {
+                    // A listener that dies (fd exhaustion, external close)
+                    // must not leave the forward listed as active while
+                    // nothing is listening on the port.
+                    eprintln!("[port-forward] {forward_id} listener failed: {error}");
+                    if lock(&forwards).remove(&forward_id).is_some() {
+                        let _ = app.emit("port-forwards-changed", ());
+                    }
+                    break;
+                }
             };
 
             let handle = handle.clone();
@@ -2829,9 +2996,16 @@ fn spawn_forward_listener(
 
             tokio::spawn(async move {
                 let (host, port) = if dynamic {
-                    match socks5_handshake(&mut socket).await {
-                        Ok(target) => target,
-                        Err(_) => {
+                    // An idle local process must not be able to pin a task
+                    // (and a socket) forever by never speaking SOCKS5.
+                    match tokio::time::timeout(
+                        Duration::from_secs(10),
+                        socks5_handshake(&mut socket),
+                    )
+                    .await
+                    {
+                        Ok(Ok(target)) => target,
+                        _ => {
                             let _ = socket.write_all(&[5, 7, 0, 1, 0, 0, 0, 0, 0, 0]).await;
                             return;
                         }
