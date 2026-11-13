@@ -852,7 +852,7 @@ export default function SettingsWindow() {
               <option value="en-US">English</option>
             </Select>
             <p className="mt-1 text-[10px] text-muted-foreground">
-              核心工作区（会话、终端、连接表单）已支持中英文，设置面板仍在逐步迁移。
+              部分面板暂未跟随界面语言，仍以中文显示。
             </p>
           </div>
         </div>
@@ -1531,9 +1531,7 @@ export default function SettingsWindow() {
 
       <div className="space-y-2 rounded-sm border border-border bg-surface p-3">
         <div className="flex items-center gap-2">
-          <p className="flex-1 text-[11px] text-muted">
-            检查新版本（更新源可在 tauri.conf.json 配置）
-          </p>
+          <p className="flex-1 text-[11px] text-muted">检查是否有可用的新版本。</p>
           <Button
             size="sm"
             variant="secondary"
