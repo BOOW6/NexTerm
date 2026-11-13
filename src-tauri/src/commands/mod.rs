@@ -152,11 +152,9 @@ pub async fn probe_shell_availability(
 ) -> Result<Vec<Option<String>>, String> {
     // Filesystem lookups (and a cold `PATH` scan on network drives) can block;
     // keep them off the IPC thread.
-    tokio::task::spawn_blocking(move || {
-        candidates.iter().map(|c| resolve_executable(c)).collect()
-    })
-    .await
-    .map_err(|err| format!("shell probe failed: {err}"))
+    tokio::task::spawn_blocking(move || candidates.iter().map(|c| resolve_executable(c)).collect())
+        .await
+        .map_err(|err| format!("shell probe failed: {err}"))
 }
 
 fn resolve_executable(candidate: &str) -> Option<String> {
@@ -167,7 +165,7 @@ fn resolve_executable(candidate: &str) -> Option<String> {
     let expanded = expand_env_vars(candidate);
     let path = Path::new(&expanded);
     if path.components().count() > 1 {
-        return path.is_file().then(|| expanded);
+        return path.is_file().then_some(expanded);
     }
     if path.is_file() {
         return Some(expanded);
@@ -819,7 +817,10 @@ mod tests {
 
     #[test]
     fn shell_probe_reports_missing_bare_name() {
-        assert_eq!(resolve_executable("definitely-not-a-real-shell-3f9a2b"), None);
+        assert_eq!(
+            resolve_executable("definitely-not-a-real-shell-3f9a2b"),
+            None
+        );
     }
 
     #[test]
@@ -842,7 +843,10 @@ mod tests {
             "%NEXTERM_PROBE_TEST_UNDEFINED_VAR%"
         );
         assert_eq!(expand_env_vars("no variables here"), "no variables here");
-        assert_eq!(expand_env_vars("trailing percent 100%"), "trailing percent 100%");
+        assert_eq!(
+            expand_env_vars("trailing percent 100%"),
+            "trailing percent 100%"
+        );
     }
 
     #[test]
