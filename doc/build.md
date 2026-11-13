@@ -222,6 +222,31 @@ writeTextFile(path, contents): Promise<void>
 3. **发布**：在 GitHub Release 上传安装包与 `.sig`，并上传 `latest.json`（`version`、`pub_date`、`platforms.<target>` 的 `signature` 与 `url` 指向安装包资产）。
 4. 更新源默认指向 `https://github.com/BOOW6/NexTerm/releases/latest/download/latest.json`，仓库迁移时同步修改 `tauri.conf.json`。
 
+### CI 发布（.github/workflows/release.yml）
+
+推送 `v*` 标签（或在 Actions 页手动 workflow_dispatch）会触发三平台（Windows / macOS / Linux）构建，经 [`tauri-action`](https://github.com/tauri-apps/tauri-action) 产出安装包与签名更新产物，并创建 **Draft** Release。`src-tauri/tauri.release.conf.json` 仅在 CI 中开启 `createUpdaterArtifacts`，日常开发构建不受影响。
+
+所需仓库 Secrets：
+
+| Secret                               | 内容                                                                     |
+| ------------------------------------ | ------------------------------------------------------------------------ |
+| `TAURI_SIGNING_PRIVATE_KEY`          | updater 签名私钥的**文件内容**（即 `~/.tauri/nexterm-updater.key` 全文） |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 生成该私钥时设置的密码（无密码则留空）                                   |
+
+完整发布流程：
+
+1. 版本号三处同步：`src-tauri/tauri.conf.json` 的 `version`、`package.json`、`src-tauri/Cargo.toml`。
+2. 全量校验通过：`npm run check`、`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`。
+3. 提交并打标签推送：`git tag vX.Y.Z && git push origin vX.Y.Z`，等待 Release workflow 完成。
+4. 检查 Draft Release 的产物（三平台安装包 + `.sig` + `latest.json`），编辑 Release 说明后点击 **Publish**；发布后 `latest.json` 才会出现在 `/releases/latest/download/`，旧版本的「检查更新」即可命中。
+
+签名与公证现状（发布前需逐项决策）：
+
+- **updater 签名（minisign）**：已自动化，缺失 Secret 时 workflow 构建会失败——这是预期行为，防止发布未签名更新。
+- **Windows 安装包代码签名**：未配置。不签名时 SmartScreen 会拦截安装包；可选 EV 证书（signtool）或 Azure Trusted Signing，接入点为 `bundle.windows` 的证书配置或专用 CI step。
+- **macOS 公证（notarization）**：未配置。未公证的 DMG 需要用户手动绕过 Gatekeeper；接入需要 Apple Developer 账号与 `APPLE_CERTIFICATE` 系列 Secrets。
+- **Windows 便携版（zip）**：未提供——需先验证 ConPTY 资源（`conpty.dll` / `OpenConsole.exe`）在免安装布局下的解压路径，避免发布损坏的便携包。
+
 ## Windows ConPTY
 
 Windows 构建会通过 `conpty-assets` 随包携带 Microsoft ConPTY（x64）。应用启动时会将其中的 `conpty.dll` / `OpenConsole.exe` 解压到应用本地数据目录，并在创建第一个 PTY 之前加载。
