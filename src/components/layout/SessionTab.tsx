@@ -10,6 +10,8 @@ import {
   splitSessionPanel
 } from '../../features/workspace/sessionActions';
 import { showNativeContextMenu } from '../../lib/appWindows';
+import { useBroadcastStore, broadcastCount } from '../../stores/broadcastStore';
+import { toast } from '../ui/toastStore';
 import { SESSION_KIND_ICON, sessionStatusDot } from '../../lib/sessionVisuals';
 import { useI18n } from '../../i18n';
 
@@ -57,6 +59,21 @@ export default function SessionTab({ api, params, containerApi }: IDockviewPanel
         label: t('tab.reconnect'),
         run: () => reconnectSessionPanels(containerApi, sessionId)
       });
+
+      if (session) {
+        const joined = useBroadcastStore.getState().ids.includes(sessionId);
+        actions.push({
+          label: joined ? t('tab.broadcastLeave') : t('tab.broadcastJoin'),
+          run: () => {
+            const nowJoined = useBroadcastStore.getState().toggle(sessionId);
+            const count = broadcastCount();
+            toast({
+              title: nowJoined ? t('broadcast.joinToast', { count }) : t('broadcast.leaveToast'),
+              variant: 'success'
+            });
+          }
+        });
+      }
     }
 
     actions.push(

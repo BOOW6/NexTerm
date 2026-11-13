@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { cn } from '../../lib/cn';
 import { useSessionStore } from '../../stores/sessionStore';
+import { useBroadcastStore } from '../../stores/broadcastStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { SESSION_KIND_LABEL_KEY, sessionSubtitle, type SessionStatus } from '../../types/session';
 import { useI18n } from '../../i18n';
@@ -16,6 +17,7 @@ const statusLabelKeys: Record<SessionStatus, string> = {
 export default function StatusBar() {
   const { t } = useI18n();
   const activeSessionId = useWorkspaceStore((state) => state.activeSessionId);
+  const broadcastIds = useBroadcastStore((state) => state.ids);
   const session = useSessionStore((state) =>
     state.sessions.find((item) => item.id === activeSessionId)
   );
@@ -26,6 +28,11 @@ export default function StatusBar() {
     const timer = window.setInterval(() => setClock(new Date()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  const sessions = useSessionStore((state) => state.sessions);
+  const liveBroadcastCount = broadcastIds.filter((id) =>
+    sessions.some((session) => session.id === id)
+  ).length;
 
   return (
     <footer className="app-statusbar flex h-6 shrink-0 items-center justify-between border-t border-border bg-surface-header px-2 text-[11px] text-muted">
@@ -46,6 +53,16 @@ export default function StatusBar() {
         ) : (
           <span>{t('status.noSession')}</span>
         )}
+        {liveBroadcastCount >= 2 ? (
+          <button
+            type="button"
+            onClick={() => useBroadcastStore.getState().clear()}
+            className="ml-2 shrink-0 rounded-sm bg-accent/10 px-1.5 py-0.5 font-medium text-accent transition-colors hover:bg-accent/20"
+            title={t('status.broadcastHint')}
+          >
+            {t('status.broadcast', { count: liveBroadcastCount })}
+          </button>
+        ) : null}
       </div>
 
       <div className="flex items-center gap-2">

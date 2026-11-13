@@ -37,6 +37,7 @@ import {
   writeTelnet
 } from '../../hooks/useTauriTelnet';
 import { useConnectionStore } from '../../stores/connectionStore';
+import { broadcastInput } from '../../stores/broadcastStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTransferStore } from '../../stores/transferStore';
@@ -933,6 +934,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
           dataDisposable = instance.onData((data) => {
             void writeSsh(connectedId, data);
+            broadcastInput(sessionId, data);
           });
           resizeDisposable = instance.onResize(({ cols, rows }) => {
             sendBackendResize(cols, rows);
@@ -1008,6 +1010,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
               return;
             }
             clearTransportListeners();
+            useConnectionStore.getState().removeTransport(sessionId, 'pty', id);
             backendId = '';
             backendIdRef.current = '';
             resizeTarget = null;
@@ -1039,6 +1042,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             localShell
           );
           if (disposed || generation !== transportGeneration || closedEarly) {
+            useConnectionStore.getState().removeTransport(sessionId, 'pty', createdId);
             void closePtySession(createdId);
             if (closedEarly && !disposed && generation === transportGeneration) {
               clearTransportListeners();
@@ -1056,6 +1060,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           backendId = createdId;
           backendIdRef.current = createdId;
           resizeTarget = { id: createdId, transport: 'local' };
+          useConnectionStore.getState().addTransport(sessionId, 'pty', createdId);
           useSessionStore.getState().setStatus(sessionId, 'connected');
 
           // A fit may have happened while the PTY was being created. Sync the
@@ -1064,6 +1069,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
           dataDisposable = instance.onData((data) => {
             void writePty(createdId, data);
+            broadcastInput(sessionId, data);
           });
           resizeDisposable = instance.onResize(({ cols, rows }) => {
             sendBackendResize(cols, rows);
@@ -1129,6 +1135,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
               return;
             }
             clearTransportListeners();
+            useConnectionStore.getState().removeTransport(sessionId, 'telnet', id);
             backendId = '';
             backendIdRef.current = '';
             resizeTarget = null;
@@ -1152,6 +1159,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             logPath: sessionLogTarget() || undefined
           });
           if (disposed || generation !== transportGeneration || closedEarly) {
+            useConnectionStore.getState().removeTransport(sessionId, 'telnet', connectedId);
             void disconnectTelnet(connectedId);
             if (closedEarly && !disposed && generation === transportGeneration) {
               clearTransportListeners();
@@ -1169,10 +1177,12 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           backendId = connectedId;
           backendIdRef.current = connectedId;
           resizeTarget = { id: connectedId, transport: 'telnet' };
+          useConnectionStore.getState().addTransport(sessionId, 'telnet', connectedId);
           useSessionStore.getState().setStatus(sessionId, 'connected');
 
           dataDisposable = instance.onData((data) => {
             void writeTelnet(connectedId, data);
+            broadcastInput(sessionId, data);
           });
           resizeDisposable = instance.onResize(({ cols, rows }) => {
             sendBackendResize(cols, rows);

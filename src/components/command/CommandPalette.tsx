@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  Radio,
   ArrowUpDown,
   Columns2,
   CornerDownLeft,
@@ -30,6 +31,7 @@ import { openSettingsWindow } from '../../lib/appWindows';
 import { useQuickConnectLauncher } from '../../features/workspace/useQuickConnectLauncher';
 import { dispatchTerminalAction } from '../../lib/terminalCommands';
 import { toast } from '../ui/toastStore';
+import { useBroadcastStore, broadcastCount } from '../../stores/broadcastStore';
 import { SESSION_KIND_LABEL_KEY, sessionSubtitle } from '../../types/session';
 import { useI18n } from '../../i18n';
 import { SESSION_KIND_ICON } from '../../lib/sessionVisuals';
@@ -215,6 +217,23 @@ export default function CommandPalette() {
           icon: RotateCw,
           keywords: 'reconnect 重连',
           run: () => reconnectSession(activeSession.id)
+        },
+        {
+          id: 'broadcast',
+          group: 'commands',
+          label: useBroadcastStore.getState().ids.includes(activeSession.id)
+            ? t('palette.leaveBroadcast')
+            : t('palette.joinBroadcast'),
+          icon: Radio,
+          keywords: 'broadcast input 广播 输入 同步 多开',
+          run: () => {
+            const joined = useBroadcastStore.getState().toggle(activeSession.id);
+            const count = broadcastCount();
+            toast({
+              title: joined ? t('broadcast.joinToast', { count }) : t('broadcast.leaveToast'),
+              variant: 'success'
+            });
+          }
         },
         {
           id: 'favorite',
