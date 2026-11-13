@@ -2,17 +2,19 @@ import { useEffect, useState } from 'react';
 import { cn } from '../../lib/cn';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
-import { SESSION_KIND_LABEL, sessionSubtitle, type SessionStatus } from '../../types/session';
+import { SESSION_KIND_LABEL_KEY, sessionSubtitle, type SessionStatus } from '../../types/session';
+import { useI18n } from '../../i18n';
 import { sessionStatusDot } from '../../lib/sessionVisuals';
 
-const statusLabels: Record<SessionStatus, string> = {
-  idle: '未连接',
-  connecting: '连接中',
-  connected: '已连接',
-  error: '连接错误'
+const statusLabelKeys: Record<SessionStatus, string> = {
+  idle: 'status.idle',
+  connecting: 'status.connecting',
+  connected: 'status.connected',
+  error: 'status.error'
 };
 
 export default function StatusBar() {
+  const { t } = useI18n();
   const activeSessionId = useWorkspaceStore((state) => state.activeSessionId);
   const session = useSessionStore((state) =>
     state.sessions.find((item) => item.id === activeSessionId)
@@ -35,14 +37,14 @@ export default function StatusBar() {
             />
             <span className="truncate font-medium text-foreground">{session.title}</span>
             <span className="text-muted-foreground">·</span>
-            <span>{SESSION_KIND_LABEL[session.kind]}</span>
+            <span>{t(SESSION_KIND_LABEL_KEY[session.kind])}</span>
             <span className="text-muted-foreground">·</span>
-            <span className="truncate">{sessionSubtitle(session)}</span>
+            <span className="truncate">{sessionSubtitle(session, t)}</span>
             <span className="text-muted-foreground">·</span>
-            <span>{statusLabels[session.status]}</span>
+            <span>{t(statusLabelKeys[session.status])}</span>
           </>
         ) : (
-          <span>未选择会话</span>
+          <span>{t('status.noSession')}</span>
         )}
       </div>
 

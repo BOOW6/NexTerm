@@ -41,6 +41,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTransferStore } from '../../stores/transferStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
+import { useI18n } from '../../i18n';
 import { resumeInterruptedTransfers } from '../../lib/sftpTransfer';
 import { sessionLogPath } from '../../lib/sessionLog';
 import { useTheme } from '../../theme/useTheme';
@@ -191,6 +192,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
     const flushResizeRef = useRef<(() => void) | null>(null);
     const ligaturesRef = useRef<((enabled: boolean, featureSettings: string) => void) | null>(null);
     const { themeId } = useTheme();
+    const { t } = useI18n();
 
     const terminalFontFamily = useSettingsStore((state) => state.terminalFontFamily);
     const terminalFontLigatures = useSettingsStore((state) => state.terminalFontLigatures);
@@ -727,7 +729,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         }
         if (reconnectAttempts >= 5) {
           useSessionStore.getState().setStatus(sessionId, 'error');
-          enqueueWrite('\x1b[31m[SSH 自动重连已达上限，已停止重试]\x1b[0m\r\n');
+          enqueueWrite(`\x1b[31m[${t('terminal.sshReconnectExhausted')}]\x1b[0m\r\n`);
           return;
         }
 
@@ -737,7 +739,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         useSessionStore.getState().setStatus(sessionId, 'connecting');
         void writeScrollbackNotice(
           instance,
-          `\x1b[33m[${reason}，${Math.round(delay / 1000)} 秒后进行第 ${attempt}/5 次重连]\x1b[0m`,
+          `\x1b[33m[${t('terminal.reconnectCountdown', {
+            reason,
+            seconds: Math.round(delay / 1000),
+            attempt
+          })}]\x1b[0m`,
           false
         );
         reconnectTimer = window.setTimeout(() => {
@@ -775,29 +781,29 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
         try {
           if (!host || !username) {
-            throw new Error('缺少主机或用户名');
+            throw new Error(t('terminal.missingHost'));
           }
           if (authMethod === 'password' && !password) {
-            throw new Error('缺少密码');
+            throw new Error(t('terminal.missingPassword'));
           }
           if (authMethod === 'key' && !privateKeyPath) {
-            throw new Error('缺少私钥文件');
+            throw new Error(t('terminal.missingKeyFile'));
           }
           if (authMethod === 'certificate' && (!privateKeyPath || !certPath)) {
-            throw new Error('缺少私钥或证书文件');
+            throw new Error(t('terminal.missingKeyOrCert'));
           }
           if (jumpHost) {
             if (!jumpUsername) {
-              throw new Error('缺少跳板会话用户名');
+              throw new Error(t('terminal.jumpMissingUsername'));
             }
             if (jumpAuthMethod === 'password' && !jumpPassword) {
-              throw new Error('跳板会话缺少密码，请先连接一次该会话以保存凭据');
+              throw new Error(t('terminal.jumpMissingPassword'));
             }
             if (jumpAuthMethod === 'key' && !jumpKeyPath) {
-              throw new Error('跳板会话缺少私钥文件');
+              throw new Error(t('terminal.jumpMissingKeyFile'));
             }
             if (jumpAuthMethod === 'certificate' && (!jumpKeyPath || !jumpCertPath)) {
-              throw new Error('跳板会话缺少私钥或证书文件');
+              throw new Error(t('terminal.jumpMissingKeyOrCert'));
             }
           }
 
@@ -845,16 +851,18 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             }
 
             if (useSettingsStore.getState().sshAutoReconnect) {
-              void writeScrollbackNotice(instance, '\x1b[33m[SSH 连接已断开]\x1b[0m', true).then(
-                () => {
-                  if (disposed || generation !== transportGeneration) {
-                    return;
-                  }
-                  scheduleReconnect(instance, 'SSH 连接已断开');
+              void writeScrollbackNotice(
+                instance,
+                `\x1b[33m[${t('terminal.sshDisconnected')}]\x1b[0m`,
+                true
+              ).then(() => {
+                if (disposed || generation !== transportGeneration) {
+                  return;
                 }
-              );
+                scheduleReconnect(instance, t('terminal.sshDisconnected'));
+              });
             } else {
-              enqueueWrite('\x1b[?1049l\r\n\x1b[33m[SSH 连接已断开]\x1b[0m\r\n');
+              enqueueWrite(`\x1b[?1049l\r\n\x1b[33m[${t('terminal.sshDisconnected')}]\x1b[0m\r\n`);
             }
           });
           if (disposed || generation !== transportGeneration) {
@@ -900,7 +908,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
               clearTransportListeners();
               useSessionStore.getState().setStatus(sessionId, 'error');
               useConnectionStore.getState().removeConnection(sessionId, connectedId);
-              enqueueWrite('\r\n\x1b[31mSSH 连接已被服务器关闭\x1b[0m\r\n');
+              enqueueWrite(`\r\n\x1b[31m${t('terminal.sshClosedByServer')}\x1b[0m\r\n`);
             }
             return;
           }
@@ -943,14 +951,16 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             clearTransportListeners();
             useSessionStore.getState().setStatus(sessionId, 'error');
             useConnectionStore.getState().removeConnection(sessionId, id);
-            enqueueWrite(`\r\n\x1b[31mSSH 连接失败：${errorMessage(error)}\x1b[0m\r\n`);
+            enqueueWrite(
+              `\r\n\x1b[31m${t('terminal.sshConnectFailed', { message: errorMessage(error) })}\x1b[0m\r\n`
+            );
             // Retry whenever this session had a working connection before —
             // either the attempt that just dropped, or a previous one whose
             // scheduled retry itself failed (e.g. the network is still down).
             // Never-connected sessions (auth/host-key failures) surface
             // immediately instead of looping.
             if (everEstablished) {
-              scheduleReconnect(instance, 'SSH 连接失败');
+              scheduleReconnect(instance, t('terminal.sshConnectFailedReason'));
             }
           }
         }
@@ -1002,7 +1012,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             backendIdRef.current = '';
             resizeTarget = null;
             useSessionStore.getState().setStatus(sessionId, 'idle');
-            void writeScrollbackNotice(instance, '\x1b[33m[本地 Shell 已退出]\x1b[0m', true);
+            void writeScrollbackNotice(
+              instance,
+              `\x1b[33m[${t('terminal.localShellExited')}]\x1b[0m`,
+              true
+            );
           });
           if (disposed || generation !== transportGeneration) {
             stopClosed();
@@ -1029,7 +1043,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             if (closedEarly && !disposed && generation === transportGeneration) {
               clearTransportListeners();
               useSessionStore.getState().setStatus(sessionId, 'idle');
-              void writeScrollbackNotice(instance, '\x1b[33m[本地 Shell 已退出]\x1b[0m', true);
+              void writeScrollbackNotice(
+                instance,
+                `\x1b[33m[${t('terminal.localShellExited')}]\x1b[0m`,
+                true
+              );
             }
             return;
           }
@@ -1060,7 +1078,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           if (!disposed && generation === transportGeneration) {
             clearTransportListeners();
             useSessionStore.getState().setStatus(sessionId, 'error');
-            enqueueWrite(`\r\n\x1b[31m无法创建 PTY 会话：${errorMessage(error)}\x1b[0m\r\n`);
+            enqueueWrite(
+              `\r\n\x1b[31m${t('terminal.ptyCreateFailed', { message: errorMessage(error) })}\x1b[0m\r\n`
+            );
           }
         }
       };
@@ -1084,7 +1104,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
         try {
           if (!host) {
-            throw new Error('缺少主机地址');
+            throw new Error(t('terminal.missingHostAddress'));
           }
           useSessionStore.getState().setStatus(sessionId, 'connecting');
 
@@ -1113,7 +1133,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             backendIdRef.current = '';
             resizeTarget = null;
             useSessionStore.getState().setStatus(sessionId, 'idle');
-            void writeScrollbackNotice(instance, '\x1b[33m[Telnet 连接已断开]\x1b[0m', true);
+            void writeScrollbackNotice(
+              instance,
+              `\x1b[33m[${t('terminal.telnetDisconnected')}]\x1b[0m`,
+              true
+            );
           });
           if (disposed || generation !== transportGeneration) {
             stopClosed();
@@ -1132,7 +1156,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             if (closedEarly && !disposed && generation === transportGeneration) {
               clearTransportListeners();
               useSessionStore.getState().setStatus(sessionId, 'idle');
-              void writeScrollbackNotice(instance, '\x1b[33m[Telnet 连接已断开]\x1b[0m', true);
+              void writeScrollbackNotice(
+                instance,
+                `\x1b[33m[${t('terminal.telnetDisconnected')}]\x1b[0m`,
+                true
+              );
             }
             return;
           }
@@ -1159,7 +1187,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           if (!disposed && generation === transportGeneration) {
             clearTransportListeners();
             useSessionStore.getState().setStatus(sessionId, 'error');
-            enqueueWrite(`\r\n\x1b[31m无法建立 Telnet 连接：${errorMessage(error)}\x1b[0m\r\n`);
+            enqueueWrite(
+              `\r\n\x1b[31m${t('terminal.telnetConnectFailed', { message: errorMessage(error) })}\x1b[0m\r\n`
+            );
           }
         }
       };
@@ -1184,7 +1214,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         }
         reconnectAttempts = 0;
         useSessionStore.getState().setStatus(sessionId, 'connecting');
-        void writeScrollbackNotice(instance, '\x1b[33m[正在重连]\x1b[0m', true).then(() => {
+        void writeScrollbackNotice(
+          instance,
+          `\x1b[33m[${t('terminal.reconnectNotice')}]\x1b[0m`,
+          true
+        ).then(() => {
           if (disposed) {
             return;
           }
@@ -1384,7 +1418,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
                     instance.write(snapshot, () => {
                       void writeScrollbackNotice(
                         instance,
-                        '\x1b[90m[已恢复上次会话的滚动缓冲]\x1b[0m',
+                        `\x1b[90m[${t('terminal.scrollbackRestored')}]\x1b[0m`,
                         true
                       ).then(resolve);
                     });

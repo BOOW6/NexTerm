@@ -6,6 +6,7 @@ import '@xterm/xterm/css/xterm.css';
 import { getTerminalTheme } from '../../theme/terminalTheme';
 import { NativeLigaturesAddon } from '../../theme/nativeLigaturesAddon';
 import { useTheme } from '../../theme/useTheme';
+import { tStatic } from '../../i18n';
 import type { TerminalCursorStyle } from '../../stores/settingsStore';
 
 interface TerminalPreviewProps {
@@ -135,7 +136,7 @@ export default function TerminalPreview({
       }
 
       instance.write(
-        'NexTerm 终端预览\r\n$ git status\r\nOn branch main\r\nnothing to commit, working tree clean\r\n$ echo "-> => != === >= <="\r\n-> => != === >= <=\r\n$ '
+        `${tStatic('settings.terminal.previewTitle')}\r\n$ git status\r\nOn branch main\r\nnothing to commit, working tree clean\r\n$ echo "-> => != === >= <="\r\n-> => != === >= <=\r\n$ `
       );
 
       terminalRef.current = instance;

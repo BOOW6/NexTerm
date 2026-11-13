@@ -3,6 +3,7 @@ import { downloadSftp, uploadSftp } from '../hooks/useTauriSsh';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useTransferStore } from '../stores/transferStore';
 import { retryTransfer, resumeInterruptedTransfers, startSftpTransfer } from './sftpTransfer';
+import { tStatic } from '../i18n';
 
 vi.mock('../hooks/useTauriSsh', () => ({
   uploadSftp: vi.fn(),
@@ -74,7 +75,7 @@ describe('startSftpTransfer', () => {
         localPath: 'C:/tmp/file.txt',
         remotePath: '/home/user/file.txt'
       })
-    ).rejects.toThrow('会话尚未建立 SSH 连接');
+    ).rejects.toThrow(tStatic('sftpTransfer.notConnected'));
     expect(download).not.toHaveBeenCalled();
   });
 });
@@ -119,7 +120,9 @@ describe('retryTransfer', () => {
     setConnection('sess-1', null);
     const item = useTransferStore.getState().transfers[0];
 
-    await expect(retryTransfer(item)).rejects.toThrow('会话未连接');
+    await expect(retryTransfer(item)).rejects.toThrow(
+      tStatic('sftpTransfer.disconnectedRetryPending')
+    );
     expect(download).toHaveBeenCalledTimes(1);
   });
 

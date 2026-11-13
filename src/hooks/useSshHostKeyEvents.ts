@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { openModalWindow } from '../lib/appWindows';
 import { toast } from '../components/ui/toastStore';
+import { tStatic } from '../i18n';
 import {
   listenHostKeyMismatch,
   listenHostKeyPrompt,
@@ -16,7 +17,7 @@ export function useSshHostKeyEvents(): void {
     Promise.all([
       listenHostKeyPrompt((payload) => {
         void openModalWindow<boolean>('host-key', {
-          title: '未知主机密钥',
+          title: tStatic('hostKey.window.promptTitle'),
           width: 520,
           height: 520,
           data: { mode: 'prompt', prompt: payload }
@@ -26,7 +27,7 @@ export function useSshHostKeyEvents(): void {
       }),
       listenHostKeyMismatch((payload) => {
         void openModalWindow('host-key', {
-          title: '主机密钥不匹配',
+          title: tStatic('hostKey.window.mismatchTitle'),
           width: 560,
           height: 540,
           data: { mode: 'mismatch', mismatch: payload }
@@ -34,8 +35,8 @@ export function useSshHostKeyEvents(): void {
       }),
       listenHostKeyTimeout((payload) => {
         toast({
-          title: `主机密钥确认超时：${payload.host}:${payload.port}`,
-          description: '指纹确认窗口已关闭，连接已取消，可重新发起连接。',
+          title: tStatic('hostKey.timeoutToastTitle', { host: payload.host, port: payload.port }),
+          description: tStatic('hostKey.timeoutToastDesc'),
           variant: 'warning'
         });
       })

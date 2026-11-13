@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_GROUP, SESSION_KIND_LABEL, type Session } from '../types/session';
+import { DEFAULT_GROUP, SESSION_KIND_LABEL_KEY, type Session } from '../types/session';
+import { tStatic } from '../i18n';
 import { useSessionStore } from './sessionStore';
 
 const STORAGE_KEY = 'nexterm.sessions.v1';
@@ -64,7 +65,7 @@ describe('addSession', () => {
       group: ''
     });
 
-    expect(created.title).toBe(SESSION_KIND_LABEL.sftp);
+    expect(created.title).toBe(tStatic(SESSION_KIND_LABEL_KEY.sftp));
     expect(created.group).toBe(DEFAULT_GROUP);
     expect(created.host).toBeUndefined();
   });
@@ -107,7 +108,7 @@ describe('updateSession', () => {
     });
 
     const updated = useSessionStore.getState().getSession(created.id)!;
-    expect(updated.title).toBe(SESSION_KIND_LABEL.ssh);
+    expect(updated.title).toBe(tStatic(SESSION_KIND_LABEL_KEY.ssh));
     expect(updated.host).toBe('new.example.com');
     // A whitespace-only username is an explicit clear, not a fallback.
     expect(updated.username).toBeUndefined();

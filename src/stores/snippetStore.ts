@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { tStatic } from '../i18n';
 import { persist } from 'zustand/middleware';
 import { emit } from '@tauri-apps/api/event';
 
@@ -52,7 +53,7 @@ export const useSnippetStore = create<SnippetState>()(
       addSnippet: (draft) => {
         const snippet: Snippet = {
           id: crypto.randomUUID(),
-          name: draft.name.trim() || draft.command.trim() || '片段',
+          name: draft.name.trim() || draft.command.trim() || tStatic('snippet.fallbackTitle'),
           command: draft.command
         };
         set((state) => ({ snippets: [...state.snippets, snippet] }));

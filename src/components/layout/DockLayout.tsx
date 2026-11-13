@@ -25,8 +25,11 @@ const TransferPanel = lazy(() => import('../transfers/TransferPanel'));
 const PortForwardPanel = lazy(() => import('../forward/PortForwardPanel'));
 
 function PanelFallback() {
+  const { t } = useI18n();
   return (
-    <div className="flex h-full items-center justify-center text-xs text-muted">加载中...</div>
+    <div className="flex h-full items-center justify-center text-xs text-muted">
+      {t('ui.loading')}
+    </div>
   );
 }
 

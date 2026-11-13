@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { cancelModal, getModalPayload, submitModal } from '../lib/appWindows';
 import { formatBytes } from '../lib/format';
+import { useI18n } from '../i18n';
 import type { SftpConflictAction } from '../hooks/useTauriSsh';
 
 export interface SftpConflictWindowPayload {
@@ -21,6 +22,7 @@ function formatTime(mtime: number): string {
 }
 
 export default function SftpConflictWindow() {
+  const { t } = useI18n();
   const [payload, setPayload] = useState<SftpConflictWindowPayload | null>(null);
   const [applyToAll, setApplyToAll] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -50,13 +52,13 @@ export default function SftpConflictWindow() {
   };
 
   const upload = payload?.direction !== 'download';
-  const sourceLabel = upload ? '来源' : '来源（远程）';
-  const targetLabel = upload ? '目标（远程）' : '目标（本地）';
+  const sourceLabel = upload ? t('conflict.label.source') : t('conflict.label.sourceRemote');
+  const targetLabel = upload ? t('conflict.label.targetRemote') : t('conflict.label.targetLocal');
 
   return (
     <div className="app-dialog-window flex h-full flex-col bg-background text-foreground">
       <div className="flex-1 px-5 py-4">
-        <p className="text-sm font-medium">目标文件已存在</p>
+        <p className="text-sm font-medium">{t('conflict.existsToast')}</p>
         <p className="mt-1 truncate text-[11px] text-muted" title={payload?.name}>
           {payload?.name ?? '-'}
         </p>
@@ -64,8 +66,8 @@ export default function SftpConflictWindow() {
         <div className="mt-3 rounded-sm border border-border text-[11px]">
           <div className="flex border-b border-border bg-background-alt">
             <span className="w-24 shrink-0 px-2 py-1.5" />
-            <span className="flex-1 px-2 py-1.5 text-muted">大小</span>
-            <span className="flex-1 px-2 py-1.5 text-muted">修改时间</span>
+            <span className="flex-1 px-2 py-1.5 text-muted">{t('conflict.header.size')}</span>
+            <span className="flex-1 px-2 py-1.5 text-muted">{t('conflict.header.mtime')}</span>
           </div>
           <div className="flex border-b border-border">
             <span className="w-24 shrink-0 px-2 py-1.5 text-muted">{sourceLabel}</span>
@@ -94,23 +96,23 @@ export default function SftpConflictWindow() {
             checked={applyToAll}
             onChange={(event) => setApplyToAll(event.target.checked)}
           />
-          对本次任务中其余冲突的文件应用相同选择
+          {t('conflict.applyToAll')}
         </label>
       </div>
 
       <div className="app-dialog-footer flex items-center justify-between gap-2 border-t border-border bg-background-alt px-5 py-3">
         <Button variant="ghost" disabled={busy} onClick={() => void cancelModal()}>
-          取消传输
+          {t('conflict.action.cancelTransfer')}
         </Button>
         <div className="flex items-center gap-2">
           <Button variant="ghost" disabled={busy} onClick={() => void respond('rename')}>
-            重命名
+            {t('conflict.action.rename')}
           </Button>
           <Button variant="ghost" disabled={busy} onClick={() => void respond('skip')}>
-            跳过
+            {t('conflict.action.skip')}
           </Button>
           <Button variant="primary" disabled={busy} onClick={() => void respond('overwrite')}>
-            覆盖
+            {t('conflict.action.overwrite')}
           </Button>
         </div>
       </div>

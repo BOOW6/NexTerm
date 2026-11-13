@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n';
 import { useEffect, useRef, useState } from 'react';
 import { MoreHorizontal, type LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/cn';
@@ -19,13 +20,10 @@ export interface DropdownMenuProps {
   label?: string;
 }
 
-export function DropdownMenu({
-  items,
-  align = 'end',
-  className,
-  label = '更多操作'
-}: DropdownMenuProps) {
+export function DropdownMenu({ items, align = 'end', className, label }: DropdownMenuProps) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const resolvedLabel = label ?? t('ui.moreActions');
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -58,7 +56,7 @@ export function DropdownMenu({
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={label}
+        aria-label={resolvedLabel}
         onClick={(event) => {
           event.stopPropagation();
           setOpen((value) => !value);

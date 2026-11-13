@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2, Info, X, XCircle, type LucideIcon } from 'lucide-react';
+import { useI18n } from '../../i18n';
 import { cn } from '../../lib/cn';
 import { useToastStore, type ToastVariant } from './toastStore';
 
@@ -24,6 +25,7 @@ const leftBorders: Record<ToastVariant, string> = {
 };
 
 export function Toaster() {
+  const { t } = useI18n();
   const toasts = useToastStore((state) => state.toasts);
   const dismiss = useToastStore((state) => state.dismiss);
 
@@ -51,7 +53,7 @@ export function Toaster() {
               type="button"
               onClick={() => dismiss(item.id)}
               className="rounded-sm p-0.5 text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
-              aria-label="关闭通知"
+              aria-label={t('ui.closeToast')}
             >
               <X className="h-3 w-3" />
             </button>

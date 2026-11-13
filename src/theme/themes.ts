@@ -7,7 +7,7 @@ export interface ThemeDefinition {
   id: ThemeId;
   name: string;
   variant: ThemeVariant;
-  description: string;
+  descriptionKey: string;
   swatches: [string, string, string];
 }
 
@@ -16,21 +16,21 @@ export const LIGHT_THEMES: ThemeDefinition[] = [
     id: 'day',
     name: 'Day',
     variant: 'light',
-    description: '经典 Web 2.0 明亮配色',
+    descriptionKey: 'theme.desc.day',
     swatches: ['#f4f7fb', '#ffffff', '#2e75b6']
   },
   {
     id: 'aqua-light',
     name: 'Aqua',
     variant: 'light',
-    description: 'Mac OS X 10.6 Aqua 玻璃质感',
+    descriptionKey: 'theme.desc.aquaLight',
     swatches: ['#eef4fa', '#f9fbfd', '#1b6dbf']
   },
   {
     id: 'holo-light',
     name: 'Holo',
     variant: 'light',
-    description: 'Android 4.4 Holo 亮色',
+    descriptionKey: 'theme.desc.holoLight',
     swatches: ['#f5f5f5', '#ffffff', '#33b5e5']
   }
 ];
@@ -40,21 +40,21 @@ export const DARK_THEMES: ThemeDefinition[] = [
     id: 'dim',
     name: 'Dim',
     variant: 'dark',
-    description: '经典 Web 2.0 暗色配色',
+    descriptionKey: 'theme.desc.dim',
     swatches: ['#16202b', '#1f2a36', '#7fb2e5']
   },
   {
     id: 'aqua-dark',
     name: 'Aqua',
     variant: 'dark',
-    description: 'Mac OS X 10.6 Aqua 暗色玻璃',
+    descriptionKey: 'theme.desc.aquaDark',
     swatches: ['#121a23', '#1f2a36', '#63b3e8']
   },
   {
     id: 'holo-dark',
     name: 'Holo',
     variant: 'dark',
-    description: 'Android 4.4 Holo 暗色',
+    descriptionKey: 'theme.desc.holoDark',
     swatches: ['#000000', '#1a1a1a', '#33b5e5']
   }
 ];
@@ -64,7 +64,7 @@ export const THEMES: ThemeDefinition[] = [...LIGHT_THEMES, ...DARK_THEMES];
 export interface ThemeFamily {
   id: string;
   name: string;
-  description: string;
+  descriptionKey: string;
   light: ThemeId;
   dark: ThemeId;
 }
@@ -73,21 +73,22 @@ export const THEME_FAMILIES: ThemeFamily[] = [
   {
     id: 'day-dim',
     name: 'Day / Dim',
-    description: '经典 Web 2.0 明暗配色',
+    descriptionKey: 'theme.family.dayDim',
     light: 'day',
     dark: 'dim'
   },
   {
     id: 'aqua',
     name: 'Aqua',
-    description: 'Mac OS X 10.6 Aqua 玻璃质感',
+    // Same wording as the aqua-light theme description, so it shares its key.
+    descriptionKey: 'theme.desc.aquaLight',
     light: 'aqua-light',
     dark: 'aqua-dark'
   },
   {
     id: 'holo',
     name: 'Holo',
-    description: 'Android 4.4 Holo 扁平高对比',
+    descriptionKey: 'theme.family.holo',
     light: 'holo-light',
     dark: 'holo-dark'
   }

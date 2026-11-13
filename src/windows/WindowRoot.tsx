@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react';
+import { useI18n } from '../i18n';
 import { currentWindowKind } from '../lib/appWindows';
 import { useContextMenuPolicy } from '../hooks/useContextMenuPolicy';
 import { useUiFont } from '../hooks/useUiFont';
@@ -11,9 +12,10 @@ const SettingsWindow = lazy(() => import('./SettingsWindow'));
 const SftpConflictWindow = lazy(() => import('./SftpConflictWindow'));
 
 function WindowFallback() {
+  const { t } = useI18n();
   return (
     <div className="flex h-full w-full items-center justify-center bg-background text-xs text-muted">
-      加载中...
+      {t('ui.loading')}
     </div>
   );
 }

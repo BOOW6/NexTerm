@@ -11,6 +11,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
+import { useI18n } from '../../i18n';
 import { useTheme } from '../../theme/useTheme';
 import type { ThemeMode } from '../../theme/ThemeProvider';
 
@@ -72,6 +73,7 @@ function MenuRow({
 }
 
 export default function TitleBar() {
+  const { t } = useI18n();
   const [openMenu, setOpenMenu] = useState<number | null>(null);
   const menuBarRef = useRef<HTMLDivElement>(null);
   const menuButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -115,150 +117,150 @@ export default function TitleBar() {
 
   const menus: MenuDefinition[] = [
     {
-      label: '文件',
+      label: t('menu.file'),
       items: [
         {
-          label: '新建本地终端',
+          label: t('menu.newLocal'),
           shortcut: shortcuts.newLocal,
           onSelect: () => void openQuickConnect({ kind: 'local' })
         },
         {
-          label: '新建 SSH 会话',
+          label: t('menu.newSsh'),
           shortcut: shortcuts.newSsh,
           onSelect: () => void openQuickConnect({ kind: 'ssh' })
         },
-        { label: '打开 SFTP 面板', onSelect: () => openSftpPanel() },
-        { label: '传输队列', onSelect: () => openTransferPanel() },
+        { label: t('menu.openSftp'), onSelect: () => openSftpPanel() },
+        { label: t('menu.transfers'), onSelect: () => openTransferPanel() },
         { separator: true },
         {
-          label: '关闭标签页',
+          label: t('menu.closeTab'),
           shortcut: 'Ctrl+Shift+W',
           disabled: !activePanel,
           onSelect: closeCurrentTab
         },
-        { label: '关闭其他标签页', disabled: !activePanel, onSelect: closeOthers },
+        { label: t('menu.closeOtherTabs'), disabled: !activePanel, onSelect: closeOthers },
         { separator: true },
         {
-          label: '设置',
+          label: t('menu.settings'),
           shortcut: shortcuts.openSettings,
           onSelect: () => void openSettingsWindow()
         },
         { separator: true },
         {
-          label: '退出 NexTerm',
+          label: t('menu.exit'),
           shortcut: 'Alt+F4',
           onSelect: () => void getCurrentWindow().close()
         }
       ]
     },
     {
-      label: '编辑',
+      label: t('menu.edit'),
       items: [
         {
-          label: '复制',
+          label: t('menu.copy'),
           shortcut: 'Ctrl+Shift+C',
           onSelect: () => dispatchTerminalAction({ type: 'copy' })
         },
         {
-          label: '粘贴',
+          label: t('menu.paste'),
           shortcut: 'Ctrl+Shift+V',
           onSelect: () => dispatchTerminalAction({ type: 'paste' })
         },
         {
-          label: '全选',
+          label: t('menu.selectAll'),
           shortcut: 'Ctrl+Shift+A',
           onSelect: () => dispatchTerminalAction({ type: 'select-all' })
         },
         {
-          label: '查找',
+          label: t('menu.find'),
           shortcut: 'Ctrl+Shift+F',
           onSelect: () => dispatchTerminalAction({ type: 'find' })
         },
         { separator: true },
-        { label: '清屏', onSelect: () => dispatchTerminalAction({ type: 'clear' }) }
+        { label: t('menu.clear'), onSelect: () => dispatchTerminalAction({ type: 'clear' }) }
       ]
     },
     {
-      label: '视图',
+      label: t('menu.view'),
       items: [
         {
-          label: '放大字号',
+          label: t('menu.zoomIn'),
           shortcut: 'Ctrl+=',
           onSelect: () => dispatchTerminalAction({ type: 'zoom-in' })
         },
         {
-          label: '缩小字号',
+          label: t('menu.zoomOut'),
           shortcut: 'Ctrl+-',
           onSelect: () => dispatchTerminalAction({ type: 'zoom-out' })
         },
         {
-          label: '重置字号',
+          label: t('menu.zoomReset'),
           shortcut: 'Ctrl+0',
           onSelect: () => dispatchTerminalAction({ type: 'zoom-reset' })
         },
         { separator: true },
         {
-          label: '显示侧栏',
+          label: t('menu.toggleSidebar'),
           checked: sidebarVisible,
           onSelect: toggleSidebar
         },
         { separator: true },
-        themeItem('light', `亮色主题 · ${lightThemeName}`),
-        themeItem('dark', `暗色主题 · ${darkThemeName}`),
-        themeItem('system', '跟随系统'),
+        themeItem('light', t('menu.themeLight', { name: lightThemeName })),
+        themeItem('dark', t('menu.themeDark', { name: darkThemeName })),
+        themeItem('system', t('menu.themeSystem')),
         { separator: true },
         {
-          label: '命令面板',
+          label: t('menu.commandPalette'),
           shortcut: shortcuts.commandPalette,
           onSelect: openCommandPalette
         }
       ]
     },
     {
-      label: '会话',
+      label: t('menu.session'),
       items: [
         {
-          label: '向右分屏',
+          label: t('menu.splitRight'),
           disabled: !activeSession,
           onSelect: () =>
             activeSession && splitSession(activeSession.id, 'right', getApi()?.activePanel?.id)
         },
         {
-          label: '向下分屏',
+          label: t('menu.splitBelow'),
           disabled: !activeSession,
           onSelect: () =>
             activeSession && splitSession(activeSession.id, 'below', getApi()?.activePanel?.id)
         },
         {
-          label: '复制会话',
+          label: t('menu.duplicateSession'),
           disabled: !activeSession,
           onSelect: () =>
             activeSession && duplicateSession(activeSession.id, getApi()?.activePanel?.id)
         },
         { separator: true },
         {
-          label: '重连',
+          label: t('menu.reconnect'),
           disabled: !activeSession,
           onSelect: () => activeSession && reconnectSession(activeSession.id)
         },
         {
-          label: activeSession?.favorite ? '取消收藏' : '收藏',
+          label: activeSession?.favorite ? t('menu.unfavorite') : t('menu.favorite'),
           disabled: !activeSession,
           onSelect: () => activeSession && toggleFavorite(activeSession.id)
         },
         { separator: true },
         {
-          label: '编辑当前会话',
+          label: t('menu.editSession'),
           disabled: !activeSession,
           onSelect: () => activeSession && void openQuickConnect({ sessionId: activeSession.id })
         }
       ]
     },
     {
-      label: '帮助',
+      label: t('menu.help'),
       items: [
-        { label: '已知主机…', onSelect: () => void openSettingsWindow('security') },
-        { label: '关于 NexTerm', onSelect: () => void openSettingsWindow('about') }
+        { label: t('menu.knownHosts'), onSelect: () => void openSettingsWindow('security') },
+        { label: t('menu.about'), onSelect: () => void openSettingsWindow('about') }
       ]
     }
   ];
@@ -399,7 +401,7 @@ export default function TitleBar() {
       <div
         ref={menuBarRef}
         role="menubar"
-        aria-label="主菜单"
+        aria-label={t('menu.mainMenu')}
         onKeyDown={handleMenuBarKeyDown}
         className="flex h-full items-center gap-0.5"
       >

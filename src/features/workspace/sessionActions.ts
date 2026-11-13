@@ -1,4 +1,5 @@
 import type { DockviewApi, IDockviewPanel } from 'dockview-react';
+import { tStatic } from '../../i18n';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { requestTerminalReconnect } from '../../lib/terminalReconnect';
@@ -136,7 +137,7 @@ export function duplicateSessionPanel(
 
   const copy = store.addSession({
     ...toSessionDraft(session),
-    title: `${session.title} 副本`,
+    title: tStatic('sessionAction.duplicateTitle', { name: session.title }),
     favorite: false
   });
 
@@ -185,7 +186,7 @@ export function openSftpPanel(api: DockviewApi, sessionId?: string): void {
   api.addPanel({
     id: panelId,
     component: 'sftp',
-    title: session ? `SFTP · ${session.title}` : 'SFTP',
+    title: session ? tStatic('sessionAction.sftpPanelTitle', { name: session.title }) : 'SFTP',
     params: targetSessionId ? { sessionId: targetSessionId } : undefined
   });
 }
@@ -205,7 +206,9 @@ export function openPortForwardPanel(api: DockviewApi, sessionId?: string): void
   api.addPanel({
     id: panelId,
     component: 'forwards',
-    title: session ? `端口转发 · ${session.title}` : '端口转发',
+    title: session
+      ? tStatic('sessionAction.portForwardPanelTitle', { name: session.title })
+      : tStatic('sessionAction.portForwardPanel'),
     params: targetSessionId ? { sessionId: targetSessionId } : undefined
   });
 }
@@ -220,6 +223,6 @@ export function openTransferPanel(api: DockviewApi): void {
   api.addPanel({
     id: panelId,
     component: 'transfers',
-    title: '传输队列'
+    title: tStatic('sessionAction.transferPanelTitle')
   });
 }

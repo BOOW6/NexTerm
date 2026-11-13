@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -443,7 +443,7 @@ export default function SessionSidebar() {
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label="调整侧栏宽度"
+        aria-label={t('ui.resizeSidebar')}
         onPointerDown={(event) => {
           event.preventDefault();
           resizingRef.current = true;

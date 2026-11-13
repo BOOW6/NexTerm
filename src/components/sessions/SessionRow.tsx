@@ -73,7 +73,7 @@ export default function SessionRow({
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-[11px] font-medium text-foreground">{session.title}</p>
-        <p className="truncate text-[10px] text-muted">{sessionSubtitle(session)}</p>
+        <p className="truncate text-[10px] text-muted">{sessionSubtitle(session, t)}</p>
       </div>
 
       <button

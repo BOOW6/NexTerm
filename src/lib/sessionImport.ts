@@ -1,4 +1,11 @@
-import type { Session, SessionAuthMethod, SessionKind } from '../types/session';
+import { tStatic } from '../i18n';
+import {
+  DEFAULT_GROUP,
+  SESSION_KIND_LABEL_KEY,
+  type Session,
+  type SessionAuthMethod,
+  type SessionKind
+} from '../types/session';
 
 export type ImportFormat = 'ssh-config' | 'mobaxterm' | 'putty' | 'nexterm';
 
@@ -331,7 +338,7 @@ export function parseNexTermBackup(text: string): ImportedSession[] {
       ? parsed.sessions
       : null;
   if (!list) {
-    throw new Error('不是有效的 NexTerm 会话备份');
+    throw new Error(tStatic('import.invalidBackup'));
   }
 
   const sessions: ImportedSession[] = [];
@@ -347,7 +354,8 @@ export function parseNexTermBackup(text: string): ImportedSession[] {
     }
     sessions.push({
       kind,
-      title: title ?? (kind === 'local' ? '本地终端' : (host ?? 'Session')),
+      title:
+        title ?? (kind === 'local' ? tStatic(SESSION_KIND_LABEL_KEY.local) : (host ?? 'Session')),
       host,
       // NexTerm backups carry raw numbers; clamp to the valid port range
       // like the other parsers do instead of trusting the file.
@@ -355,7 +363,7 @@ export function parseNexTermBackup(text: string): ImportedSession[] {
       username: asString(item.username),
       authMethod: asAuthMethod(item.authMethod),
       keyPath: asString(item.keyPath),
-      group: asString(item.group) ?? '会话',
+      group: asString(item.group) ?? DEFAULT_GROUP,
       favorite: Boolean(item.favorite)
     });
   }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ShieldAlert, ShieldQuestion } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { cancelModal, getModalPayload, submitModal } from '../lib/appWindows';
+import { useI18n } from '../i18n';
 import { listenHostKeyTimeout } from '../hooks/useTauriSsh';
 import type { HostKeyMismatchPayload, HostKeyPromptPayload } from '../hooks/useTauriSsh';
 
@@ -19,6 +20,7 @@ function Field({ label, value }: { label: string; value: string }) {
 }
 
 export default function HostKeyWindow() {
+  const { t } = useI18n();
   const [payload, setPayload] = useState<HostKeyPayload | null>(null);
 
   useEffect(() => {
@@ -74,30 +76,28 @@ export default function HostKeyWindow() {
         <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
           <div className="flex items-center gap-2 rounded-sm border border-error/40 bg-error/10 px-2.5 py-2">
             <ShieldAlert className="h-4 w-4 shrink-0 text-error" />
-            <span className="text-[11px] text-error">
-              该主机当前密钥与已保存记录不一致，连接已中止。请勿在未确认服务器变更的情况下继续连接。
-            </span>
+            <span className="text-[11px] text-error">{t('hostKey.mismatch.warning')}</span>
           </div>
-          <Field label="主机" value={payload.mismatch.host} />
+          <Field label={t('hostKey.field.host')} value={payload.mismatch.host} />
           <div className="rounded-sm border border-border bg-background-alt p-2">
-            <p className="mb-1 text-[10px] text-muted">已保存指纹</p>
+            <p className="mb-1 text-[10px] text-muted">{t('hostKey.mismatch.savedFingerprint')}</p>
             <p className="selectable break-all font-mono text-[11px] text-foreground">
               {payload.mismatch.expected}
             </p>
           </div>
           <div className="rounded-sm border border-border bg-background-alt p-2">
-            <p className="mb-1 text-[10px] text-muted">服务器当前指纹</p>
+            <p className="mb-1 text-[10px] text-muted">
+              {t('hostKey.mismatch.currentFingerprint')}
+            </p>
             <p className="selectable break-all font-mono text-[11px] text-foreground">
               {payload.mismatch.actual}
             </p>
           </div>
-          <p className="text-[10px] text-muted-foreground">
-            如确认服务器已重装或更换密钥，请在「设置 → 安全」中删除该记录后重新连接。
-          </p>
+          <p className="text-[10px] text-muted-foreground">{t('hostKey.mismatch.hint')}</p>
         </div>
         <div className="app-dialog-footer flex justify-end border-t border-border bg-background-alt px-5 py-3">
           <Button variant="secondary" onClick={() => void cancelModal()}>
-            关闭
+            {t('hostKey.action.close')}
           </Button>
         </div>
       </div>
@@ -109,26 +109,27 @@ export default function HostKeyWindow() {
       <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
         <div className="flex items-center gap-2 rounded-sm border border-border bg-background-alt px-2.5 py-2">
           <ShieldQuestion className="h-4 w-4 shrink-0 text-warning" />
-          <span className="text-[11px] text-muted">请与服务器管理员核对以下指纹</span>
+          <span className="text-[11px] text-muted">{t('hostKey.prompt.verifyHint')}</span>
         </div>
-        <Field label="主机" value={`${payload.prompt.host}:${payload.prompt.port}`} />
-        <Field label="算法" value={payload.prompt.algorithm} />
+        <Field
+          label={t('hostKey.field.host')}
+          value={`${payload.prompt.host}:${payload.prompt.port}`}
+        />
+        <Field label={t('hostKey.field.algorithm')} value={payload.prompt.algorithm} />
         <div className="rounded-sm border border-border bg-background-alt p-2">
-          <p className="mb-1 text-[10px] text-muted">SHA256 指纹</p>
+          <p className="mb-1 text-[10px] text-muted">{t('hostKey.prompt.fingerprintLabel')}</p>
           <p className="selectable break-all font-mono text-[11px] text-foreground">
             {payload.prompt.fingerprint}
           </p>
         </div>
-        <p className="text-[10px] text-muted-foreground">
-          信任后会写入 known_hosts，后续连接将自动校验。
-        </p>
+        <p className="text-[10px] text-muted-foreground">{t('hostKey.prompt.trustHint')}</p>
       </div>
       <div className="app-dialog-footer flex items-center justify-end gap-2 border-t border-border bg-background-alt px-5 py-3">
         <Button variant="ghost" onClick={() => void submitModal(false)}>
-          取消连接
+          {t('hostKey.action.cancel')}
         </Button>
         <Button variant="primary" onClick={() => void submitModal(true)}>
-          信任并连接
+          {t('hostKey.action.trust')}
         </Button>
       </div>
     </div>

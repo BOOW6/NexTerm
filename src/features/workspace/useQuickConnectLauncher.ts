@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { tStatic } from '../../i18n';
 import { openModalWindow } from '../../lib/appWindows';
 import { useCredentialStore } from '../../stores/credentialStore';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -88,7 +89,9 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
         : null;
 
       const result = await openModalWindow<QuickConnectResult>('quick-connect', {
-        title: session ? '编辑会话' : '新建会话',
+        title: session
+          ? tStatic('quickConnect.windowTitleEdit')
+          : tStatic('quickConnect.windowTitleNew'),
         width: 500,
         height: session?.kind === 'local' ? 570 : 620,
         data: {
@@ -121,7 +124,7 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
               item.id === jumpId && jumpChainReaches(item.id, session?.id, sessionState.sessions)
           );
         if (selfReferenced || cycled) {
-          toast({ title: '跳板机不能形成循环引用', variant: 'error' });
+          toast({ title: tStatic('quickConnect.toastJumpCycle'), variant: 'error' });
           return;
         }
       }
@@ -158,7 +161,7 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
             await rememberSessionCredentials(updated);
           }
         }
-        toast({ title: '会话已更新', variant: 'success' });
+        toast({ title: tStatic('quickConnect.toastUpdated'), variant: 'success' });
         openSession(session.id);
         return;
       }
@@ -182,19 +185,19 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
       }
 
       toast({
-        title: `已创建「${created.title}」`,
+        title: tStatic('quickConnect.toastCreated', { name: created.title }),
         description: isRemote
           ? result.draft.kind === 'telnet'
-            ? '正在建立 Telnet 连接。'
+            ? tStatic('quickConnect.toastConnectingTelnet')
             : result.draft.authMethod === 'key'
-              ? '正在使用私钥建立 SSH 连接。'
+              ? tStatic('quickConnect.toastConnectingKey')
               : result.draft.authMethod === 'certificate'
-                ? '正在使用 OpenSSH 证书建立 SSH 连接。'
+                ? tStatic('quickConnect.toastConnectingCert')
                 : result.draft.authMethod === 'agent'
-                  ? '正在使用 SSH Agent 建立连接。'
+                  ? tStatic('quickConnect.toastConnectingAgent')
                   : result.password?.trim()
-                    ? '正在建立 SSH 连接。'
-                    : '连接时将请求输入密码。'
+                    ? tStatic('quickConnect.toastConnectingPassword')
+                    : tStatic('quickConnect.toastWillPromptPassword')
           : undefined,
         variant: 'success'
       });

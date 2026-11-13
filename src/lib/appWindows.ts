@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { ask, message } from '@tauri-apps/plugin-dialog';
+import { tStatic } from '../i18n';
 
 export type AppWindowKind =
   'main' | 'settings' | 'quick-connect' | 'host-key' | 'prompt' | 'sftp-conflict';
@@ -161,10 +162,10 @@ export async function confirmAction(
 ): Promise<boolean> {
   try {
     return await ask(text, {
-      title: options?.title ?? '确认',
+      title: options?.title ?? tStatic('appWindow.confirmTitle'),
       kind: 'warning',
-      okLabel: options?.okLabel ?? '确定',
-      cancelLabel: '取消'
+      okLabel: options?.okLabel ?? tStatic('appWindow.ok'),
+      cancelLabel: tStatic('appWindow.cancel')
     });
   } catch {
     return false;
@@ -174,7 +175,7 @@ export async function confirmAction(
 export async function showAboutDialog(): Promise<void> {
   try {
     await message('NexTerm 0.1.0\nTauri 2 + React 18 + Rust', {
-      title: '关于 NexTerm',
+      title: tStatic('appWindow.aboutTitle'),
       kind: 'info'
     });
   } catch {

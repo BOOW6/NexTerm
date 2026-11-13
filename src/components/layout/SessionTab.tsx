@@ -11,14 +11,16 @@ import {
 } from '../../features/workspace/sessionActions';
 import { showNativeContextMenu } from '../../lib/appWindows';
 import { SESSION_KIND_ICON, sessionStatusDot } from '../../lib/sessionVisuals';
+import { useI18n } from '../../i18n';
 
 export default function SessionTab({ api, params, containerApi }: IDockviewPanelHeaderProps) {
+  const { t } = useI18n();
   const sessionId = (params as { sessionId?: string } | undefined)?.sessionId;
   const session = useSessionStore((state) =>
     sessionId ? state.sessions.find((item) => item.id === sessionId) : undefined
   );
 
-  const title = session?.title ?? api.title ?? '面板';
+  const title = session?.title ?? api.title ?? t('tab.panel');
   const Icon = session ? SESSION_KIND_ICON[session.kind] : Settings2;
 
   const handleContextMenu = () => {
@@ -31,39 +33,39 @@ export default function SessionTab({ api, params, containerApi }: IDockviewPanel
     if (sessionId) {
       actions.push(
         {
-          label: '向右分屏',
+          label: t('tab.splitRight'),
           run: () => splitSessionPanel(containerApi, sessionId, 'right', api.id)
         },
         {
-          label: '向下分屏',
+          label: t('tab.splitBelow'),
           run: () => splitSessionPanel(containerApi, sessionId, 'below', api.id)
         },
         {
-          label: '复制会话',
+          label: t('tab.duplicateSession'),
           run: () => duplicateSessionPanel(containerApi, sessionId, 'right', api.id)
         }
       );
 
       if (session && session.kind !== 'local') {
         actions.push({
-          label: '端口转发',
+          label: t('tab.portForward'),
           run: () => openPortForwardPanel(containerApi, sessionId)
         });
       }
 
       actions.push({
-        label: '重连',
+        label: t('tab.reconnect'),
         run: () => reconnectSessionPanels(containerApi, sessionId)
       });
     }
 
     actions.push(
       {
-        label: '关闭其他标签页',
+        label: t('tab.closeOtherTabs'),
         separatorBefore: true,
         run: () => closeOtherPanels(containerApi, api.id)
       },
-      { label: '关闭标签页', run: () => api.close() }
+      { label: t('tab.closeTab'), run: () => api.close() }
     );
 
     void showNativeContextMenu(
@@ -96,7 +98,7 @@ export default function SessionTab({ api, params, containerApi }: IDockviewPanel
       <span className="min-w-0 flex-1 truncate text-xs">{title}</span>
       <button
         type="button"
-        aria-label="关闭标签页"
+        aria-label={t('tab.closeTab')}
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation();

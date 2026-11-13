@@ -46,17 +46,19 @@ export interface SessionDraft {
 
 export const DEFAULT_GROUP = '会话';
 
-export const SESSION_KIND_LABEL: Record<SessionKind, string> = {
-  local: '本地终端',
-  ssh: 'SSH',
-  sftp: 'SFTP',
-  telnet: 'Telnet'
+export type SessionTranslate = (key: string, params?: Record<string, string | number>) => string;
+
+export const SESSION_KIND_LABEL_KEY: Record<SessionKind, string> = {
+  local: 'session.kind.local',
+  ssh: 'session.kind.ssh',
+  sftp: 'session.kind.sftp',
+  telnet: 'session.kind.telnet'
 };
 
-export function sessionSubtitle(session: Session): string {
+export function sessionSubtitle(session: Session, t: SessionTranslate): string {
   if (session.kind === 'local') {
     const shellName = session.shellCommand?.split(/[\\/]/).pop();
-    return shellName ? shellName.replace(/\.exe$/i, '') : '本地 Shell';
+    return shellName ? shellName.replace(/\.exe$/i, '') : t('session.subtitle.localShell');
   }
   const target = session.username
     ? `${session.username}@${session.host ?? ''}`

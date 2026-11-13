@@ -16,20 +16,22 @@ import { Button } from '../ui/button';
 import { Input, Label } from '../ui/input';
 import { Select } from '../ui/select';
 import { toast } from '../ui/toastStore';
+import { useI18n } from '../../i18n';
 
 const KIND_LABEL: Record<PortForwardKind, string> = {
-  local: '本地转发',
-  remote: '远程转发',
-  dynamic: '动态 SOCKS5'
+  local: 'forward.kind.local',
+  remote: 'forward.kind.remote',
+  dynamic: 'forward.kind.dynamic'
 };
 
 const KIND_HINT: Record<PortForwardKind, string> = {
-  local: '将本机端口转发到 SSH 服务器可访问的目标地址。',
-  remote: '在服务器上监听端口，转发回本机可访问的目标地址。',
-  dynamic: '在本机启动 SOCKS5 代理，经 SSH 服务器访问任意目标。'
+  local: 'forward.hint.local',
+  remote: 'forward.hint.remote',
+  dynamic: 'forward.hint.dynamic'
 };
 
 export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
+  const { t } = useI18n();
   const activeSessionId = useWorkspaceStore((state) => state.activeSessionId);
   const sessions = useSessionStore((state) => state.sessions);
   const initialSessionId =
@@ -94,8 +96,10 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
   }, [activeSessionId, boundSessionId, sessions]);
 
   useEffect(() => {
-    void api.setTitle(sessionTitle ? `端口转发 · ${sessionTitle}` : '端口转发');
-  }, [api, sessionTitle]);
+    void api.setTitle(
+      sessionTitle ? `${t('forward.windowTitle')} · ${sessionTitle}` : t('forward.windowTitle')
+    );
+  }, [api, sessionTitle, t]);
 
   // A bound-but-disconnected session shows its own (empty) list; only an
   // explicitly unbound panel shows every session's forwards.
@@ -107,18 +111,18 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
 
   const handleStart = async () => {
     if (!sshId) {
-      toast({ title: '请先连接一个 SSH 会话', variant: 'error' });
+      toast({ title: t('forward.toast.needSession'), variant: 'error' });
       return;
     }
 
     const bind = Number(bindPort);
     const target = Number(targetPort);
     if (!Number.isInteger(bind) || bind < 0 || bind > 65535) {
-      toast({ title: '监听端口无效', variant: 'error' });
+      toast({ title: t('forward.toast.invalidBindPort'), variant: 'error' });
       return;
     }
     if (kind !== 'dynamic' && (!targetHost.trim() || !Number.isInteger(target) || target <= 0)) {
-      toast({ title: '目标地址无效', variant: 'error' });
+      toast({ title: t('forward.toast.invalidTarget'), variant: 'error' });
       return;
     }
 
@@ -134,12 +138,16 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
       });
       await refresh();
       toast({
-        title: `${KIND_LABEL[kind]}已启动`,
+        title: t('forward.toast.started', { kind: t(KIND_LABEL[kind]) }),
         description: `${info.bind_host}:${info.bind_port}`,
         variant: 'success'
       });
     } catch (reason) {
-      toast({ title: '启动端口转发失败', description: String(reason), variant: 'error' });
+      toast({
+        title: t('forward.toast.startFailed'),
+        description: String(reason),
+        variant: 'error'
+      });
     } finally {
       setBusy(false);
     }
@@ -149,9 +157,13 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
     try {
       await stopPortForward(id);
       await refresh();
-      toast({ title: '端口转发已停止', variant: 'success' });
+      toast({ title: t('forward.toast.stopped'), variant: 'success' });
     } catch (reason) {
-      toast({ title: '停止端口转发失败', description: String(reason), variant: 'error' });
+      toast({
+        title: t('forward.toast.stopFailed'),
+        description: String(reason),
+        variant: 'error'
+      });
     }
   };
 
@@ -161,7 +173,7 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
     <div className="flex h-full flex-col bg-surface">
       <div className="flex h-7 shrink-0 items-center gap-1 border-b border-border px-1">
         <Select
-          aria-label="SSH 会话"
+          aria-label={t('forward.tool.sessionSelect')}
           value={boundSessionId ?? ''}
           onChange={(event) => {
             userUnboundRef.current = event.target.value === '';
@@ -171,7 +183,7 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
           width={144}
           className="shrink-0"
         >
-          <option value="">选择会话</option>
+          <option value="">{t('forward.tool.chooseSession')}</option>
           {remoteSessions.map((item) => (
             <option key={item.id} value={item.id}>
               {item.title}
@@ -180,12 +192,17 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
         </Select>
         <span className="min-w-0 flex-1 truncate text-[11px] text-muted">
           {sshId
-            ? `SSH 连接已就绪 · ${visibleForwards.length} 条规则`
+            ? t('forward.status.ready', { count: visibleForwards.length })
             : session
-              ? '该会话尚未建立 SSH 连接'
-              : '请选择 SSH 会话'}
+              ? t('forward.status.noConnection')
+              : t('forward.status.pickSession')}
         </span>
-        <Button size="icon-sm" variant="ghost" aria-label="刷新" onClick={() => void refresh()}>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label={t('forward.tool.refresh')}
+          onClick={() => void refresh()}
+        >
           <RefreshCw className="h-3 w-3" />
         </Button>
       </div>
@@ -193,21 +210,21 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
       <div className="border-b border-border bg-background-alt p-2">
         <div className="grid grid-cols-[104px_1fr_76px] gap-2">
           <div>
-            <Label htmlFor="forward-kind">类型</Label>
+            <Label htmlFor="forward-kind">{t('forward.label.kind')}</Label>
             <Select
               id="forward-kind"
               value={kind}
               onChange={(event) => setKind(event.target.value as PortForwardKind)}
               size="sm"
             >
-              <option value="local">{KIND_LABEL.local}</option>
-              <option value="remote">{KIND_LABEL.remote}</option>
-              <option value="dynamic">{KIND_LABEL.dynamic}</option>
+              <option value="local">{t(KIND_LABEL.local)}</option>
+              <option value="remote">{t(KIND_LABEL.remote)}</option>
+              <option value="dynamic">{t(KIND_LABEL.dynamic)}</option>
             </Select>
           </div>
           <div>
             <Label htmlFor="forward-bind-host">
-              {kind === 'remote' ? '远程监听地址' : '监听地址'}
+              {kind === 'remote' ? t('forward.label.remoteBindHost') : t('forward.label.bindHost')}
             </Label>
             <Input
               id="forward-bind-host"
@@ -218,7 +235,7 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
             />
           </div>
           <div>
-            <Label htmlFor="forward-bind-port">端口</Label>
+            <Label htmlFor="forward-bind-port">{t('forward.label.port')}</Label>
             <Input
               id="forward-bind-port"
               size="sm"
@@ -232,18 +249,18 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
 
         <div className="mt-2 grid grid-cols-[1fr_76px_84px] gap-2">
           <div>
-            <Label htmlFor="forward-target-host">目标地址</Label>
+            <Label htmlFor="forward-target-host">{t('forward.label.targetHost')}</Label>
             <Input
               id="forward-target-host"
               size="sm"
               value={targetHost}
               disabled={isDynamic}
               onChange={(event) => setTargetHost(event.target.value)}
-              placeholder={isDynamic ? '由 SOCKS5 请求指定' : '127.0.0.1'}
+              placeholder={isDynamic ? t('forward.placeholder.socksTarget') : '127.0.0.1'}
             />
           </div>
           <div>
-            <Label htmlFor="forward-target-port">目标端口</Label>
+            <Label htmlFor="forward-target-port">{t('forward.label.targetPort')}</Label>
             <Input
               id="forward-target-port"
               size="sm"
@@ -263,20 +280,20 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
               onClick={() => void handleStart()}
             >
               <Plus className="h-3 w-3" />
-              启动
+              {t('forward.action.start')}
             </Button>
           </div>
         </div>
 
-        <p className="mt-1.5 text-[10px] text-muted">{KIND_HINT[kind]}</p>
+        <p className="mt-1.5 text-[10px] text-muted">{t(KIND_HINT[kind])}</p>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {visibleForwards.length === 0 ? (
           <div className="flex flex-col items-center gap-1 px-3 py-8 text-center">
             <Network className="h-5 w-5 text-muted" />
-            <p className="text-[11px] text-muted">暂无端口转发规则</p>
-            <p className="text-[10px] text-muted-foreground">填写上方参数后点击「启动」。</p>
+            <p className="text-[11px] text-muted">{t('forward.empty.title')}</p>
+            <p className="text-[10px] text-muted-foreground">{t('forward.empty.hint')}</p>
           </div>
         ) : (
           visibleForwards.map((forward) => (
@@ -285,7 +302,7 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
               className="flex items-center gap-2 border-b border-border-muted/60 px-2 py-1.5"
             >
               <span className="w-16 shrink-0 rounded-sm border border-border bg-background-alt px-1 py-0.5 text-center text-[10px] text-muted">
-                {KIND_LABEL[forward.kind]}
+                {t(KIND_LABEL[forward.kind])}
               </span>
               <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">
                 {forward.bind_host}:{forward.bind_port}
@@ -298,8 +315,8 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
                 type="button"
                 onClick={() => void handleStop(forward.id)}
                 className="rounded-sm p-1 text-muted hover:bg-surface-hover hover:text-error"
-                title="停止转发"
-                aria-label="停止转发"
+                title={t('forward.action.stop')}
+                aria-label={t('forward.action.stop')}
               >
                 <Trash2 className="h-3 w-3" />
               </button>

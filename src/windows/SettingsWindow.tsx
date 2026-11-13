@@ -26,6 +26,7 @@ import { Select } from '../components/ui/select';
 import { ShortcutInput } from '../components/settings/ShortcutInput';
 import { Toaster } from '../components/ui/toast';
 import { toast } from '../components/ui/toastStore';
+import { tStatic, useI18n } from '../i18n';
 import { cn } from '../lib/cn';
 import {
   DEFAULT_SETTINGS,
@@ -67,47 +68,47 @@ import type { SessionAuthMethod } from '../types/session';
 type SettingsTab =
   'appearance' | 'terminal' | 'snippets' | 'ssh' | 'shortcuts' | 'security' | 'about';
 
-const TABS: Array<{ id: SettingsTab; label: string; icon: LucideIcon }> = [
-  { id: 'appearance', label: '外观', icon: Palette },
-  { id: 'terminal', label: '终端', icon: TerminalSquare },
-  { id: 'snippets', label: '片段', icon: SquareTerminal },
-  { id: 'ssh', label: 'SSH', icon: Server },
-  { id: 'shortcuts', label: '快捷键', icon: Keyboard },
-  { id: 'security', label: '安全', icon: Shield },
-  { id: 'about', label: '关于', icon: Info }
+const TABS: Array<{ id: SettingsTab; labelKey: string; icon: LucideIcon }> = [
+  { id: 'appearance', labelKey: 'settings.tab.appearance', icon: Palette },
+  { id: 'terminal', labelKey: 'settings.tab.terminal', icon: TerminalSquare },
+  { id: 'snippets', labelKey: 'settings.tab.snippets', icon: SquareTerminal },
+  { id: 'ssh', labelKey: 'settings.tab.ssh', icon: Server },
+  { id: 'shortcuts', labelKey: 'settings.tab.shortcuts', icon: Keyboard },
+  { id: 'security', labelKey: 'settings.tab.security', icon: Shield },
+  { id: 'about', labelKey: 'settings.tab.about', icon: Info }
 ];
 
 const UI_FONT_PRESETS = [
   {
-    label: '系统界面',
+    labelKey: 'settings.fonts.ui.systemUi',
     value: 'system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif'
   },
   {
-    label: 'Segoe UI / 微软雅黑',
+    labelKey: 'settings.fonts.ui.segoeYahei',
     value: '"Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif'
   },
   {
-    label: 'Noto Sans SC',
+    labelKey: 'settings.fonts.ui.notoSansSc',
     value: '"Noto Sans SC", "Noto Sans", "Microsoft YaHei", sans-serif'
   },
   {
-    label: 'Fira Code（连字）',
+    labelKey: 'settings.fonts.ui.firaCode',
     value: '"Fira Code", "Segoe UI", "Microsoft YaHei", sans-serif'
   },
   {
-    label: 'Cascadia Code（连字）',
+    labelKey: 'settings.fonts.ui.cascadiaCode',
     value: '"Cascadia Code", "Segoe UI", "Microsoft YaHei", sans-serif'
   },
   {
-    label: 'JetBrains Mono（连字）',
+    labelKey: 'settings.fonts.ui.jetbrainsMono',
     value: '"JetBrains Mono", "Segoe UI", "Microsoft YaHei", sans-serif'
   },
   {
-    label: '苹方 / Hiragino',
+    labelKey: 'settings.fonts.ui.pingFang',
     value: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif'
   },
   {
-    label: '经典 Web',
+    labelKey: 'settings.fonts.ui.classicWeb',
     value:
       "'Microsoft YaHei', '微软雅黑', Tahoma, Arial, 'PingFang SC', 'Hiragino Sans GB', sans-serif"
   }
@@ -115,27 +116,51 @@ const UI_FONT_PRESETS = [
 
 const TERMINAL_FONT_PRESETS = [
   {
-    label: 'Consolas / 等宽回退',
+    labelKey: 'settings.fonts.terminal.consolas',
     value: 'Consolas, "Courier New", "Sarasa Mono SC", monospace'
   },
-  { label: 'JetBrains Mono', value: '"JetBrains Mono", Consolas, monospace' },
-  { label: 'Cascadia Code', value: '"Cascadia Code", Consolas, monospace' },
-  { label: 'Fira Code', value: '"Fira Code", Consolas, monospace' },
-  { label: 'Noto Sans Mono', value: '"Noto Sans Mono", Consolas, monospace' },
-  { label: '系统等宽', value: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }
+  {
+    labelKey: 'settings.fonts.terminal.jetbrainsMono',
+    value: '"JetBrains Mono", Consolas, monospace'
+  },
+  {
+    labelKey: 'settings.fonts.terminal.cascadiaCode',
+    value: '"Cascadia Code", Consolas, monospace'
+  },
+  { labelKey: 'settings.fonts.terminal.firaCode', value: '"Fira Code", Consolas, monospace' },
+  {
+    labelKey: 'settings.fonts.terminal.notoSansMono',
+    value: '"Noto Sans Mono", Consolas, monospace'
+  },
+  {
+    labelKey: 'settings.fonts.terminal.systemMono',
+    value: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+  }
 ];
 
-const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
-  commandPalette: '打开命令面板',
-  newLocal: '新建本地终端',
-  newSsh: '新建 SSH 会话',
-  openSettings: '打开设置'
+const SHORTCUT_LABEL_KEYS: Record<ShortcutAction, string> = {
+  commandPalette: 'settings.shortcuts.action.commandPalette',
+  newLocal: 'settings.shortcuts.action.newLocal',
+  newSsh: 'settings.shortcuts.action.newSsh',
+  openSettings: 'settings.shortcuts.action.openSettings'
 };
 
-const THEME_OPTIONS: Array<{ mode: ThemeMode; label: string; description: string }> = [
-  { mode: 'light', label: '亮色', description: '始终使用亮色主题' },
-  { mode: 'dark', label: '暗色', description: '始终使用暗色主题' },
-  { mode: 'system', label: '跟随系统', description: '根据系统外观自动切换' }
+const THEME_OPTIONS: Array<{ mode: ThemeMode; labelKey: string; descriptionKey: string }> = [
+  {
+    mode: 'light',
+    labelKey: 'theme.mode.light',
+    descriptionKey: 'settings.appearance.mode.lightDesc'
+  },
+  {
+    mode: 'dark',
+    labelKey: 'theme.mode.dark',
+    descriptionKey: 'settings.appearance.mode.darkDesc'
+  },
+  {
+    mode: 'system',
+    labelKey: 'theme.mode.system',
+    descriptionKey: 'settings.appearance.mode.systemDesc'
+  }
 ];
 
 const DARK_TERMINAL_SCHEMES = TERMINAL_COLOR_SCHEMES.filter((scheme) => scheme.variant === 'dark');
@@ -144,11 +169,15 @@ const LIGHT_TERMINAL_SCHEMES = TERMINAL_COLOR_SCHEMES.filter(
 );
 
 function buildFontOptions(
-  presets: Array<{ label: string; value: string }>,
+  presets: Array<{ labelKey: string; value: string }>,
   families: SystemFontFamily[],
-  target: FontFamilyTarget
+  target: FontFamilyTarget,
+  translate: (key: string) => string
 ): Array<{ label: string; value: string }> {
-  const options = presets.map((preset) => ({ ...preset }));
+  const options = presets.map((preset) => ({
+    label: translate(preset.labelKey),
+    value: preset.value
+  }));
   const seen = new Set(presets.map((preset) => firstFontFamily(preset.value).toLowerCase()));
 
   for (const family of families) {
@@ -202,6 +231,7 @@ function ThemeSpecimen({ theme, className }: { theme: ThemeDefinition; className
 }
 
 export default function SettingsWindow() {
+  const { t } = useI18n();
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   const [previewActivated, setPreviewActivated] = useState(() => initialTab() === 'terminal');
   const initialSnapshot = useMemo(() => snapshotOf(), []);
@@ -292,10 +322,10 @@ export default function SettingsWindow() {
     }
     if (editing) {
       updateSnippet(editing, { name: snippetName, command: snippetCommand });
-      toast({ title: '片段已更新', variant: 'success' });
+      toast({ title: t('settings.snippets.updatedToast'), variant: 'success' });
     } else {
       addSnippet({ name: snippetName, command: snippetCommand });
-      toast({ title: '片段已添加', variant: 'success' });
+      toast({ title: t('settings.snippets.addedToast'), variant: 'success' });
     }
     resetSnippetForm();
   };
@@ -316,12 +346,12 @@ export default function SettingsWindow() {
     [systemFonts]
   );
   const uiFontOptions = useMemo(
-    () => buildFontOptions(UI_FONT_PRESETS, systemFonts, 'ui'),
-    [systemFonts]
+    () => buildFontOptions(UI_FONT_PRESETS, systemFonts, 'ui', t),
+    [systemFonts, t]
   );
   const terminalFontOptions = useMemo(
-    () => buildFontOptions(TERMINAL_FONT_PRESETS, monospaceFonts, 'terminal'),
-    [monospaceFonts]
+    () => buildFontOptions(TERMINAL_FONT_PRESETS, monospaceFonts, 'terminal', t),
+    [monospaceFonts, t]
   );
 
   useEffect(() => {
@@ -450,24 +480,34 @@ export default function SettingsWindow() {
     if (vaultBusy) {
       return;
     }
-    const password = await promptSecret('设置保险库主密码（至少 8 个字符）', '下一步');
+    const password = await promptSecret(
+      t('settings.security.vault.setupPrompt'),
+      t('settings.security.vault.next')
+    );
     if (!password) {
       return;
     }
-    const confirm = await promptSecret('再次输入主密码', '创建');
+    const confirm = await promptSecret(
+      t('settings.security.vault.reenterPrompt'),
+      t('settings.security.vault.createConfirm')
+    );
     if (!confirm) {
       return;
     }
     if (password !== confirm) {
-      toast({ title: '两次输入的主密码不一致', variant: 'error' });
+      toast({ title: t('settings.security.vault.masterMismatch'), variant: 'error' });
       return;
     }
     setVaultBusy(true);
     try {
       setVaultStatus(await initializeVault(password));
-      toast({ title: '凭据保险库已创建', variant: 'success' });
+      toast({ title: t('settings.security.vault.createdToast'), variant: 'success' });
     } catch (reason) {
-      toast({ title: '创建保险库失败', description: String(reason), variant: 'error' });
+      toast({
+        title: t('settings.security.vault.createFailedToast'),
+        description: String(reason),
+        variant: 'error'
+      });
     } finally {
       setVaultBusy(false);
     }
@@ -477,7 +517,10 @@ export default function SettingsWindow() {
     if (vaultBusy) {
       return;
     }
-    const password = await promptSecret('解锁凭据保险库', '解锁');
+    const password = await promptSecret(
+      t('settings.security.vault.unlockPrompt'),
+      t('settings.security.vault.unlock')
+    );
     if (!password) {
       return;
     }
@@ -485,13 +528,17 @@ export default function SettingsWindow() {
     try {
       const ok = await unlockVault(password);
       if (!ok) {
-        toast({ title: '主密码错误', variant: 'error' });
+        toast({ title: t('settings.security.vault.wrongMasterToast'), variant: 'error' });
         return;
       }
       await refreshVaultStatus();
-      toast({ title: '凭据保险库已解锁', variant: 'success' });
+      toast({ title: t('settings.security.vault.unlockedToast'), variant: 'success' });
     } catch (reason) {
-      toast({ title: '解锁失败', description: String(reason), variant: 'error' });
+      toast({
+        title: t('settings.security.vault.unlockFailedToast'),
+        description: String(reason),
+        variant: 'error'
+      });
     } finally {
       setVaultBusy(false);
     }
@@ -505,9 +552,13 @@ export default function SettingsWindow() {
     try {
       await lockVault();
       await refreshVaultStatus();
-      toast({ title: '凭据保险库已锁定', variant: 'success' });
+      toast({ title: t('settings.security.vault.lockedToast'), variant: 'success' });
     } catch (reason) {
-      toast({ title: '锁定失败', description: String(reason), variant: 'error' });
+      toast({
+        title: t('settings.security.vault.lockFailedToast'),
+        description: String(reason),
+        variant: 'error'
+      });
     } finally {
       setVaultBusy(false);
     }
@@ -517,28 +568,41 @@ export default function SettingsWindow() {
     if (vaultBusy) {
       return;
     }
-    const oldPassword = await promptSecret('当前主密码', '下一步');
+    const oldPassword = await promptSecret(
+      t('settings.security.vault.currentPrompt'),
+      t('settings.security.vault.next')
+    );
     if (!oldPassword) {
       return;
     }
-    const newPassword = await promptSecret('新主密码（至少 8 个字符）', '下一步');
+    const newPassword = await promptSecret(
+      t('settings.security.vault.newPrompt'),
+      t('settings.security.vault.next')
+    );
     if (!newPassword) {
       return;
     }
-    const confirm = await promptSecret('再次输入新主密码', '修改');
+    const confirm = await promptSecret(
+      t('settings.security.vault.reenterNewPrompt'),
+      t('settings.security.vault.changeConfirm')
+    );
     if (!confirm) {
       return;
     }
     if (newPassword !== confirm) {
-      toast({ title: '两次输入的新主密码不一致', variant: 'error' });
+      toast({ title: t('settings.security.vault.newMasterMismatch'), variant: 'error' });
       return;
     }
     setVaultBusy(true);
     try {
       setVaultStatus(await changeVaultPassword(oldPassword, newPassword));
-      toast({ title: '主密码已修改', variant: 'success' });
+      toast({ title: t('settings.security.vault.changedToast'), variant: 'success' });
     } catch (reason) {
-      toast({ title: '修改主密码失败', description: String(reason), variant: 'error' });
+      toast({
+        title: t('settings.security.vault.changeFailedToast'),
+        description: String(reason),
+        variant: 'error'
+      });
     } finally {
       setVaultBusy(false);
     }
@@ -548,9 +612,9 @@ export default function SettingsWindow() {
     if (vaultBusy) {
       return;
     }
-    const ok = await confirmAction('确定清空保险库中保存的全部凭据吗？此操作不可撤销。', {
-      title: '清空凭据保险库',
-      okLabel: '清空'
+    const ok = await confirmAction(t('settings.security.vault.clearConfirm'), {
+      title: t('settings.security.vault.clearTitle'),
+      okLabel: t('settings.security.vault.clearOk')
     });
     if (!ok) {
       return;
@@ -565,9 +629,13 @@ export default function SettingsWindow() {
       await clearVault();
       await lockVault();
       await refreshVaultStatus();
-      toast({ title: '保险库凭据已清空', variant: 'success' });
+      toast({ title: t('settings.security.vault.clearedToast'), variant: 'success' });
     } catch (reason) {
-      toast({ title: '清空保险库失败', description: String(reason), variant: 'error' });
+      toast({
+        title: t('settings.security.vault.clearFailedToast'),
+        description: String(reason),
+        variant: 'error'
+      });
     } finally {
       setVaultBusy(false);
     }
@@ -577,16 +645,19 @@ export default function SettingsWindow() {
     if (vaultBusy) {
       return;
     }
-    const ok = await confirmAction(
-      '确定重置凭据保险库吗？已保存的所有密码将被删除，且需要重新设置主密码。',
-      { title: '重置凭据保险库', okLabel: '重置' }
-    );
+    const ok = await confirmAction(t('settings.security.vault.resetConfirm'), {
+      title: t('settings.security.vault.resetTitle'),
+      okLabel: t('settings.security.vault.resetOk')
+    });
     if (!ok) {
       return;
     }
     // The backend requires the current master password before destroying
     // every stored credential (same bar as clearing an unlocked vault).
-    const masterPassword = await promptSecret('输入当前主密码以重置保险库', '确认重置');
+    const masterPassword = await promptSecret(
+      t('settings.security.vault.resetPrompt'),
+      t('settings.security.vault.resetConfirmLabel')
+    );
     if (masterPassword === null || masterPassword.length === 0) {
       return;
     }
@@ -596,9 +667,13 @@ export default function SettingsWindow() {
       await Promise.all(sessions.map((session) => forgetSessionCredentials(session.id)));
       await resetVault(masterPassword);
       setVaultStatus(await getVaultStatus());
-      toast({ title: '凭据保险库已重置', variant: 'success' });
+      toast({ title: t('settings.security.vault.resetToast'), variant: 'success' });
     } catch (reason) {
-      toast({ title: '重置保险库失败', description: String(reason), variant: 'error' });
+      toast({
+        title: t('settings.security.vault.resetFailedToast'),
+        description: String(reason),
+        variant: 'error'
+      });
     } finally {
       setVaultBusy(false);
     }
@@ -624,7 +699,7 @@ export default function SettingsWindow() {
       const selected = await openDialog({
         directory: true,
         multiple: false,
-        title: '选择会话日志目录'
+        title: t('settings.terminal.logDirPick')
       });
       if (typeof selected === 'string') {
         update('sessionLogDir', selected);
@@ -650,7 +725,7 @@ export default function SettingsWindow() {
     try {
       const selected = await openDialog({
         multiple: false,
-        title: '导入 OpenSSH known_hosts'
+        title: t('settings.security.knownHosts.importDialogTitle')
       });
       if (typeof selected !== 'string') {
         return;
@@ -660,15 +735,22 @@ export default function SettingsWindow() {
       setKnownHosts(await listKnownHosts());
       setRemovedHosts([]);
       toast({
-        title: `已导入 ${result.imported} 条主机记录`,
+        title: t('settings.security.knownHosts.importedToast', { count: result.imported }),
         description:
           result.skipped > 0 || result.invalid > 0
-            ? `跳过 ${result.skipped} 条（哈希/通配符），无效 ${result.invalid} 条`
+            ? t('settings.security.knownHosts.importSkippedToast', {
+                skipped: result.skipped,
+                invalid: result.invalid
+              })
             : undefined,
         variant: result.imported > 0 ? 'success' : 'default'
       });
     } catch (reason) {
-      toast({ title: '导入失败', description: String(reason), variant: 'error' });
+      toast({
+        title: t('settings.security.knownHosts.importFailedToast'),
+        description: String(reason),
+        variant: 'error'
+      });
     }
   };
 
@@ -676,7 +758,7 @@ export default function SettingsWindow() {
     try {
       const target = await saveDialog({
         defaultPath: 'known_hosts',
-        title: '导出 OpenSSH known_hosts'
+        title: t('settings.security.knownHosts.exportDialogTitle')
       });
       if (!target) {
         return;
@@ -684,12 +766,19 @@ export default function SettingsWindow() {
 
       const result = await exportKnownHosts(target, hashHosts);
       toast({
-        title: `已导出 ${result.exported} 条主机记录`,
-        description: result.skipped > 0 ? `跳过 ${result.skipped} 条（缺少公钥）` : undefined,
+        title: t('settings.security.knownHosts.exportedToast', { count: result.exported }),
+        description:
+          result.skipped > 0
+            ? t('settings.security.knownHosts.exportSkippedToast', { count: result.skipped })
+            : undefined,
         variant: result.exported > 0 ? 'success' : 'default'
       });
     } catch (reason) {
-      toast({ title: '导出失败', description: String(reason), variant: 'error' });
+      toast({
+        title: t('settings.security.knownHosts.exportFailedToast'),
+        description: String(reason),
+        variant: 'error'
+      });
     }
   };
 
@@ -725,7 +814,10 @@ export default function SettingsWindow() {
       }
       setRemovedHosts([]);
       if (removed.length < removedHosts.length) {
-        toast({ title: '部分已知主机删除失败', variant: 'error' });
+        toast({
+          title: t('settings.security.knownHosts.removePartialFailedToast'),
+          variant: 'error'
+        });
       }
 
       // Everything the draft held (settings + host deletions) is now applied;
@@ -735,7 +827,7 @@ export default function SettingsWindow() {
       return true;
     } catch (reason) {
       toast({
-        title: '应用设置失败',
+        title: t('settings.footer.applyFailedToast'),
         description: String(reason),
         variant: 'error'
       });
@@ -746,9 +838,9 @@ export default function SettingsWindow() {
   };
 
   const resetDefaults = async () => {
-    const ok = await confirmAction('确定恢复所有设置为默认值吗？点击「应用」后才会生效。', {
-      title: '恢复默认设置',
-      okLabel: '恢复'
+    const ok = await confirmAction(t('settings.reset.confirm'), {
+      title: t('settings.reset.title'),
+      okLabel: t('settings.reset.ok')
     });
     if (!ok) {
       return;
@@ -767,9 +859,11 @@ export default function SettingsWindow() {
     }
     discardConfirmBusyRef.current = true;
     try {
-      return await confirmAction('有未应用的修改，确定放弃并关闭吗？', {
-        title: '未保存的修改',
-        okLabel: '放弃修改'
+      // tStatic instead of the render-scoped t: this dialog also fires from
+      // the onCloseRequested effect, which captures the first-render closure.
+      return await confirmAction(tStatic('settings.discard.confirm'), {
+        title: tStatic('settings.discard.title'),
+        okLabel: tStatic('settings.discard.ok')
       });
     } finally {
       discardConfirmBusyRef.current = false;
@@ -821,9 +915,9 @@ export default function SettingsWindow() {
   }, []);
 
   const handleRemoveHost = async (host: string) => {
-    const ok = await confirmAction(`确定删除「${host}」的已知主机记录吗？`, {
-      title: '删除已知主机',
-      okLabel: '删除'
+    const ok = await confirmAction(t('settings.security.knownHosts.removeConfirmText', { host }), {
+      title: t('settings.security.knownHosts.removeConfirmTitle'),
+      okLabel: t('settings.security.knownHosts.removeOk')
     });
     if (ok) {
       unsavedRef.current = true;
@@ -841,18 +935,18 @@ export default function SettingsWindow() {
       <section className="space-y-5">
         <div className="rounded-sm border border-border bg-surface p-3">
           <div className="max-w-xs">
-            <Label htmlFor="language">界面语言</Label>
+            <Label htmlFor="language">{t('settings.appearance.language')}</Label>
             <Select
               id="language"
               value={draft.language}
               onChange={(event) => update('language', event.target.value as LanguageSetting)}
             >
-              <option value="system">跟随系统</option>
-              <option value="zh-CN">简体中文</option>
+              <option value="system">{t('settings.appearance.language.system')}</option>
+              <option value="zh-CN">{t('settings.appearance.language.zh')}</option>
               <option value="en-US">English</option>
             </Select>
             <p className="mt-1 text-[10px] text-muted-foreground">
-              部分面板暂未跟随界面语言，仍以中文显示。
+              {t('settings.appearance.language.partialNote')}
             </p>
           </div>
         </div>
@@ -860,7 +954,7 @@ export default function SettingsWindow() {
         <div className="rounded-sm border border-border bg-surface p-3">
           <div className="grid gap-3 md:grid-cols-[minmax(0,240px)_1fr]">
             <div>
-              <Label htmlFor="theme-mode">主题策略</Label>
+              <Label htmlFor="theme-mode">{t('settings.appearance.themeMode')}</Label>
               <Select
                 id="theme-mode"
                 value={draft.themeMode}
@@ -868,18 +962,20 @@ export default function SettingsWindow() {
               >
                 {THEME_OPTIONS.map((option) => (
                   <option key={option.mode} value={option.mode}>
-                    {option.label}
+                    {t(option.labelKey)}
                   </option>
                 ))}
               </Select>
-              <p className="mt-1 text-[10px] text-muted-foreground">{activeMode?.description}</p>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                {activeMode ? t(activeMode.descriptionKey) : undefined}
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-sm border border-border bg-background-alt p-2">
                 <div className="flex items-center gap-1.5 text-[10px] text-muted">
                   <Moon className="h-3 w-3" />
-                  暗色主题
+                  {t('settings.appearance.darkThemeLabel')}
                 </div>
                 <div className="mt-1.5 flex items-center gap-2">
                   <ThemeSpecimen theme={activeDarkTheme} className="h-10 w-16" />
@@ -891,7 +987,7 @@ export default function SettingsWindow() {
               <div className="rounded-sm border border-border bg-background-alt p-2">
                 <div className="flex items-center gap-1.5 text-[10px] text-muted">
                   <Sun className="h-3 w-3" />
-                  亮色主题
+                  {t('settings.appearance.lightThemeLabel')}
                 </div>
                 <div className="mt-1.5 flex items-center gap-2">
                   <ThemeSpecimen theme={activeLightTheme} className="h-10 w-16" />
@@ -906,8 +1002,12 @@ export default function SettingsWindow() {
 
         <div>
           <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="text-xs font-semibold text-foreground">主题</h3>
-            <span className="text-[10px] text-muted-foreground">按家族选择暗色 / 亮色</span>
+            <h3 className="text-xs font-semibold text-foreground">
+              {t('settings.appearance.themesTitle')}
+            </h3>
+            <span className="text-[10px] text-muted-foreground">
+              {t('settings.appearance.familyHint')}
+            </span>
           </div>
           <div className="space-y-2">
             {THEME_FAMILIES.map((family) => {
@@ -932,7 +1032,7 @@ export default function SettingsWindow() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-xs font-semibold text-foreground">{family.name}</div>
-                    <div className="text-[10px] text-muted">{family.description}</div>
+                    <div className="text-[10px] text-muted">{t(family.descriptionKey)}</div>
                     <div className="mt-1 text-[10px] text-muted-foreground">
                       {darkTheme.name} / {lightTheme.name}
                     </div>
@@ -944,7 +1044,7 @@ export default function SettingsWindow() {
                       onClick={() => update('darkTheme', darkTheme.id)}
                     >
                       <Moon className="h-3 w-3" />
-                      暗色
+                      {t('theme.mode.dark')}
                     </Button>
                     <Button
                       size="xs"
@@ -952,7 +1052,7 @@ export default function SettingsWindow() {
                       onClick={() => update('lightTheme', lightTheme.id)}
                     >
                       <Sun className="h-3 w-3" />
-                      亮色
+                      {t('theme.mode.light')}
                     </Button>
                   </div>
                 </div>
@@ -962,7 +1062,9 @@ export default function SettingsWindow() {
         </div>
 
         <div className="rounded-sm border border-border bg-surface p-3">
-          <h3 className="mb-2 text-xs font-semibold text-foreground">界面字体</h3>
+          <h3 className="mb-2 text-xs font-semibold text-foreground">
+            {t('settings.fonts.uiTitle')}
+          </h3>
           <div className="grid items-end gap-3 md:grid-cols-[1fr_auto]">
             <div>
               <Label htmlFor="ui-font">Font Family</Label>
@@ -971,15 +1073,15 @@ export default function SettingsWindow() {
                 value={draft.uiFontFamily}
                 options={uiFontOptions}
                 onChange={(value) => update('uiFontFamily', value)}
-                ariaLabel="界面字体"
+                ariaLabel={t('settings.fonts.uiTitle')}
               />
               <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
                 <span className="truncate">
                   {systemFontsLoading
-                    ? '正在加载系统字体…'
+                    ? t('settings.fonts.loading')
                     : systemFontsError
-                      ? `系统字体加载失败：${systemFontsError}`
-                      : `已加载 ${systemFonts.length} 个系统字体`}
+                      ? t('settings.fonts.loadFailed', { error: systemFontsError })
+                      : t('settings.fonts.uiLoaded', { count: systemFonts.length })}
                 </span>
                 <button
                   type="button"
@@ -987,7 +1089,7 @@ export default function SettingsWindow() {
                   onClick={() => void refreshSystemFonts()}
                   className="shrink-0 underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
                 >
-                  刷新
+                  {t('settings.fonts.refresh')}
                 </button>
               </div>
             </div>
@@ -1002,7 +1104,7 @@ export default function SettingsWindow() {
             </label>
           </div>
           <p className="mt-1 text-[10px] text-muted-foreground">
-            可直接编辑字体字符串；连字需要字体本身支持（如 Fira Code、Cascadia Code）。
+            {t('settings.fonts.ligaturesHint')}
           </p>
           <div className="mt-2">
             <Label htmlFor="ui-font-feature-settings">Font Feature Settings</Label>
@@ -1013,11 +1115,13 @@ export default function SettingsWindow() {
               placeholder={'"liga" 1, "calt" 1'}
             />
             <p className="mt-1 text-[10px] text-muted-foreground">
-              仅在 Font Ligatures 开启时生效，可填写如 "ss03" 1 的 OpenType 特性。
+              {t('settings.fonts.featuresHint')}
             </p>
           </div>
           <div className="mt-2 flex min-w-0 items-center gap-1.5">
-            <span className="shrink-0 text-[10px] text-muted-foreground">连字示例</span>
+            <span className="shrink-0 text-[10px] text-muted-foreground">
+              {t('settings.fonts.ligatureSample')}
+            </span>
             <span
               className="selectable truncate text-[11px] text-foreground"
               style={{
@@ -1033,7 +1137,7 @@ export default function SettingsWindow() {
           </div>
         </div>
 
-        <p className="text-[10px] text-muted-foreground">主题与字体将在点击「应用」后生效。</p>
+        <p className="text-[10px] text-muted-foreground">{t('settings.appearance.applyHint')}</p>
       </section>
     );
   };
@@ -1048,15 +1152,15 @@ export default function SettingsWindow() {
             value={draft.terminalFontFamily}
             options={terminalFontOptions}
             onChange={(value) => update('terminalFontFamily', value)}
-            ariaLabel="终端字体"
+            ariaLabel={t('settings.fonts.terminalAria')}
           />
           <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
             <span className="truncate">
               {systemFontsLoading
-                ? '正在加载系统字体…'
+                ? t('settings.fonts.loading')
                 : systemFontsError
-                  ? `系统字体加载失败：${systemFontsError}`
-                  : `可用等宽字体 ${monospaceFonts.length} 个`}
+                  ? t('settings.fonts.loadFailed', { error: systemFontsError })
+                  : t('settings.fonts.monoAvailable', { count: monospaceFonts.length })}
             </span>
             <button
               type="button"
@@ -1064,26 +1168,26 @@ export default function SettingsWindow() {
               onClick={() => void refreshSystemFonts()}
               className="shrink-0 underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
             >
-              刷新
+              {t('settings.fonts.refresh')}
             </button>
           </div>
         </div>
         <div>
-          <Label htmlFor="terminal-color-scheme">配色方案</Label>
+          <Label htmlFor="terminal-color-scheme">{t('settings.terminal.colorScheme')}</Label>
           <Select
             id="terminal-color-scheme"
             value={draft.terminalColorScheme}
             onChange={(event) => update('terminalColorScheme', event.target.value)}
           >
-            <option value="theme">跟随界面主题</option>
-            <optgroup label="QTerminal 暗色">
+            <option value="theme">{t('settings.terminal.schemeFollowTheme')}</option>
+            <optgroup label={t('settings.terminal.schemeGroupDark')}>
               {DARK_TERMINAL_SCHEMES.map((scheme) => (
                 <option key={scheme.id} value={scheme.id}>
                   {scheme.name}
                 </option>
               ))}
             </optgroup>
-            <optgroup label="QTerminal 亮色">
+            <optgroup label={t('settings.terminal.schemeGroupLight')}>
               {LIGHT_TERMINAL_SCHEMES.map((scheme) => (
                 <option key={scheme.id} value={scheme.id}>
                   {scheme.name}
@@ -1096,7 +1200,7 @@ export default function SettingsWindow() {
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <Label>字号</Label>
+          <Label>{t('settings.terminal.fontSize')}</Label>
           <div className="flex items-center gap-1">
             <Button
               size="sm"
@@ -1119,7 +1223,7 @@ export default function SettingsWindow() {
         </div>
 
         <div>
-          <Label htmlFor="terminal-cursor">光标样式</Label>
+          <Label htmlFor="terminal-cursor">{t('settings.terminal.cursorStyle')}</Label>
           <Select
             id="terminal-cursor"
             value={draft.terminalCursorStyle}
@@ -1127,14 +1231,14 @@ export default function SettingsWindow() {
               update('terminalCursorStyle', event.target.value as TerminalCursorStyle)
             }
           >
-            <option value="block">方块</option>
-            <option value="underline">下划线</option>
-            <option value="bar">竖线</option>
+            <option value="block">{t('settings.terminal.cursor.block')}</option>
+            <option value="underline">{t('settings.terminal.cursor.underline')}</option>
+            <option value="bar">{t('settings.terminal.cursor.bar')}</option>
           </Select>
         </div>
 
         <div>
-          <Label htmlFor="terminal-scrollback">回滚行数</Label>
+          <Label htmlFor="terminal-scrollback">{t('settings.terminal.scrollback')}</Label>
           <Input
             id="terminal-scrollback"
             type="number"
@@ -1147,7 +1251,7 @@ export default function SettingsWindow() {
         </div>
 
         <div>
-          <Label htmlFor="terminal-line-height">行高</Label>
+          <Label htmlFor="terminal-line-height">{t('settings.terminal.lineHeight')}</Label>
           <Input
             id="terminal-line-height"
             type="number"
@@ -1168,7 +1272,7 @@ export default function SettingsWindow() {
             checked={draft.terminalCursorBlink}
             onChange={(event) => update('terminalCursorBlink', event.target.checked)}
           />
-          光标闪烁
+          {t('settings.terminal.cursorBlink')}
         </label>
         <label className="flex items-center gap-2 text-[11px] text-muted">
           <input
@@ -1186,7 +1290,7 @@ export default function SettingsWindow() {
             checked={draft.terminalCopyOnSelect}
             onChange={(event) => update('terminalCopyOnSelect', event.target.checked)}
           />
-          选中即复制
+          {t('settings.terminal.copyOnSelect')}
         </label>
         <label className="flex items-center gap-2 text-[11px] text-muted">
           <input
@@ -1195,13 +1299,11 @@ export default function SettingsWindow() {
             checked={draft.terminalRestoreScrollback}
             onChange={(event) => update('terminalRestoreScrollback', event.target.checked)}
           />
-          重启后恢复滚动缓冲
+          {t('settings.terminal.restoreScrollback')}
         </label>
       </div>
       <p className="-mt-1 text-[10px] text-muted-foreground">
-        连字需要等宽字体支持（如 Fira Code、Cascadia Code），WebGL 渲染下同样生效。
-        滚动缓冲快照保存在本地
-        localStorage，可能包含敏感输出；如不需要可关闭「重启后恢复滚动缓冲」。
+        {t('settings.terminal.ligaturesNote')}
       </p>
 
       <div className="space-y-2 rounded-sm border border-border bg-surface p-3">
@@ -1212,31 +1314,27 @@ export default function SettingsWindow() {
             checked={draft.sessionLogEnabled}
             onChange={(event) => update('sessionLogEnabled', event.target.checked)}
           />
-          记录会话日志
+          {t('settings.terminal.sessionLog')}
         </label>
         <div className="flex items-stretch gap-1">
           <Input
             value={draft.sessionLogDir}
             onChange={(event) => update('sessionLogDir', event.target.value)}
-            placeholder="选择或输入保存会话日志的目录"
+            placeholder={t('settings.terminal.logDirPlaceholder')}
             className="flex-1"
-            aria-label="会话日志目录"
+            aria-label={t('settings.terminal.logDirAria')}
           />
           <Button
             size="icon"
             variant="secondary"
-            aria-label="选择会话日志目录"
-            title="选择会话日志目录"
+            aria-label={t('settings.terminal.logDirPick')}
+            title={t('settings.terminal.logDirPick')}
             onClick={() => void browseLogDir()}
           >
             <FolderOpen className="h-3.5 w-3.5" />
           </Button>
         </div>
-        <p className="text-[10px] text-muted-foreground">
-          开启后终端输出（含 ANSI
-          控制序列）会追加写入目录下的「会话名-时间.log」。新建连接立即生效；
-          对已连接的会话切换开关即时生效，且不更换已有日志文件。日志可能包含敏感输出，请注意保存位置。
-        </p>
+        <p className="text-[10px] text-muted-foreground">{t('settings.terminal.logNote')}</p>
       </div>
 
       <div>
@@ -1248,16 +1346,16 @@ export default function SettingsWindow() {
           placeholder={'"calt" on'}
         />
         <p className="mt-1 text-[10px] text-muted-foreground">
-          仅在 Font Ligatures 开启时生效，例如 "calt" off, "ss03"。
+          {t('settings.terminal.featuresHint')}
         </p>
       </div>
 
       <div>
-        <p className="mb-1 text-[10px] text-muted">预览</p>
+        <p className="mb-1 text-[10px] text-muted">{t('settings.terminal.preview')}</p>
         <Suspense
           fallback={
             <div className="flex h-40 items-center justify-center rounded-sm border border-border bg-background-alt text-[11px] text-muted">
-              正在加载终端预览…
+              {t('settings.terminal.previewLoading')}
             </div>
           }
         >
@@ -1281,20 +1379,20 @@ export default function SettingsWindow() {
   const renderSsh = () => (
     <section className="grid grid-cols-2 gap-3">
       <div>
-        <Label htmlFor="default-auth">默认认证方式</Label>
+        <Label htmlFor="default-auth">{t('settings.ssh.defaultAuth')}</Label>
         <Select
           id="default-auth"
           value={draft.defaultAuthMethod}
           onChange={(event) => update('defaultAuthMethod', event.target.value as SessionAuthMethod)}
         >
-          <option value="password">密码</option>
-          <option value="key">私钥</option>
-          <option value="certificate">OpenSSH 证书</option>
+          <option value="password">{t('settings.ssh.auth.password')}</option>
+          <option value="key">{t('settings.ssh.auth.key')}</option>
+          <option value="certificate">{t('settings.ssh.auth.certificate')}</option>
           <option value="agent">SSH Agent</option>
         </Select>
       </div>
       <div>
-        <Label htmlFor="default-port">默认端口</Label>
+        <Label htmlFor="default-port">{t('settings.ssh.defaultPort')}</Label>
         <Input
           id="default-port"
           type="number"
@@ -1305,12 +1403,12 @@ export default function SettingsWindow() {
         />
       </div>
       <div className="col-span-2">
-        <Label htmlFor="default-username">默认用户名</Label>
+        <Label htmlFor="default-username">{t('settings.ssh.defaultUsername')}</Label>
         <Input
           id="default-username"
           value={draft.defaultUsername}
           onChange={(event) => update('defaultUsername', event.target.value)}
-          placeholder="例如 root"
+          placeholder={t('settings.ssh.usernamePlaceholder')}
         />
       </div>
       <div className="col-span-2 space-y-2 rounded-sm border border-border bg-background-alt px-2 py-2">
@@ -1321,11 +1419,9 @@ export default function SettingsWindow() {
             checked={draft.sshAutoReconnect}
             onChange={(event) => update('sshAutoReconnect', event.target.checked)}
           />
-          连接意外断开时自动重连
+          {t('settings.ssh.autoReconnect')}
         </label>
-        <p className="text-[10px] text-muted-foreground">
-          SSH 每 30 秒发送一次保活探测；断线后按 1s / 2s / 4s / 8s / 16s 退避重试。
-        </p>
+        <p className="text-[10px] text-muted-foreground">{t('settings.ssh.keepaliveNote')}</p>
       </div>
     </section>
   );
@@ -1333,9 +1429,9 @@ export default function SettingsWindow() {
   const renderShortcuts = () => (
     <section>
       <div className="space-y-2">
-        {(Object.keys(SHORTCUT_LABELS) as ShortcutAction[]).map((action) => (
+        {(Object.keys(SHORTCUT_LABEL_KEYS) as ShortcutAction[]).map((action) => (
           <div key={action} className="flex items-center justify-between gap-3">
-            <span className="text-[11px] text-muted">{SHORTCUT_LABELS[action]}</span>
+            <span className="text-[11px] text-muted">{t(SHORTCUT_LABEL_KEYS[action])}</span>
             <ShortcutInput
               value={draft.shortcuts[action]}
               onChange={(value) => updateShortcut(action, value)}
@@ -1343,9 +1439,7 @@ export default function SettingsWindow() {
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[10px] text-muted-foreground">
-        点击输入框后按下组合键（需包含 Ctrl / Alt / Meta）。快捷键不会在文本输入框中触发。
-      </p>
+      <p className="mt-2 text-[10px] text-muted-foreground">{t('settings.shortcuts.hint')}</p>
     </section>
   );
 
@@ -1356,7 +1450,9 @@ export default function SettingsWindow() {
       <section className="space-y-5">
         <div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-xs font-semibold text-foreground">凭据保险库</h3>
+            <h3 className="text-xs font-semibold text-foreground">
+              {t('settings.security.vault.title')}
+            </h3>
             <span
               className={cn(
                 'rounded-sm border px-1.5 py-0.5 text-[10px]',
@@ -1367,12 +1463,15 @@ export default function SettingsWindow() {
                     : 'border-border text-muted'
               )}
             >
-              {vaultInitialized ? (vaultUnlocked ? '已解锁' : '已锁定') : '未创建'}
+              {vaultInitialized
+                ? vaultUnlocked
+                  ? t('settings.security.vault.unlocked')
+                  : t('settings.security.vault.locked')
+                : t('settings.security.vault.missing')}
             </span>
           </div>
           <p className="text-[10px] text-muted-foreground">
-            记住的 SSH 密码与私钥口令使用 Argon2id 派生密钥并通过 AES-256-GCM
-            加密，保存在应用配置目录。应用重启后保险库默认锁定。
+            {t('settings.security.vault.description')}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {!vaultInitialized ? (
@@ -1382,7 +1481,7 @@ export default function SettingsWindow() {
                 disabled={vaultBusy}
                 onClick={() => void handleVaultSetup()}
               >
-                设置主密码
+                {t('settings.security.vault.setupMaster')}
               </Button>
             ) : vaultUnlocked ? (
               <>
@@ -1392,7 +1491,7 @@ export default function SettingsWindow() {
                   disabled={vaultBusy}
                   onClick={() => void handleVaultLock()}
                 >
-                  锁定
+                  {t('settings.security.vault.lock')}
                 </Button>
                 <Button
                   size="xs"
@@ -1400,7 +1499,7 @@ export default function SettingsWindow() {
                   disabled={vaultBusy}
                   onClick={() => void handleVaultChangePassword()}
                 >
-                  更改主密码
+                  {t('settings.security.vault.changeMaster')}
                 </Button>
                 <Button
                   size="xs"
@@ -1408,7 +1507,7 @@ export default function SettingsWindow() {
                   disabled={vaultBusy}
                   onClick={() => void handleVaultClear()}
                 >
-                  清空凭据
+                  {t('settings.security.vault.clearCredentials')}
                 </Button>
               </>
             ) : (
@@ -1418,7 +1517,7 @@ export default function SettingsWindow() {
                 disabled={vaultBusy}
                 onClick={() => void handleVaultUnlock()}
               >
-                解锁
+                {t('settings.security.vault.unlock')}
               </Button>
             )}
             {vaultInitialized ? (
@@ -1428,12 +1527,14 @@ export default function SettingsWindow() {
                 disabled={vaultBusy}
                 onClick={() => void handleVaultReset()}
               >
-                重置保险库
+                {t('settings.security.vault.reset')}
               </Button>
             ) : null}
             {vaultUnlocked ? (
               <span className="text-[10px] text-muted">
-                已保存 {vaultStatus?.entry_count ?? 0} 条凭据
+                {t('settings.security.vault.entryCount', {
+                  count: vaultStatus?.entry_count ?? 0
+                })}
               </span>
             ) : null}
           </div>
@@ -1444,13 +1545,15 @@ export default function SettingsWindow() {
               checked={draft.sshRememberCredentials}
               onChange={(event) => update('sshRememberCredentials', event.target.checked)}
             />
-            记住 SSH 凭据（保险库解锁后自动保存并填充）
+            {t('settings.security.rememberCredentials')}
           </label>
         </div>
 
         <div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-xs font-semibold text-foreground">已知主机（known_hosts）</h3>
+            <h3 className="text-xs font-semibold text-foreground">
+              {t('settings.security.knownHosts.title')}
+            </h3>
             <div className="flex items-center gap-1.5">
               <label className="flex items-center gap-1 text-[10px] text-muted">
                 <input
@@ -1458,22 +1561,22 @@ export default function SettingsWindow() {
                   checked={hashHosts}
                   onChange={(event) => setHashHosts(event.target.checked)}
                 />
-                哈希主机名
+                {t('settings.security.knownHosts.hashHostnames')}
               </label>
               <Button size="xs" variant="secondary" onClick={() => void handleImportHosts()}>
-                导入
+                {t('settings.security.knownHosts.import')}
               </Button>
               <Button size="xs" variant="secondary" onClick={() => void handleExportHosts()}>
-                导出
+                {t('settings.security.knownHosts.export')}
               </Button>
             </div>
           </div>
           {loadingHosts ? (
-            <p className="text-[11px] text-muted">加载中…</p>
+            <p className="text-[11px] text-muted">{t('settings.security.knownHosts.loading')}</p>
           ) : hostsError ? (
             <p className="selectable text-[11px] text-error">{hostsError}</p>
           ) : visibleHosts.length === 0 ? (
-            <p className="text-[11px] text-muted">暂无记录。首次连接主机时会提示确认指纹。</p>
+            <p className="text-[11px] text-muted">{t('settings.security.knownHosts.empty')}</p>
           ) : (
             <div className="max-h-72 overflow-y-auto rounded-sm border border-border">
               {visibleHosts.map((entry) => (
@@ -1495,8 +1598,8 @@ export default function SettingsWindow() {
                   <Button
                     size="icon-md"
                     variant="ghost"
-                    aria-label="删除主机记录"
-                    title="删除主机记录"
+                    aria-label={t('settings.security.knownHosts.removeAria')}
+                    title={t('settings.security.knownHosts.removeAria')}
                     onClick={() => void handleRemoveHost(entry.host)}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -1507,11 +1610,11 @@ export default function SettingsWindow() {
           )}
           {removedHosts.length > 0 ? (
             <p className="mt-2 text-[10px] text-warning">
-              已标记 {removedHosts.length} 条记录，点击「应用」后删除。
+              {t('settings.security.knownHosts.pendingRemoval', { count: removedHosts.length })}
             </p>
           ) : null}
           <p className="mt-2 text-[10px] text-muted-foreground">
-            删除后，下次连接该主机会重新提示确认指纹。
+            {t('settings.security.knownHosts.removeHint')}
           </p>
         </div>
       </section>
@@ -1524,30 +1627,34 @@ export default function SettingsWindow() {
         <h3 className="text-sm font-semibold text-foreground">NexTerm 0.1.0</h3>
         <p className="text-[11px] text-muted">Tauri 2 + React 18 + Rust</p>
         <p className="text-[11px] text-muted">
-          命令面板 {DEFAULT_SETTINGS.shortcuts.commandPalette} · 设置{' '}
-          {DEFAULT_SETTINGS.shortcuts.openSettings}
+          {t('settings.about.shortcuts', {
+            palette: DEFAULT_SETTINGS.shortcuts.commandPalette,
+            settings: DEFAULT_SETTINGS.shortcuts.openSettings
+          })}
         </p>
       </div>
 
       <div className="space-y-2 rounded-sm border border-border bg-surface p-3">
         <div className="flex items-center gap-2">
-          <p className="flex-1 text-[11px] text-muted">检查是否有可用的新版本。</p>
+          <p className="flex-1 text-[11px] text-muted">{t('settings.about.updateHint')}</p>
           <Button
             size="sm"
             variant="secondary"
             disabled={updateState === 'checking'}
             onClick={() => void checkForUpdates()}
           >
-            {updateState === 'checking' ? '正在检查…' : '检查更新'}
+            {updateState === 'checking'
+              ? t('settings.about.checking')
+              : t('settings.about.checkUpdate')}
           </Button>
         </div>
         {updateState === 'latest' ? (
-          <p className="text-[10px] text-muted-foreground">当前已是最新版本。</p>
+          <p className="text-[10px] text-muted-foreground">{t('settings.about.upToDate')}</p>
         ) : null}
         {updateState === 'available' ? (
           <div className="flex items-center gap-2">
             <p className="flex-1 text-[10px] text-muted-foreground">
-              发现新版本 {updateVersion}，请前往发布页下载。
+              {t('settings.about.newVersionFound', { version: updateVersion ?? '' })}
             </p>
             <Button
               size="xs"
@@ -1558,11 +1665,15 @@ export default function SettingsWindow() {
                 )
               }
             >
-              打开发布页
+              {t('settings.about.openReleases')}
             </Button>
           </div>
         ) : null}
-        {updateError ? <p className="text-[10px] text-error">检查更新失败：{updateError}</p> : null}
+        {updateError ? (
+          <p className="text-[10px] text-error">
+            {t('settings.about.updateFailed', { error: updateError })}
+          </p>
+        ) : null}
       </div>
     </section>
   );
@@ -1570,8 +1681,7 @@ export default function SettingsWindow() {
   const renderSnippets = () => (
     <section className="space-y-3">
       <p className="text-[11px] text-muted">
-        片段保存在本地，可从命令面板（{DEFAULT_SETTINGS.shortcuts.commandPalette}
-        ）搜索并一键发送到当前终端，发送后自动执行回车。
+        {t('settings.snippets.hint', { palette: DEFAULT_SETTINGS.shortcuts.commandPalette })}
       </p>
 
       <div className="space-y-2 rounded-sm border border-border bg-surface p-3">
@@ -1579,32 +1689,32 @@ export default function SettingsWindow() {
           <Input
             value={snippetName}
             onChange={(event) => setSnippetName(event.target.value)}
-            placeholder="名称"
-            aria-label="片段名称"
+            placeholder={t('settings.snippets.namePlaceholder')}
+            aria-label={t('settings.snippets.nameAria')}
           />
           <Input
             value={snippetCommand}
             onChange={(event) => setSnippetCommand(event.target.value)}
-            placeholder="命令，例如：tail -n 200 /var/log/syslog"
-            aria-label="片段命令"
+            placeholder={t('settings.snippets.commandPlaceholder')}
+            aria-label={t('settings.snippets.commandAria')}
             className="font-mono"
           />
         </div>
         <div className="flex justify-end gap-2">
           {editingSnippetId ? (
             <Button variant="ghost" onClick={resetSnippetForm}>
-              取消编辑
+              {t('settings.snippets.cancelEdit')}
             </Button>
           ) : null}
           <Button variant="primary" disabled={!snippetCommand.trim()} onClick={submitSnippet}>
-            {editingSnippetId ? '保存修改' : '添加片段'}
+            {editingSnippetId ? t('settings.snippets.save') : t('settings.snippets.add')}
           </Button>
         </div>
       </div>
 
       {snippets.length === 0 ? (
         <p className="px-2 py-6 text-center text-[11px] text-muted">
-          还没有片段，先在上方添加一个。
+          {t('settings.snippets.empty')}
         </p>
       ) : (
         <ul className="space-y-1">
@@ -1620,8 +1730,8 @@ export default function SettingsWindow() {
               <Button
                 size="icon-sm"
                 variant="ghost"
-                aria-label={`编辑片段 ${snippet.name}`}
-                title="编辑"
+                aria-label={t('settings.snippets.editAria', { name: snippet.name })}
+                title={t('settings.snippets.editTitle')}
                 onClick={() => startSnippetEdit(snippet)}
               >
                 <Pencil className="h-3.5 w-3.5" />
@@ -1629,8 +1739,8 @@ export default function SettingsWindow() {
               <Button
                 size="icon-sm"
                 variant="ghost"
-                aria-label={`删除片段 ${snippet.name}`}
-                title="删除"
+                aria-label={t('settings.snippets.deleteAria', { name: snippet.name })}
+                title={t('settings.snippets.deleteTitle')}
                 onClick={() => deleteSnippet(snippet.id)}
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -1671,7 +1781,7 @@ export default function SettingsWindow() {
               )}
             >
               <Icon className="h-3.5 w-3.5" />
-              {item.label}
+              {t(item.labelKey)}
             </button>
           );
         })}
@@ -1686,16 +1796,16 @@ export default function SettingsWindow() {
 
       <div className="flex shrink-0 items-center gap-2 border-t border-border bg-background-alt px-5 py-3">
         <Button variant="ghost" className="mr-auto" onClick={() => void resetDefaults()}>
-          恢复默认
+          {t('settings.footer.resetDefaults')}
         </Button>
         <span className="mr-1 text-[10px] text-muted">
-          {savedAt ? '已应用' : '修改后需点击应用或确定'}
+          {savedAt ? t('settings.footer.saved') : t('settings.footer.unsavedHint')}
         </span>
         <Button variant="ghost" onClick={() => void requestClose()}>
-          取消
+          {t('settings.footer.cancel')}
         </Button>
         <Button variant="secondary" disabled={applying} onClick={() => void apply()}>
-          应用
+          {t('settings.footer.apply')}
         </Button>
         <Button
           variant="primary"
@@ -1706,7 +1816,7 @@ export default function SettingsWindow() {
             }
           }}
         >
-          确定
+          {t('settings.footer.ok')}
         </Button>
       </div>
       <Toaster />

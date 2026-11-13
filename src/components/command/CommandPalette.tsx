@@ -30,18 +30,25 @@ import { openSettingsWindow } from '../../lib/appWindows';
 import { useQuickConnectLauncher } from '../../features/workspace/useQuickConnectLauncher';
 import { dispatchTerminalAction } from '../../lib/terminalCommands';
 import { toast } from '../ui/toastStore';
-import { SESSION_KIND_LABEL, sessionSubtitle } from '../../types/session';
+import { SESSION_KIND_LABEL_KEY, sessionSubtitle } from '../../types/session';
+import { useI18n } from '../../i18n';
 import { SESSION_KIND_ICON } from '../../lib/sessionVisuals';
 
 interface CommandItem {
   id: string;
-  group: '会话' | '命令' | '片段';
+  group: 'sessions' | 'commands' | 'snippets';
   label: string;
   hint?: string;
   keywords?: string;
   icon: LucideIcon;
   run: () => void;
 }
+
+const GROUP_LABEL_KEY: Record<CommandItem['group'], string> = {
+  sessions: 'palette.group.sessions',
+  commands: 'palette.group.commands',
+  snippets: 'palette.group.snippets'
+};
 
 function CommandWindow({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return createPortal(
@@ -60,6 +67,7 @@ function CommandWindow({ children, onClose }: { children: ReactNode; onClose: ()
 }
 
 export default function CommandPalette() {
+  const { t } = useI18n();
   const open = useUIStore((state) => state.commandPaletteOpen);
   const closeCommandPalette = useUIStore((state) => state.closeCommandPalette);
   const openQuickConnect = useQuickConnectLauncher();
@@ -89,9 +97,9 @@ export default function CommandPalette() {
   const items = useMemo<CommandItem[]>(() => {
     const sessionItems: CommandItem[] = sessions.map((session) => ({
       id: `session-${session.id}`,
-      group: '会话',
+      group: 'sessions',
       label: session.title,
-      hint: `${SESSION_KIND_LABEL[session.kind]} · ${sessionSubtitle(session)}`,
+      hint: `${t(SESSION_KIND_LABEL_KEY[session.kind])} · ${sessionSubtitle(session, t)}`,
       keywords: `${session.group} ${session.host ?? ''} ${session.username ?? ''}`,
       icon: SESSION_KIND_ICON[session.kind],
       run: () => openSession(session.id)
@@ -100,72 +108,72 @@ export default function CommandPalette() {
     const commandItems: CommandItem[] = [
       {
         id: 'new-local',
-        group: '命令',
-        label: '新建本地终端',
+        group: 'commands',
+        label: t('palette.newLocal'),
         icon: Plus,
         keywords: 'local terminal 本地 终端 新建',
         run: () => void openQuickConnect({ kind: 'local' })
       },
       {
         id: 'new-ssh',
-        group: '命令',
-        label: '新建 SSH 会话',
+        group: 'commands',
+        label: t('palette.newSsh'),
         icon: Zap,
         keywords: 'ssh remote 远程 新建',
         run: () => void openQuickConnect({ kind: 'ssh' })
       },
       {
         id: 'new-sftp',
-        group: '命令',
-        label: '新建 SFTP 会话',
+        group: 'commands',
+        label: t('palette.newSftp'),
         icon: FolderTree,
         keywords: 'sftp 文件 新建',
         run: () => void openQuickConnect({ kind: 'sftp' })
       },
       {
         id: 'open-sftp',
-        group: '命令',
-        label: '打开 SFTP 面板',
+        group: 'commands',
+        label: t('palette.openSftp'),
         icon: FolderTree,
         keywords: 'sftp 文件 browser 面板',
         run: () => openSftpPanel()
       },
       {
         id: 'open-transfers',
-        group: '命令',
-        label: '打开传输队列',
+        group: 'commands',
+        label: t('palette.openTransfers'),
         icon: ArrowUpDown,
         keywords: 'transfer upload download 传输 队列 上传 下载',
         run: () => openTransferPanel()
       },
       {
         id: 'open-forwards',
-        group: '命令',
-        label: '打开端口转发',
+        group: 'commands',
+        label: t('palette.openForwards'),
         icon: Network,
         keywords: 'forward tunnel proxy socks 端口 转发 隧道',
         run: () => openPortForwardPanel()
       },
       {
         id: 'open-settings',
-        group: '命令',
-        label: '打开设置',
+        group: 'commands',
+        label: t('palette.openSettings'),
         icon: Settings,
         keywords: 'settings 设置 主题 字体 known hosts 已知主机',
         run: () => void openSettingsWindow()
       },
       {
         id: 'toggle-theme',
-        group: '命令',
-        label: `切换主题策略（当前：${themeLabel}）`,
+        group: 'commands',
+        label: t('palette.toggleTheme', { current: themeLabel }),
         icon: SunMoon,
         keywords: 'theme 主题 Day Dim Aqua Holo 亮色 暗色 跟随系统 dark light',
         run: () => cycle()
       },
       {
         id: 'manage-snippets',
-        group: '命令',
-        label: '管理命令片段',
+        group: 'commands',
+        label: t('palette.manageSnippets'),
         icon: SquareTerminal,
         keywords: 'snippet 片段 命令 管理',
         run: () => void openSettingsWindow('snippets')
@@ -178,48 +186,50 @@ export default function CommandPalette() {
       commandItems.push(
         {
           id: 'split-right',
-          group: '命令',
-          label: '向右分屏当前会话',
+          group: 'commands',
+          label: t('palette.splitRight'),
           icon: Columns2,
           keywords: 'split 分屏 右',
           run: () => splitSession(activeSession.id, 'right', activePanelId())
         },
         {
           id: 'split-below',
-          group: '命令',
-          label: '向下分屏当前会话',
+          group: 'commands',
+          label: t('palette.splitBelow'),
           icon: Rows2,
           keywords: 'split 分屏 下',
           run: () => splitSession(activeSession.id, 'below', activePanelId())
         },
         {
           id: 'duplicate',
-          group: '命令',
-          label: '复制当前会话',
+          group: 'commands',
+          label: t('palette.duplicate'),
           icon: Columns2,
           keywords: 'duplicate copy 复制',
           run: () => duplicateSession(activeSession.id, activePanelId())
         },
         {
           id: 'reconnect',
-          group: '命令',
-          label: '重连当前会话',
+          group: 'commands',
+          label: t('palette.reconnect'),
           icon: RotateCw,
           keywords: 'reconnect 重连',
           run: () => reconnectSession(activeSession.id)
         },
         {
           id: 'favorite',
-          group: '命令',
-          label: activeSession.favorite ? '取消收藏当前会话' : '收藏当前会话',
+          group: 'commands',
+          label: activeSession.favorite
+            ? t('palette.unfavoriteCurrent')
+            : t('palette.favoriteCurrent'),
           icon: Star,
           keywords: 'favorite star 收藏',
           run: () => toggleFavorite(activeSession.id)
         },
         {
           id: 'close',
-          group: '命令',
-          label: '关闭当前标签页',
+          group: 'commands',
+          label: t('palette.closeCurrentTab'),
           icon: X,
           keywords: 'close 关闭',
           // Close only the active panel (matching the title bar), not every
@@ -232,7 +242,7 @@ export default function CommandPalette() {
 
     const snippetItems: CommandItem[] = snippets.map((snippet) => ({
       id: `snippet-${snippet.id}`,
-      group: '片段',
+      group: 'snippets',
       label: snippet.name,
       hint: snippet.command.split('\n')[0],
       keywords: snippet.command,
@@ -240,7 +250,7 @@ export default function CommandPalette() {
       run: () => {
         const activePanelId = getApi()?.activePanel?.id;
         if (!activePanelId || !activePanelId.startsWith('panel-')) {
-          toast({ title: '当前没有活动的终端面板', variant: 'warning' });
+          toast({ title: t('palette.noActiveTerminal'), variant: 'warning' });
           return;
         }
         dispatchTerminalAction({ type: 'send-text', text: snippet.command, execute: true });
@@ -263,7 +273,8 @@ export default function CommandPalette() {
     openPortForwardPanel,
     openTransferPanel,
     openQuickConnect,
-    getApi
+    getApi,
+    t
   ]);
 
   const filtered = useMemo(() => {
@@ -301,12 +312,14 @@ export default function CommandPalette() {
   return (
     <CommandWindow onClose={closeCommandPalette}>
       <div className="app-dialog-header flex items-center justify-between border-b border-border bg-panel-title px-2 py-1">
-        <span className="app-dialog-title text-xs font-semibold text-foreground">命令面板</span>
+        <span className="app-dialog-title text-xs font-semibold text-foreground">
+          {t('palette.title')}
+        </span>
         <button
           type="button"
           onClick={closeCommandPalette}
           className="rounded-sm p-0.5 text-muted hover:bg-surface-hover hover:text-foreground"
-          aria-label="关闭命令面板"
+          aria-label={t('palette.close')}
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -335,15 +348,15 @@ export default function CommandPalette() {
               closeCommandPalette();
             }
           }}
-          placeholder="搜索会话或命令..."
-          aria-label="搜索会话或命令"
+          placeholder={t('palette.searchPlaceholder')}
+          aria-label={t('palette.searchLabel')}
           className="h-8 w-full bg-transparent pl-8 pr-3 text-xs text-foreground outline-none placeholder:text-muted-foreground"
         />
       </div>
 
       <div className="max-h-80 overflow-y-auto p-1">
         {filtered.length === 0 ? (
-          <p className="px-2 py-6 text-center text-[11px] text-muted">没有匹配结果</p>
+          <p className="px-2 py-6 text-center text-[11px] text-muted">{t('palette.noResults')}</p>
         ) : (
           filtered.map((item, index) => {
             const Icon = item.icon;
@@ -352,7 +365,7 @@ export default function CommandPalette() {
               <div key={item.id}>
                 {showGroup ? (
                   <div className="px-2 pb-0.5 pt-1 text-[10px] font-semibold text-muted-foreground">
-                    {item.group}
+                    {t(GROUP_LABEL_KEY[item.group])}
                   </div>
                 ) : null}
                 <button
@@ -387,10 +400,10 @@ export default function CommandPalette() {
 
       <div className="app-dialog-footer flex items-center justify-end gap-2 border-t border-border bg-background-alt px-2 py-1 text-[10px] text-muted">
         <span className="inline-flex items-center gap-1">
-          <CornerDownLeft className="h-3 w-3" /> 执行
+          <CornerDownLeft className="h-3 w-3" /> {t('palette.run')}
         </span>
-        <span>↑↓ 选择</span>
-        <span>Esc 关闭</span>
+        <span>{t('palette.navigate')}</span>
+        <span>{t('palette.closeHint')}</span>
       </div>
     </CommandWindow>
   );

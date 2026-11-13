@@ -1,4 +1,5 @@
 import { downloadSftp, uploadSftp, type SftpConflictPolicy } from '../hooks/useTauriSsh';
+import { tStatic } from '../i18n';
 import { currentSshId, useConnectionStore } from '../stores/connectionStore';
 import {
   useTransferStore,
@@ -28,7 +29,7 @@ export async function startSftpTransfer(payload: StartSftpTransferPayload): Prom
   // reconnect, so it must never be stored on the retry request.
   const sshId = connectedSshId(payload.sessionId);
   if (!sshId) {
-    throw new Error('会话尚未建立 SSH 连接，无法传输');
+    throw new Error(tStatic('sftpTransfer.notConnected'));
   }
 
   const options = {
@@ -63,7 +64,7 @@ export async function retryTransfer(item: TransferItem): Promise<string | null> 
     return null;
   }
   if (!connectedSshId(request.sessionId)) {
-    throw new Error('会话未连接，重连后将自动续传');
+    throw new Error(tStatic('sftpTransfer.disconnectedRetryPending'));
   }
 
   const id = await startSftpTransfer({

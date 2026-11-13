@@ -1,4 +1,5 @@
 import { useCallback, useLayoutEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import { useI18n } from '../i18n';
 import { useSettingsStore } from '../stores/settingsStore';
 import { getTheme, type ThemeId, type ThemeMode, type ThemeVariant } from './themes';
 import { ThemeContext, type ThemeContextValue } from './useTheme';
@@ -17,6 +18,7 @@ function subscribeSystemTheme(callback: () => void): () => void {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
+  const { t } = useI18n();
   const mode = useSettingsStore((state) => state.themeMode);
   const lightTheme = useSettingsStore((state) => state.lightTheme);
   const darkTheme = useSettingsStore((state) => state.darkTheme);
@@ -32,7 +34,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const resolved: ThemeVariant = mode === 'system' ? systemTheme : mode;
   const themeId = resolved === 'light' ? lightTheme : darkTheme;
   const themeName = getTheme(themeId).name;
-  const themeLabel = `${themeName} · ${resolved === 'light' ? '亮色' : '暗色'}`;
+  const themeLabel = `${themeName} · ${resolved === 'light' ? t('theme.mode.light') : t('theme.mode.dark')}`;
   const lightThemeName = getTheme(lightTheme).name;
   const darkThemeName = getTheme(darkTheme).name;
 

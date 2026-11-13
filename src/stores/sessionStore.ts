@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { tStatic } from '../i18n';
 import {
   DEFAULT_GROUP,
-  SESSION_KIND_LABEL,
+  SESSION_KIND_LABEL_KEY,
   type Session,
   type SessionDraft,
   type SessionStatus
@@ -26,7 +27,7 @@ function buildSession(draft: SessionDraft): Session {
   return {
     id: crypto.randomUUID(),
     kind: draft.kind,
-    title: draft.title.trim() || SESSION_KIND_LABEL[draft.kind],
+    title: draft.title.trim() || tStatic(SESSION_KIND_LABEL_KEY[draft.kind]),
     host: draft.kind === 'local' ? undefined : draft.host?.trim() || undefined,
     port: draft.kind === 'local' ? undefined : draft.port,
     username: draft.kind === 'local' ? undefined : draft.username?.trim() || undefined,
@@ -76,7 +77,7 @@ export const useSessionStore = create<SessionState>()(
               kind: nextKind,
               title:
                 patch.title !== undefined
-                  ? patch.title.trim() || SESSION_KIND_LABEL[nextKind]
+                  ? patch.title.trim() || tStatic(SESSION_KIND_LABEL_KEY[nextKind])
                   : session.title,
               host: nextKind === 'local' ? undefined : patch.host?.trim() || session.host,
               // An explicitly cleared username (empty string) must stick; the
@@ -168,7 +169,7 @@ export const useSessionStore = create<SessionState>()(
         }
         return get().addSession({
           kind: 'local',
-          title: '本地终端',
+          title: tStatic(SESSION_KIND_LABEL_KEY.local),
           group: '本地'
         });
       },

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useI18n } from '../../i18n';
 import { formatShortcutFromEvent } from '../../lib/shortcuts';
 import { Input } from '../ui/input';
 
@@ -8,13 +9,14 @@ interface ShortcutInputProps {
 }
 
 export function ShortcutInput({ value, onChange }: ShortcutInputProps) {
+  const { t } = useI18n();
   const [recording, setRecording] = useState(false);
 
   return (
     <Input
       readOnly
       value={recording ? '' : value}
-      placeholder={recording ? '按下快捷键…' : ''}
+      placeholder={recording ? t('settings.shortcuts.recordPlaceholder') : ''}
       onFocus={() => setRecording(true)}
       onBlur={() => setRecording(false)}
       onKeyDown={(event) => {
@@ -40,7 +42,7 @@ export function ShortcutInput({ value, onChange }: ShortcutInputProps) {
       }}
       size="compact"
       width={160}
-      aria-label="快捷键"
+      aria-label={t('settings.shortcuts.inputAria')}
     />
   );
 }

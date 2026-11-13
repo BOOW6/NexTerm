@@ -8,7 +8,8 @@ import type {
 export type TransferDirection = 'upload' | 'download';
 export type TransferStatus = 'running' | 'paused' | 'done' | 'error' | 'cancelled' | 'interrupted';
 
-export const INTERRUPTED_MESSAGE = '连接已断开，重连后将自动续传';
+// Stored as the transfer's error value; the panel translates the key at render.
+export const INTERRUPTED_MESSAGE_KEY = 'transfer.interruptedReason';
 
 export interface TransferRequest {
   /** Session-store id the transfer is bound to; sshId is resolved fresh on
@@ -181,7 +182,7 @@ export const useTransferStore = create<TransferState>((set) => ({
         error: payload.success
           ? undefined
           : payload.disconnected
-            ? INTERRUPTED_MESSAGE
+            ? INTERRUPTED_MESSAGE_KEY
             : (payload.error ?? undefined),
         startedAt: current?.startedAt ?? now,
         updatedAt: now,
@@ -224,7 +225,7 @@ export const useTransferStore = create<TransferState>((set) => ({
           status: 'interrupted',
           paused: false,
           speed: 0,
-          error: INTERRUPTED_MESSAGE,
+          error: INTERRUPTED_MESSAGE_KEY,
           updatedAt: Date.now()
         };
       })

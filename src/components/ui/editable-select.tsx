@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n';
 import {
   useEffect,
   useId,
@@ -35,6 +36,7 @@ export function EditableSelect({
   ariaLabel,
   className
 }: EditableSelectProps) {
+  const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -188,7 +190,7 @@ export function EditableSelect({
       <button
         type="button"
         tabIndex={-1}
-        aria-label="选择预设"
+        aria-label={t('ui.selectPreset')}
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => (open ? setOpen(false) : openMenu())}
         className="absolute right-1 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted hover:bg-surface-hover hover:text-foreground"

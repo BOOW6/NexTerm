@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Input, Label } from '../components/ui/input';
 import { cancelModal, getModalPayload, submitModal } from '../lib/appWindows';
+import { useI18n } from '../i18n';
 
 export interface PromptPayload {
   title: string;
@@ -13,6 +14,7 @@ export interface PromptPayload {
 }
 
 export default function PromptWindow() {
+  const { t } = useI18n();
   const [payload, setPayload] = useState<PromptPayload | null>(null);
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -46,7 +48,7 @@ export default function PromptWindow() {
   return (
     <div className="app-dialog-window flex h-full flex-col bg-background text-foreground">
       <div className="flex-1 px-5 py-4">
-        <Label htmlFor="prompt-input">{payload?.label ?? '名称'}</Label>
+        <Label htmlFor="prompt-input">{payload?.label ?? t('prompt.defaultLabel')}</Label>
         <Input
           id="prompt-input"
           autoFocus
@@ -66,10 +68,10 @@ export default function PromptWindow() {
       </div>
       <div className="app-dialog-footer flex items-center justify-end gap-2 border-t border-border bg-background-alt px-5 py-3">
         <Button variant="ghost" onClick={() => void cancelModal()}>
-          取消
+          {t('prompt.action.cancel')}
         </Button>
         <Button variant="primary" disabled={!value.trim() || busy} onClick={() => void submit()}>
-          {payload?.confirmLabel ?? '确定'}
+          {payload?.confirmLabel ?? t('prompt.action.confirm')}
         </Button>
       </div>
     </div>

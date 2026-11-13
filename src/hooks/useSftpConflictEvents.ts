@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { tStatic } from '../i18n';
 import { listenSftpConflict, respondSftpConflict, type SftpConflictPayload } from './useTauriSsh';
 import { openModalWindow } from '../lib/appWindows';
 
@@ -26,7 +27,7 @@ export function useSftpConflictEvents(): void {
         }
 
         const response = await openModalWindow<string>('sftp-conflict', {
-          title: '目标文件已存在',
+          title: tStatic('conflict.existsToast'),
           width: 440,
           height: 320,
           data: {

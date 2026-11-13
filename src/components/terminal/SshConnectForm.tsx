@@ -132,7 +132,7 @@ export default function SshConnectForm({ session }: { session: Session }) {
         <div className="space-y-2.5 p-4">
           <div className="rounded-sm border border-border bg-background-alt px-2 py-1 text-[11px] text-muted">
             <p className="font-medium text-foreground">{session.title}</p>
-            <p className="font-mono">{sessionSubtitle(session)}</p>
+            <p className="font-mono">{sessionSubtitle(session, t)}</p>
           </div>
 
           {authMethod === 'password' ? (

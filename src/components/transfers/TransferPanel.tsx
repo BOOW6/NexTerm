@@ -13,6 +13,7 @@ import {
 import { cancelSftpTransfer, pauseSftpTransfer } from '../../hooks/useTauriSsh';
 import { retryTransfer } from '../../lib/sftpTransfer';
 import {
+  INTERRUPTED_MESSAGE_KEY,
   useTransferStore,
   type TransferItem,
   type TransferStatus
@@ -22,17 +23,19 @@ import { Tooltip } from '../ui/tooltip';
 import { toast } from '../ui/toastStore';
 import { cn } from '../../lib/cn';
 import { formatBytes, formatSpeed } from '../../lib/format';
+import { useI18n } from '../../i18n';
 
 const statusText: Record<TransferStatus, string> = {
-  running: '传输中',
-  paused: '已暂停',
-  done: '已完成',
-  error: '失败',
-  cancelled: '已取消',
-  interrupted: '已中断 · 等待重连续传'
+  running: 'transfer.status.running',
+  paused: 'transfer.status.paused',
+  done: 'transfer.status.done',
+  error: 'transfer.status.error',
+  cancelled: 'transfer.status.cancelled',
+  interrupted: 'transfer.status.interrupted'
 };
 
 export default function TransferPanel() {
+  const { t } = useI18n();
   const transfers = useTransferStore((state) => state.transfers);
   const clearFinished = useTransferStore((state) => state.clearFinished);
   const remove = useTransferStore((state) => state.remove);
@@ -64,7 +67,11 @@ export default function TransferPanel() {
       await pauseSftpTransfer(item.id, paused);
       setPaused(item.id, paused);
     } catch (reason) {
-      toast({ title: '操作失败', description: String(reason), variant: 'error' });
+      toast({
+        title: t('transfer.toast.actionFailed'),
+        description: String(reason),
+        variant: 'error'
+      });
     }
   };
 
@@ -72,7 +79,11 @@ export default function TransferPanel() {
     try {
       await cancelSftpTransfer(item.id);
     } catch (reason) {
-      toast({ title: '取消失败', description: String(reason), variant: 'error' });
+      toast({
+        title: t('transfer.toast.cancelFailed'),
+        description: String(reason),
+        variant: 'error'
+      });
     }
   };
 
@@ -82,10 +93,14 @@ export default function TransferPanel() {
       if (id) {
         remove(item.id);
       } else {
-        toast({ title: '无法重试：缺少传输参数', variant: 'error' });
+        toast({ title: t('transfer.toast.retryMissingParams'), variant: 'error' });
       }
     } catch (reason) {
-      toast({ title: '重试失败', description: String(reason), variant: 'error' });
+      toast({
+        title: t('transfer.toast.retryFailed'),
+        description: String(reason),
+        variant: 'error'
+      });
     }
   };
 
@@ -93,20 +108,20 @@ export default function TransferPanel() {
     <div className="flex h-full flex-col bg-surface">
       <div className="flex h-7 shrink-0 items-center justify-between border-b border-border px-1">
         <span className="px-1 text-[11px] text-muted">
-          {activeCount > 0 ? `${activeCount} 个进行中 / ` : ''}
-          {transfers.length} 个任务
+          {activeCount > 0 ? t('transfer.summary.activePart', { count: activeCount }) : ''}
+          {t('transfer.summary.total', { count: transfers.length })}
         </span>
-        <Tooltip label="清除已完成任务">
+        <Tooltip label={t('transfer.tool.clearFinished')}>
           <Button size="xs" variant="ghost" disabled={!hasFinished} onClick={clearFinished}>
             <Trash2 className="h-3 w-3" />
-            清除
+            {t('transfer.tool.clear')}
           </Button>
         </Tooltip>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {transfers.length === 0 ? (
-          <p className="px-2 py-8 text-center text-[11px] text-muted">暂无传输任务</p>
+          <p className="px-2 py-8 text-center text-[11px] text-muted">{t('transfer.empty')}</p>
         ) : (
           <div className="space-y-1.5">
             {transfers.map((item) => {
@@ -170,8 +185,14 @@ export default function TransferPanel() {
                           type="button"
                           onClick={() => void togglePause(item)}
                           className="rounded-sm p-0.5 text-muted hover:bg-surface-hover hover:text-foreground"
-                          title={item.paused ? '继续' : '暂停'}
-                          aria-label={item.paused ? '继续传输' : '暂停传输'}
+                          title={
+                            item.paused ? t('transfer.action.resume') : t('transfer.action.pause')
+                          }
+                          aria-label={
+                            item.paused
+                              ? t('transfer.action.resumeTransfer')
+                              : t('transfer.action.pauseTransfer')
+                          }
                         >
                           {item.paused ? (
                             <Play className="h-3 w-3" />
@@ -183,8 +204,8 @@ export default function TransferPanel() {
                           type="button"
                           onClick={() => void cancel(item)}
                           className="rounded-sm p-0.5 text-muted hover:bg-surface-hover hover:text-error"
-                          title="取消"
-                          aria-label="取消传输"
+                          title={t('transfer.action.cancel')}
+                          aria-label={t('transfer.action.cancelTransfer')}
                         >
                           <XCircle className="h-3 w-3" />
                         </button>
@@ -195,8 +216,8 @@ export default function TransferPanel() {
                         type="button"
                         onClick={() => void retry(item)}
                         className="rounded-sm p-0.5 text-muted hover:bg-surface-hover hover:text-foreground"
-                        title="重试"
-                        aria-label="重试传输"
+                        title={t('transfer.action.retry')}
+                        aria-label={t('transfer.action.retryTransfer')}
                       >
                         <RotateCw className="h-3 w-3" />
                       </button>
@@ -205,7 +226,7 @@ export default function TransferPanel() {
                       type="button"
                       onClick={() => void removeItem(item)}
                       className="rounded-sm p-0.5 text-muted hover:bg-surface-hover hover:text-foreground"
-                      aria-label="移除任务"
+                      aria-label={t('transfer.action.remove')}
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -230,10 +251,15 @@ export default function TransferPanel() {
                   <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-muted">
                     <span className="tabular-nums">
                       {formatBytes(item.transferred)} / {item.total ? formatBytes(item.total) : '-'}
-                      {item.filesTotal > 1 ? ` · ${item.filesDone}/${item.filesTotal} 个文件` : ''}
+                      {item.filesTotal > 1
+                        ? t('transfer.summary.files', {
+                            done: item.filesDone,
+                            total: item.filesTotal
+                          })
+                        : ''}
                     </span>
                     <span className="truncate">
-                      {statusText[item.status]}
+                      {t(statusText[item.status])}
                       {item.status === 'running' && item.speed > 0
                         ? ` · ${formatSpeed(item.speed)}`
                         : ''}
@@ -242,7 +268,9 @@ export default function TransferPanel() {
 
                   {item.error ? (
                     <p className="mt-1 truncate text-[10px] text-error" title={item.error}>
-                      {item.error}
+                      {item.error === INTERRUPTED_MESSAGE_KEY
+                        ? t('transfer.interruptedReason')
+                        : item.error}
                     </p>
                   ) : null}
                 </div>

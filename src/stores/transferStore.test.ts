@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useTransferStore, type TransferRequest } from './transferStore';
+import { useTransferStore, type TransferRequest, INTERRUPTED_MESSAGE_KEY } from './transferStore';
 
 const request: TransferRequest = {
   sessionId: 'sess-1',
@@ -206,7 +206,7 @@ describe('finish', () => {
 
     const [item] = useTransferStore.getState().transfers;
     expect(item.status).toBe('interrupted');
-    expect(item.error).toBe('连接已断开，重连后将自动续传');
+    expect(item.error).toBe(INTERRUPTED_MESSAGE_KEY);
     expect(item.request).toEqual(request);
   });
 
@@ -298,7 +298,7 @@ describe('markSessionDisconnected', () => {
       useTransferStore.getState().transfers.map((item) => [item.id, item])
     );
     expect(byId.t1.status).toBe('interrupted');
-    expect(byId.t1.error).toBe('连接已断开，重连后将自动续传');
+    expect(byId.t1.error).toBe(INTERRUPTED_MESSAGE_KEY);
     // t2 has no bound request (progress arrived before begin), so the
     // session-tagged sweep skips it; its own done(disconnected) event
     // converts it later.
