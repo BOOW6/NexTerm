@@ -29,7 +29,9 @@ use russh::{
 use russh_sftp::{client::SftpSession, protocol::OpenFlags};
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
-use tauri::{AppHandle, Emitter, Runtime, Wry};
+use tauri::{AppHandle, Emitter, Manager, Runtime, Wry};
+
+use crate::zmodem::{Action as ZmodemAction, ZmodemReceiver};
 use tokio::{
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom},
     net::{TcpListener, TcpStream},
@@ -345,6 +347,8 @@ pub struct SshManager {
     /// attempt that is waiting for a host-key decision instead of letting it
     /// finish into an authenticated session nobody watches.
     connecting: Mutex<HashMap<String, ConnectHandle>>,
+    /// In-flight ZMODEM receive machines keyed by session id.
+    zmodem: Arc<Mutex<HashMap<String, Arc<std::sync::Mutex<ZmodemReceiver>>>>>,
 }
 
 struct ConnectHandle {
@@ -634,6 +638,212 @@ struct SftpConflictPayload {
     target_mtime: u64,
 }
 
+/// Local side of an in-flight ZMODEM receive: the download file plus the
+/// transfer-queue bookkeeping (progress reuses the SFTP payload shapes, so
+/// the queue UI renders ZMODEM transfers natively).
+struct ZmodemFile {
+    file: Option<tokio::fs::File>,
+    #[allow(dead_code)]
+    path: PathBuf,
+    name: String,
+    size: u64,
+    transferred: u64,
+    last_emitted: u64,
+    transfer_id: String,
+}
+
+fn sanitize_filename(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric()
+                || matches!(c, '.' | '-' | '_' | '(' | ')' | ' ')
+                || !c.is_ascii()
+            {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let trimmed = cleaned.trim();
+    if trimmed.is_empty() {
+        "file".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+impl ZmodemFile {
+    fn transfer_id(event_id: &str) -> String {
+        format!("zmodem-{}", event_id)
+    }
+
+    async fn start(
+        app: &AppHandle,
+        event_id: &str,
+        name: String,
+        size: Option<u64>,
+    ) -> anyhow::Result<Self> {
+        let dir = app
+            .path()
+            .download_dir()
+            .or_else(|_| app.path().home_dir())
+            .context("无法确定下载目录")?;
+        let safe = sanitize_filename(&name);
+        let stem = PathBuf::from(&safe);
+        let file_stem = stem
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&safe)
+            .to_string();
+        let ext = stem
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| format!(".{}", s))
+            .unwrap_or_default();
+        let mut final_path = dir.join(&safe);
+        let mut n = 1;
+        while final_path.exists() {
+            final_path = dir.join(format!("{} ({}){}", file_stem, n, ext));
+            n += 1;
+        }
+        let file = tokio::fs::File::create(&final_path).await?;
+        let transfer_id = Self::transfer_id(event_id);
+        emit_progress(
+            app,
+            &SftpProgressPayload {
+                transfer_id: transfer_id.clone(),
+                direction: "download".to_string(),
+                name: safe.clone(),
+                transferred: 0,
+                total: size.unwrap_or(0),
+                files_done: 0,
+                files_total: 1,
+            },
+        );
+        Ok(Self {
+            file: Some(file),
+            path: final_path,
+            name: safe,
+            size: size.unwrap_or(0),
+            transferred: 0,
+            last_emitted: 0,
+            transfer_id,
+        })
+    }
+
+    async fn write_data(&mut self, app: &AppHandle, data: &[u8]) -> anyhow::Result<()> {
+        if let Some(file) = self.file.as_mut() {
+            file.write_all(data).await?;
+        }
+        self.transferred += data.len() as u64;
+        if self.transferred - self.last_emitted >= 64 * 1024 {
+            self.last_emitted = self.transferred;
+            self.emit_progress(app);
+        }
+        Ok(())
+    }
+
+    fn emit_progress(&self, app: &AppHandle) {
+        emit_progress(
+            app,
+            &SftpProgressPayload {
+                transfer_id: self.transfer_id.clone(),
+                direction: "download".to_string(),
+                name: self.name.clone(),
+                transferred: self.transferred,
+                total: self.size,
+                files_done: 0,
+                files_total: 1,
+            },
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn finish(
+        &mut self,
+        app: &AppHandle,
+        success: bool,
+        cancelled: bool,
+        disconnected: bool,
+        error: Option<String>,
+    ) {
+        self.file.take(); // close
+        emit_done(
+            app,
+            &SftpTransferDonePayload {
+                transfer_id: self.transfer_id.clone(),
+                direction: "download".to_string(),
+                name: self.name.clone(),
+                success,
+                cancelled,
+                disconnected,
+                error,
+                transferred: self.transferred,
+                total: self.size,
+                files_done: 1,
+                files_total: 1,
+            },
+        );
+    }
+}
+
+async fn handle_zmodem_action(
+    app: &AppHandle,
+    event_id: &str,
+    action: ZmodemAction,
+    state: &mut Option<ZmodemFile>,
+) {
+    match action {
+        ZmodemAction::WriteToRemote { data } => {
+            let manager = app.state::<SshManager>();
+            if let Err(err) = manager.write(event_id, &data).await {
+                eprintln!("[zmodem] handshake write failed: {err}");
+            }
+        }
+        ZmodemAction::FileStart { name, size } => {
+            // A previous file that never saw its ZEOF still needs closing.
+            if let Some(prev) = state.as_mut() {
+                prev.finish(app, false, false, false, None);
+            }
+            *state = None;
+            match ZmodemFile::start(app, event_id, name.clone(), size).await {
+                Ok(file) => {
+                    *state = Some(file);
+                    let _ = app.emit(
+                        "zmodem-start",
+                        serde_json::json!({
+                            "sessionId": event_id,
+                            "name": name,
+                            "size": size.unwrap_or(0),
+                        }),
+                    );
+                }
+                Err(err) => eprintln!("[zmodem] failed to create local file: {err}"),
+            }
+        }
+        ZmodemAction::FileData { data } => {
+            if let Some(file) = state.as_mut() {
+                if let Err(err) = file.write_data(app, &data).await {
+                    eprintln!("[zmodem] write failed: {err}");
+                }
+            }
+        }
+        ZmodemAction::FileEnd {
+            bytes,
+            complete: success,
+        } => {
+            if let Some(file) = state.as_mut() {
+                file.transferred = bytes;
+                file.finish(app, success, !success, false, None);
+            }
+            *state = None;
+        }
+        ZmodemAction::BatchDone => {}
+    }
+}
+
 fn basename(path: &str) -> String {
     path.rsplit(['/', '\\']).next().unwrap_or(path).to_string()
 }
@@ -811,6 +1021,7 @@ impl SshManager {
             transfers: Arc::new(Mutex::new(HashMap::new())),
             conflicts: Arc::new(Mutex::new(HashMap::new())),
             connecting: Mutex::new(HashMap::new()),
+            zmodem: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -1056,6 +1267,7 @@ impl SshManager {
         let app_handle = app.clone();
         let reap_forwards = self.forwards.clone();
         let reap_sessions = self.sessions.clone();
+        let zmodem_map = self.zmodem.clone();
         let log = Arc::new(LogSink::new(log_path.as_deref()));
         let read_log = log.clone();
 
@@ -1064,21 +1276,58 @@ impl SshManager {
             // (or corrupt) a stdout sequence that is still missing bytes.
             let mut output_decoder = crate::text_stream::Utf8StreamDecoder::new();
             let mut stderr_decoder = crate::text_stream::Utf8StreamDecoder::new();
+
+            // ZMODEM receive: raw stdout is intercepted before UTF-8 decode
+            // so an sz transfer never reaches the terminal or the log.
+            let zmachine = Arc::new(std::sync::Mutex::new(ZmodemReceiver::new()));
+            if let Ok(mut map) = zmodem_map.lock() {
+                map.insert(event_id.clone(), zmachine.clone());
+            }
+            let mut zfile: Option<ZmodemFile> = None;
+
             while let Some(message) = read_half.wait().await {
-                let (data, decoder) = match message {
-                    ChannelMsg::Data { data } => (data, &mut output_decoder),
-                    ChannelMsg::ExtendedData { data, .. } => (data, &mut stderr_decoder),
-                    ChannelMsg::ExitStatus { .. } => break,
-                    ChannelMsg::Eof | ChannelMsg::Close => break,
+                match message {
+                    ChannelMsg::Data { data } => {
+                        let (passthrough, actions) = {
+                            let mut machine =
+                                zmachine.lock().unwrap_or_else(|poison| poison.into_inner());
+                            let feed = machine.feed(&data);
+                            (feed.passthrough, feed.actions)
+                        };
+                        if !passthrough.is_empty() {
+                            let decoded = output_decoder.feed(&passthrough);
+                            read_log.write(&decoded);
+                            let payload = SshOutputPayload {
+                                id: event_id.clone(),
+                                data: decoded,
+                            };
+                            let _ = app_handle.emit(&format!("ssh-output-{}", event_id), payload);
+                        }
+                        for action in actions {
+                            handle_zmodem_action(&app_handle, &event_id, action, &mut zfile).await;
+                        }
+                    }
+                    ChannelMsg::ExtendedData { data, .. } => {
+                        let decoded = stderr_decoder.feed(&data);
+                        read_log.write(&decoded);
+                        let payload = SshOutputPayload {
+                            id: event_id.clone(),
+                            data: decoded,
+                        };
+                        let _ = app_handle.emit(&format!("ssh-output-{}", event_id), payload);
+                    }
+                    ChannelMsg::ExitStatus { .. } | ChannelMsg::Eof | ChannelMsg::Close => break,
                     _ => continue,
-                };
-                let decoded = decoder.feed(&data);
-                read_log.write(&decoded);
-                let payload = SshOutputPayload {
-                    id: event_id.clone(),
-                    data: decoded,
-                };
-                let _ = app_handle.emit(&format!("ssh-output-{}", event_id), payload);
+                }
+            }
+
+            if let Ok(mut map) = zmodem_map.lock() {
+                map.remove(&event_id);
+            }
+            // A transfer cut short by the connection dropping still needs its
+            // queue entry closed.
+            if let Some(state) = zfile.as_mut() {
+                state.finish(&app_handle, false, false, true, None);
             }
 
             let _ = app_handle.emit(&format!("ssh-closed-{}", event_id), ());
@@ -1116,6 +1365,20 @@ impl SshManager {
             );
 
         Ok(id)
+    }
+
+    /// Cancel an in-flight ZMODEM receive: write the cancel sequence and
+    /// mark the machine aborted so terminal output resumes.
+    pub async fn cancel_zmodem(&self, session_id: &str) -> anyhow::Result<()> {
+        let machine = lock(&self.zmodem).get(session_id).cloned();
+        let Some(machine) = machine else {
+            return Err(anyhow!("ZMODEM 会话不存在"));
+        };
+        let bytes = machine
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .cancel();
+        self.write(session_id, &bytes).await
     }
 
     pub async fn write(&self, id: &str, data: &[u8]) -> anyhow::Result<()> {

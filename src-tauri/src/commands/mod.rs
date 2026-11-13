@@ -473,21 +473,31 @@ pub async fn sftp_upload(
 }
 
 #[tauri::command]
-pub fn sftp_pause_transfer(
+pub async fn sftp_pause_transfer(
     state: State<'_, SshManager>,
     transfer_id: String,
     paused: bool,
 ) -> Result<(), String> {
+    if transfer_id.starts_with("zmodem-") {
+        return Err("ZMODEM 传输不支持暂停".to_string());
+    }
     state
         .set_transfer_paused(&transfer_id, paused)
         .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
-pub fn sftp_cancel_transfer(
+pub async fn sftp_cancel_transfer(
     state: State<'_, SshManager>,
     transfer_id: String,
 ) -> Result<(), String> {
+    // ZMODEM receives share the transfer queue; their ids carry the session.
+    if let Some(session_id) = transfer_id.strip_prefix("zmodem-") {
+        return state
+            .cancel_zmodem(session_id)
+            .await
+            .map_err(|err| err.to_string());
+    }
     state
         .cancel_transfer(&transfer_id)
         .map_err(|err| err.to_string())

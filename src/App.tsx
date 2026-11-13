@@ -9,6 +9,7 @@ import { useSftpConflictEvents } from './hooks/useSftpConflictEvents';
 import { useSftpTransferEvents } from './hooks/useSftpTransferEvents';
 import { useSshHostKeyEvents } from './hooks/useSshHostKeyEvents';
 import { useRemoteEditEvents } from './hooks/useRemoteEditEvents';
+import { useZmodemEvents } from './hooks/useZmodemEvents';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
 import { useSettingsSync } from './hooks/useSettingsSync';
 import { useSessionLogRootSync } from './hooks/useSessionLogRootSync';
@@ -23,6 +24,7 @@ function AppShell() {
   useSftpConflictEvents();
   useSshHostKeyEvents();
   useRemoteEditEvents();
+  useZmodemEvents();
   useGlobalShortcuts();
   useSettingsSync();
   useSnippetSync();

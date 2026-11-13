@@ -9,6 +9,7 @@ pub mod text_stream;
 pub mod vault;
 pub mod windows;
 pub mod windows_ext;
+mod zmodem;
 
 use fonts::FontManager;
 use pty::PtySessionManager;
