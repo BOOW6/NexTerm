@@ -12,7 +12,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 
 - 基于 `portable-pty` 实现了带状态管理的 PTY 会话管理器（会话映射表 + 生命周期管理）。
 - Tauri invoke 命令：
-  - `create_pty_session(cols, rows)` —— 创建 PTY 会话，返回会话 id。
+  - `create_pty_session(cols, rows, log_path?, command?, args?)` —— 创建 PTY 会话，返回会话 id；`command`/`args` 为本地会话可选的自定义 Shell（PowerShell / WSL / Git Bash / 自定义等，`probe_shell_availability` 供 UI 探测可用性）。
   - `write_pty(id, data)` —— 向指定会话写入用户输入。
   - `resize_pty(id, cols, rows)` —— 调整会话终端尺寸。
   - `close_pty_session(id)` —— 关闭并回收 PTY 会话。
@@ -46,10 +46,11 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - 输出事件：`ssh-output-{id}`、`ssh-closed-{id}`；主机密钥事件：`ssh-host-key`、`ssh-host-key-mismatch`。
 - **端口转发**：命令 `port_forward_list` / `port_forward_start` / `port_forward_stop`，事件 `port-forwards-changed`；支持本地（`-L`）、远程（`-R`）与动态 SOCKS5（`-D`）。UI 为独立「端口转发」面板。
 - SFTP：
-  - 命令：`sftp_list` / `sftp_download` / `sftp_upload` / `sftp_remove` / `sftp_rename` / `sftp_mkdir` / `sftp_pause_transfer` / `sftp_cancel_transfer`
+  - 命令：`sftp_list` / `sftp_download` / `sftp_upload` / `sftp_remove` / `sftp_rename` / `sftp_mkdir` / `sftp_pause_transfer` / `sftp_cancel_transfer`；远程文件编辑：`remote_edit_open` / `remote_edit_stop`（临时副本 + size/mtime 轮询回传，事件 `remote-edit-synced` / `remote-edit-error`）
   - 事件：`sftp-progress`、`sftp-transfer-done`
-  - 每个 SSH 会话复用一条 SFTP 子系统通道；传输支持递归目录、聚合进度、断点续传、暂停/取消/重试与冲突策略（询问/覆盖/跳过/重命名/较新才覆盖）。断点续传实现：下载写本地 `<file>.part`，上传写远端 `<file>.nexterm-part`，均带侧车元数据（来源 size + mtime 指纹）做续传校验，完成后原子替换目标文件，目标路径上只出现完整内容。传输任务绑定会话而非后端连接 id：断线自动重连后自动从 part 续传；conflict=ask 时经 `sftp-conflict` 事件弹出独立确认窗口（`sftp_conflict_response` 应答，支持"应用到全部"）。
-  - UI：目录浏览、文件/文件夹上传、文件/文件夹下载、新建文件夹、重命名、删除、传输队列。
+  - 每个 SSH 会话复用一条 SFTP 子系统通道；传输支持递归目录、聚合进度、断点续传、暂停/取消/重试与冲突策略（询问/覆盖/跳过/重命名/较新才覆盖）。断点续传实现：下载写本地 `<file>.part`，上传写远端 `<file>.nexterm-part`，均带侧车元数据（来源 size + mtime 指纹）做续传校验，完成后原子替换目标文件，目标路径上只出现完整内容。传输任务绑定会话而非后端连接 id：断线自动重连后自动从 part 续传；conflict=ask 时经 `sftp-conflict` 事件弹出独立确认窗口（`sftp_conflict_response` 应答，支持"应用到全部"）。OS 拖拽上传与面板内拖动移动复用同一传输/重命名管线。
+  - ZMODEM 接收（`src-tauri/src/zmodem.rs`，纯状态机 + 单测）：SSH 读循环在 UTF-8 解码前拦截 `sz` 流，文件落系统下载目录；进度复用 `sftp-progress`（id 前缀 `zmodem-`，取消走取消序列，暂停被拒绝）。
+  - UI：目录浏览、文件/文件夹上传、文件/文件夹下载、新建文件夹、重命名、删除、传输队列、远程文件本地编辑、拖拽上传/移动。
 
 ### 设置与主题（P4）
 
@@ -60,16 +61,16 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 
 ## 技术栈
 
-| 层次 | 技术 |
-| --- | --- |
-| 应用外壳 | Tauri 2.0（Rust 后端） |
-| 前端 | React 18 + TypeScript + Vite |
-| 状态管理 | Zustand |
-| UI / 样式 | TailwindCSS + CSS Variables + Lucide React（Web 2.0 经典后台风格） |
-| 停靠/多标签布局 | `dockview-react` |
-| 终端模拟器 | `@xterm/xterm` + `addon-fit` + `addon-search` + `addon-webgl` |
-| Rust 核心依赖 | `tokio`、`portable-pty`、`russh`、`russh-sftp`、`serde` / `serde_json` |
-| 桌面集成 | `tauri-plugin-clipboard-manager`、`tauri-plugin-dialog`、`tauri-plugin-decorum` |
+| 层次            | 技术                                                                            |
+| --------------- | ------------------------------------------------------------------------------- |
+| 应用外壳        | Tauri 2.0（Rust 后端）                                                          |
+| 前端            | React 18 + TypeScript + Vite                                                    |
+| 状态管理        | Zustand                                                                         |
+| UI / 样式       | TailwindCSS + CSS Variables + Lucide React（Web 2.0 经典后台风格）              |
+| 停靠/多标签布局 | `dockview-react`                                                                |
+| 终端模拟器      | `@xterm/xterm` + `addon-fit` + `addon-search` + `addon-webgl`                   |
+| Rust 核心依赖   | `tokio`、`portable-pty`、`russh`、`russh-sftp`、`serde` / `serde_json`          |
+| 桌面集成        | `tauri-plugin-clipboard-manager`、`tauri-plugin-dialog`、`tauri-plugin-decorum` |
 
 ## 目录结构
 
@@ -143,15 +144,18 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 在开发本项目的高性能终端功能时，所有涉及 `xterm.js` 的组件编写、重构或数据流处理，**必须严格遵守**以下架构与性能准则，严禁直接在主线程同步挂载或进行未经节流的高频数据渲染。
 
 ### 1. 渲染与性能优化 (Performance & Rendering)
+
 - **强制启用 WebGL 渲染器**：所有终端实例在成功调用 `term.open()` 后，必须加载并优先启用 `@xterm/addon-webgl` (`WebglAddon`)，避免默认 DOM 渲染器在多行、高频输出时触发严重的 Reflow/Repaint 导致 UI 卡死。同时必须做好回退处理（当 WebGL 不可用时降级为 Canvas/DOM 渲染器）。
 - **异步错峰初始化**：禁止在 React 组件的 `useEffect` 初始触发点直接同步创建 `Terminal` 实例。必须使用 `requestAnimationFrame` 或 `setTimeout` 错开首屏关键渲染路径。
 - **内存与资源释放 (Dispose)**：所有 `Terminal` 实例、`Addon` 插件以及监听的 Tauri 事件监听器（`unlisten`），必须在组件卸载（`return () => {...}`）时显式调用 `.dispose()` 和清理函数，防止内存泄漏和 IPC 句柄残留。
 
 ### 2. 生命周期与标签页管理 (Lifecycle & Mount Strategy)
+
 - **按需挂载 (Lazy Mount)**：参考 VS Code 架构，后台未激活的终端标签页（Background Tabs）严禁在 DOM 中真实渲染 `xterm` 实例。仅保留其 Buffer 状态或通过虚拟化/状态缓存管理，切到当前标签页时再动态挂载并执行 `FitAddon.fit()`。
 - **尺寸自适应 (Resize Handling)**：窗口大小改变或侧边栏收起/展开时，必须结合 `ResizeObserver` 或 Tauri 窗口缩放事件计算目标行列；垂直方向立即应用，水平方向防抖，离散突变（最大化/还原）绕过防抖。
 
 ### 3. 数据流与 IPC 传输节流 (Stream Throttling & Batching)
+
 - **防止主线程雪崩**：当 Rust 后端通过 Tauri 事件高频向前端推送终端标准输出（Stdout）时，前端严禁“来一条写一条（`term.write()`）”。
 - **批处理与帧同步**：对后端传来的高频文本数据进行队列缓存（Buffer Queue），利用 `requestAnimationFrame` 或定时节流（如每 16ms / 32ms 批量写入一次），合并渲染帧，保证终端滚动的 60fps 流畅度。
 - **跨块 UTF-8 边界解码**：后端推送前必须经 `text_stream::Utf8StreamDecoder` 增量解码（PTY 与 SSH 两侧均已接入；SSH 的 stdout/stderr 各用独立解码器），多字节字符跨读取边界时不得把两半替换成 U+FFFD 烧入滚动缓冲。
@@ -202,4 +206,11 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - [x] OpenSSH 证书认证、跳板机 / ProxyJump（单跳；SFTP 与端口转发复用隧道）
 - [x] 命令片段、会话日志、updater 自动更新脚手架（设置 > 关于 检查更新）
 - [x] Telnet 会话（最小 NVT：协商全拒、终端内登录、复用日志管线）
-- [ ] 串口支持、国际化全量迁移、可访问性增强
+- [x] i18n 全量迁移（五分片字典 + 中英键位一致性测试；组件用 useI18n、非组件用 tStatic）
+- [x] 多会话广播输入（会话标签右键 / 命令面板加入，状态栏徽标；PTY/Telnet 传输 id 已在连接表登记）
+- [x] 本地会话可选 Shell（预设探测 + 自定义可执行文件与参数，参数支持引号）
+- [x] SFTP 拖拽上传（OS 拖入，命中测试 + 覆盖层）与面板内拖动移动（SFTP rename）
+- [x] 远程文件本地编辑（临时副本 + 保存自动回传，走 SFTP 上传引擎与传输队列）
+- [x] ZMODEM 接收（sz 自动下载到系统下载目录，纯状态机 + 离线单测；复用传输队列展示与取消）
+- [x] 发布 CI（release.yml：v* 标签三平台构建 + updater 签名产物 + Draft Release）
+- [ ] trzsz / rz 发送端（ZMODEM 上行）、串口支持、可访问性增强
