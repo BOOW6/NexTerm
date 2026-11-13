@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import type { IDockviewPanelProps } from 'dockview-react';
 import {
   ArrowUpDown,
@@ -106,6 +107,10 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [conflict, setConflict] = useState<SftpConflictPolicy>(readConflict);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [dropActive, setDropActive] = useState(false);
+  const dragRemoteRef = useRef<string | null>(null);
+  const [dragOverDir, setDragOverDir] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -202,6 +207,113 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
       setPath(entry.path.startsWith('/') ? entry.path : `${path}/${entry.name}`);
     }
   };
+
+  // Upload paths dropped from the OS onto the panel. `recursive: true` is
+  // passed unconditionally: the backend walks a dropped folder and uploads
+  // a dropped file as-is.
+  const handleExternalDrop = useCallback(
+    async (paths: string[]) => {
+      if (!sshId || !boundSessionId || paths.length === 0) {
+        return;
+      }
+      try {
+        for (const localPath of paths) {
+          await startSftpTransfer({
+            sessionId: boundSessionId,
+            direction: 'upload',
+            name: baseName(localPath),
+            localPath,
+            remotePath: joinRemote(path, baseName(localPath)),
+            recursive: true,
+            conflict
+          });
+        }
+        toast({
+          title: t('sftp.drop.addedToast', { count: paths.length }),
+          variant: 'success'
+        });
+        openTransferPanel();
+      } catch (reason) {
+        toast({
+          title: t('sftp.upload.failedToast'),
+          description: String(reason),
+          variant: 'error'
+        });
+      }
+    },
+    [sshId, boundSessionId, path, conflict, t, openTransferPanel]
+  );
+
+  // Move a remote entry into a directory row via an in-panel drag.
+  const moveEntry = useCallback(
+    async (sourcePath: string, targetDir: string) => {
+      if (!sshId) {
+        return;
+      }
+      const name = sourcePath.split('/').filter(Boolean).pop();
+      if (!name) {
+        return;
+      }
+      const target = joinRemote(targetDir, name);
+      if (target === sourcePath) {
+        return;
+      }
+      try {
+        await renameSftp(sshId, sourcePath, target);
+        toast({ title: t('sftp.drop.movedToast', { name }), variant: 'success' });
+        setReloadToken((value) => value + 1);
+      } catch (reason) {
+        toast({
+          title: t('sftp.drop.moveFailedToast'),
+          description: String(reason),
+          variant: 'error'
+        });
+      }
+    },
+    [sshId, t]
+  );
+
+  // Tauri drag-drop events are window-global; hit-test the panel rect so
+  // only drops landing on this panel upload into its current directory.
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type === 'leave') {
+          setDropActive(false);
+          return;
+        }
+        const rect = panelRef.current?.getBoundingClientRect();
+        if (!rect) {
+          return;
+        }
+        // The event position is in physical pixels; convert to CSS pixels.
+        const scale = window.devicePixelRatio || 1;
+        const x = event.payload.position.x / scale;
+        const y = event.payload.position.y / scale;
+        const inside = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+        if (event.payload.type === 'drop') {
+          setDropActive(false);
+          if (inside) {
+            void handleExternalDrop(event.payload.paths);
+          }
+          return;
+        }
+        setDropActive(inside);
+      })
+      .then((dispose) => {
+        if (cancelled) {
+          dispose();
+        } else {
+          unlisten = dispose;
+        }
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [handleExternalDrop]);
 
   const handleUpload = async () => {
     if (!sshId || !boundSessionId) {
@@ -494,7 +606,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
   const canBrowse = Boolean(sshId);
 
   return (
-    <div className="flex h-full flex-col bg-surface">
+    <div ref={panelRef} className="relative flex h-full flex-col bg-surface">
       <div className="flex h-7 shrink-0 items-center gap-1 border-b border-border px-1">
         <Tooltip label={t('sftp.tool.goUp')}>
           <Button
@@ -635,6 +747,48 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
             <div
               key={entry.path}
               data-native-context-menu
+              draggable
+              onDragStart={(event) => {
+                dragRemoteRef.current = entry.path;
+                event.dataTransfer.setData('application/x-nexterm-remote', entry.path);
+                event.dataTransfer.effectAllowed = 'move';
+              }}
+              onDragEnd={() => {
+                dragRemoteRef.current = null;
+                setDragOverDir(null);
+              }}
+              onDragOver={
+                entry.is_dir
+                  ? (event) => {
+                      if (!dragRemoteRef.current) {
+                        return;
+                      }
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = 'move';
+                      setDragOverDir(entry.path);
+                    }
+                  : undefined
+              }
+              onDragLeave={
+                entry.is_dir
+                  ? () => setDragOverDir((current) => (current === entry.path ? null : current))
+                  : undefined
+              }
+              onDrop={
+                entry.is_dir
+                  ? (event) => {
+                      event.preventDefault();
+                      const source =
+                        dragRemoteRef.current ??
+                        event.dataTransfer.getData('application/x-nexterm-remote');
+                      dragRemoteRef.current = null;
+                      setDragOverDir(null);
+                      if (source && source !== entry.path) {
+                        void moveEntry(source, entry.path);
+                      }
+                    }
+                  : undefined
+              }
               onDoubleClick={() => (entry.is_dir ? openEntry(entry) : void handleDownload(entry))}
               onContextMenu={(event) => {
                 event.preventDefault();
@@ -644,7 +798,8 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
               className={cn(
                 'grid h-7 grid-cols-[1fr_62px_104px_42px] items-center border-b border-border-muted/60 px-2 text-[11px]',
                 'hover:bg-row-hover',
-                entry.is_dir && 'cursor-pointer'
+                entry.is_dir && 'cursor-pointer',
+                dragOverDir === entry.path && 'bg-accent/15 ring-1 ring-inset ring-accent'
               )}
             >
               <span className="flex min-w-0 items-center gap-1.5">
@@ -666,6 +821,12 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
           ))
         )}
       </div>
+
+      {dropActive ? (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center border-2 border-dashed border-accent bg-accent/5 text-xs font-medium text-accent">
+          {t('sftp.drop.overlay')}
+        </div>
+      ) : null}
 
       <div className="flex items-center justify-between border-t border-border bg-background-alt px-2 py-1 text-[10px] text-muted">
         <span>
