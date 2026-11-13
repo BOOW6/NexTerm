@@ -119,6 +119,7 @@ pub fn pty_platform_info(state: State<'_, PtySessionManager>) -> PtyPlatformInfo
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn create_pty_session(
     app: AppHandle,
     state: State<'_, PtySessionManager>,
@@ -127,12 +128,91 @@ pub async fn create_pty_session(
     cols: u16,
     rows: u16,
     log_path: Option<String>,
+    command: Option<String>,
+    args: Option<Vec<String>>,
 ) -> Result<String, String> {
     let log_path = confine_log_path(&log_root, log_path);
+    let pty_command = command.map(|program| crate::pty::PtyCommand {
+        program,
+        args: args.unwrap_or_default(),
+    });
     state
-        .create_session(app, id, cols, rows, log_path)
+        .create_session(app, id, cols, rows, log_path, pty_command)
         .await
         .map_err(|err| err.to_string())
+}
+
+/// Resolve which local shell candidates point at an existing executable.
+/// Each result is the command to spawn (`None` = not found) and stays aligned
+/// with the input order. Bare program names stay bare — `PATH` is consulted
+/// again at spawn time — while explicit paths get `%VAR%` segments expanded.
+#[tauri::command]
+pub async fn probe_shell_availability(
+    candidates: Vec<String>,
+) -> Result<Vec<Option<String>>, String> {
+    // Filesystem lookups (and a cold `PATH` scan on network drives) can block;
+    // keep them off the IPC thread.
+    tokio::task::spawn_blocking(move || {
+        candidates.iter().map(|c| resolve_executable(c)).collect()
+    })
+    .await
+    .map_err(|err| format!("shell probe failed: {err}"))
+}
+
+fn resolve_executable(candidate: &str) -> Option<String> {
+    let candidate = candidate.trim();
+    if candidate.is_empty() {
+        return None;
+    }
+    let expanded = expand_env_vars(candidate);
+    let path = Path::new(&expanded);
+    if path.components().count() > 1 {
+        return path.is_file().then(|| expanded);
+    }
+    if path.is_file() {
+        return Some(expanded);
+    }
+    let path_env = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path_env) {
+        let mut entry = dir.join(&expanded);
+        if cfg!(windows) && entry.extension().is_none() {
+            entry.set_extension("exe");
+        }
+        if entry.is_file() {
+            return Some(expanded);
+        }
+    }
+    None
+}
+
+/// Expand `%NAME%` segments (Windows style) using process environment values;
+/// unresolved or unterminated segments are kept literally.
+fn expand_env_vars(input: &str) -> String {
+    if !input.contains('%') {
+        return input.to_string();
+    }
+    let mut result = String::with_capacity(input.len());
+    let mut rest = input;
+    while let Some(start) = rest.find('%') {
+        let after = &rest[start + 1..];
+        let Some(end) = after.find('%') else {
+            break;
+        };
+        let name = &after[..end];
+        match std::env::var(name) {
+            Ok(value) => {
+                result.push_str(&rest[..start]);
+                result.push_str(&value);
+            }
+            Err(_) => {
+                let literal_end = start + end + 2;
+                result.push_str(&rest[..literal_end]);
+            }
+        }
+        rest = &after[end + 1..];
+    }
+    result.push_str(rest);
+    result
 }
 
 #[tauri::command]
@@ -729,7 +809,41 @@ pub async fn vault_reset(
 
 #[cfg(test)]
 mod tests {
-    use super::decode_text;
+    use super::{decode_text, expand_env_vars, resolve_executable};
+
+    #[test]
+    fn shell_probe_rejects_empty_candidates() {
+        assert_eq!(resolve_executable(""), None);
+        assert_eq!(resolve_executable("   "), None);
+    }
+
+    #[test]
+    fn shell_probe_reports_missing_bare_name() {
+        assert_eq!(resolve_executable("definitely-not-a-real-shell-3f9a2b"), None);
+    }
+
+    #[test]
+    fn shell_probe_resolves_current_shell() {
+        // On Windows cmd.exe always exists; on Unix sh does for any
+        // environment that can run this test suite.
+        let candidate = if cfg!(windows) { "cmd.exe" } else { "sh" };
+        let resolved = resolve_executable(candidate);
+        assert_eq!(resolved.as_deref(), Some(candidate));
+    }
+
+    #[test]
+    fn shell_probe_expands_environment_variables() {
+        // PATH exists in every environment that runs this suite.
+        let expanded = expand_env_vars("%PATH%");
+        assert_ne!(expanded, "%PATH%");
+        assert!(expanded.contains(':') || expanded.contains(';'));
+        assert_eq!(
+            expand_env_vars("%NEXTERM_PROBE_TEST_UNDEFINED_VAR%"),
+            "%NEXTERM_PROBE_TEST_UNDEFINED_VAR%"
+        );
+        assert_eq!(expand_env_vars("no variables here"), "no variables here");
+        assert_eq!(expand_env_vars("trailing percent 100%"), "trailing percent 100%");
+    }
 
     #[test]
     fn decodes_utf8_with_bom() {

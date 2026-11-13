@@ -90,7 +90,7 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
       const result = await openModalWindow<QuickConnectResult>('quick-connect', {
         title: session ? '编辑会话' : '新建会话',
         width: 500,
-        height: session?.kind === 'local' ? 470 : 620,
+        height: session?.kind === 'local' ? 570 : 620,
         data: {
           defaults: {
             kind: options?.kind ?? session?.kind ?? 'local',

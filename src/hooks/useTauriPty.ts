@@ -29,13 +29,26 @@ export function getPtyPlatformInfo(): Promise<PtyPlatformInfo> {
   return platformInfoPromise;
 }
 
+export interface PtySpawnCommand {
+  command: string;
+  args?: string[];
+}
+
 export async function createPtySession(
   id: string,
   cols: number,
   rows: number,
-  logPath?: string
+  logPath?: string,
+  shell?: PtySpawnCommand
 ): Promise<string> {
-  return invoke<string>('create_pty_session', { id, cols, rows, logPath: logPath ?? null });
+  return invoke<string>('create_pty_session', {
+    id,
+    cols,
+    rows,
+    logPath: logPath ?? null,
+    command: shell?.command ?? null,
+    args: shell?.args ?? null
+  });
 }
 
 export async function writePty(id: string, data: string): Promise<void> {

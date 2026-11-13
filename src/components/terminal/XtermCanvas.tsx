@@ -1010,11 +1010,19 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           }
           unlistenClosed = stopClosed;
 
+          // Read the shell override from the store at connect time so an edit
+          // applied after the session list rendered still takes effect.
+          const sessionRecord = useSessionStore.getState().getSession(sessionId);
+          const localShell =
+            sessionRecord?.kind === 'local' && sessionRecord.shellCommand
+              ? { command: sessionRecord.shellCommand, args: sessionRecord.shellArgs ?? [] }
+              : undefined;
           const createdId = await createPtySession(
             id,
             instance.cols,
             instance.rows,
-            sessionLogTarget() || undefined
+            sessionLogTarget() || undefined,
+            localShell
           );
           if (disposed || generation !== transportGeneration || closedEarly) {
             void closePtySession(createdId);

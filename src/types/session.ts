@@ -17,6 +17,9 @@ export interface Session {
   certPath?: string;
   /** Optional SSH/SFTP session whose connection tunnels this one (ProxyJump). */
   jumpSessionId?: string;
+  /** Local sessions only: executable to spawn instead of the platform shell. */
+  shellCommand?: string;
+  shellArgs?: string[];
   group: string;
   favorite: boolean;
   status: SessionStatus;
@@ -34,6 +37,9 @@ export interface SessionDraft {
   keyPath?: string;
   certPath?: string;
   jumpSessionId?: string;
+  /** Local sessions only. An empty string clears an existing override. */
+  shellCommand?: string;
+  shellArgs?: string[];
   group: string;
   favorite?: boolean;
 }
@@ -49,7 +55,8 @@ export const SESSION_KIND_LABEL: Record<SessionKind, string> = {
 
 export function sessionSubtitle(session: Session): string {
   if (session.kind === 'local') {
-    return '本地 Shell';
+    const shellName = session.shellCommand?.split(/[\\/]/).pop();
+    return shellName ? shellName.replace(/\.exe$/i, '') : '本地 Shell';
   }
   const target = session.username
     ? `${session.username}@${session.host ?? ''}`

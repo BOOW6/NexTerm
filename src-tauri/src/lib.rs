@@ -81,6 +81,7 @@ pub fn run() {
             commands::font_lookup,
             commands::font_data,
             commands::pty_platform_info,
+            commands::probe_shell_availability,
             commands::create_pty_session,
             commands::write_pty,
             commands::resize_pty,

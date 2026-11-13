@@ -31,6 +31,36 @@ const MAX_TERMINAL_ROWS: u16 = 1000;
 
 type SessionMap = Arc<Mutex<HashMap<String, Arc<PtySession>>>>;
 
+/// An explicit shell/command to spawn instead of the platform default.
+/// `None` keeps the built-in behavior (`cmd.exe` on Windows, `$SHELL` on Unix).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PtyCommand {
+    pub program: String,
+    pub args: Vec<String>,
+}
+
+impl PtyCommand {
+    /// Defensive limits: the command comes from the user's own machine, but a
+    /// malformed value should fail loudly here instead of spawning something
+    /// surprising or exhausting resources.
+    fn validate(&self) -> anyhow::Result<()> {
+        let program = self.program.trim();
+        if program.is_empty() {
+            return Err(anyhow!("pty command program must not be empty"));
+        }
+        if program.len() > 1024 {
+            return Err(anyhow!("pty command program path is too long"));
+        }
+        if self.args.len() > 64 {
+            return Err(anyhow!("pty command has too many arguments"));
+        }
+        if self.args.iter().any(|arg| arg.len() > 4096) {
+            return Err(anyhow!("pty command argument is too long"));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Default)]
 pub struct PtySessionManager {
     sessions: SessionMap,
@@ -92,12 +122,13 @@ impl PtySessionManager {
         cols: u16,
         rows: u16,
         log_path: Option<String>,
+        command: Option<PtyCommand>,
     ) -> anyhow::Result<String> {
         let sessions = self.sessions.clone();
         // openpty + spawn shell are blocking calls; keep them off the async
         // runtime workers.
         tokio::task::spawn_blocking(move || {
-            create_session_blocking(&sessions, app, id, cols, rows, log_path)
+            create_session_blocking(&sessions, app, id, cols, rows, log_path, command)
         })
         .await
         .map_err(|err| anyhow!("failed to create pty session: {err}"))?
@@ -191,6 +222,7 @@ fn create_session_blocking(
     cols: u16,
     rows: u16,
     log_path: Option<String>,
+    command: Option<PtyCommand>,
 ) -> anyhow::Result<String> {
     validate_session_id(&id)?;
     let (cols, rows) = clamp_terminal_size(cols, rows);
@@ -206,16 +238,26 @@ fn create_session_blocking(
         .openpty(initial_size)
         .context("failed to open pty")?;
 
-    let shell = if cfg!(windows) {
-        "cmd.exe".to_string()
-    } else {
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
+    let command_builder = match command {
+        Some(custom) => {
+            custom.validate()?;
+            let mut builder = CommandBuilder::new(custom.program.trim());
+            builder.args(custom.args);
+            builder
+        }
+        None => {
+            let shell = if cfg!(windows) {
+                "cmd.exe".to_string()
+            } else {
+                std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
+            };
+            CommandBuilder::new(shell)
+        }
     };
 
-    let command = CommandBuilder::new(shell);
     let mut child = pair
         .slave
-        .spawn_command(command)
+        .spawn_command(command_builder)
         .context("failed to spawn shell")?;
     let killer = child.clone_killer();
 

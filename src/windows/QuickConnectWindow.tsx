@@ -1,10 +1,18 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { FolderOpen } from 'lucide-react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { Button } from '../components/ui/button';
 import { Input, Label } from '../components/ui/input';
 import { Select } from '../components/ui/select';
 import { cancelModal, getModalPayload, submitModal } from '../lib/appWindows';
+import {
+  formatShellArgs,
+  loadLocalShellCatalog,
+  matchLocalShellPreset,
+  normalizeShellCommand,
+  splitShellArgs,
+  type LocalShellCatalog
+} from '../lib/localShells';
 import {
   DEFAULT_GROUP,
   SESSION_KIND_LABEL,
@@ -28,6 +36,9 @@ interface FormState {
   certPath: string;
   passphrase: string;
   jumpSessionId: string;
+  shellPreset: string;
+  shellCommand: string;
+  shellArgs: string;
   group: string;
 }
 
@@ -43,7 +54,23 @@ const EMPTY_FORM: FormState = {
   certPath: '',
   passphrase: '',
   jumpSessionId: '',
+  shellPreset: 'default',
+  shellCommand: '',
+  shellArgs: '',
   group: DEFAULT_GROUP
+};
+
+/** Display names for the shell preset labelKeys (migrated to i18n with the window). */
+const SHELL_LABELS: Record<string, string> = {
+  'localShell.default': '系统默认',
+  'localShell.powershell': 'Windows PowerShell',
+  'localShell.pwsh': 'PowerShell 7',
+  'localShell.wsl': 'WSL',
+  'localShell.gitbash': 'Git Bash',
+  'localShell.cmd': '命令提示符',
+  'localShell.bash': 'Bash',
+  'localShell.zsh': 'Zsh',
+  'localShell.fish': 'Fish'
 };
 
 export default function QuickConnectWindow() {
@@ -51,6 +78,8 @@ export default function QuickConnectWindow() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [catalog, setCatalog] = useState<LocalShellCatalog | null>(null);
+  const shellInitializedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,6 +101,9 @@ export default function QuickConnectWindow() {
           certPath: data.session.certPath ?? '',
           passphrase: '',
           jumpSessionId: data.session.jumpSessionId ?? '',
+          shellPreset: data.session.shellCommand ? 'custom' : 'default',
+          shellCommand: data.session.shellCommand ?? '',
+          shellArgs: formatShellArgs(data.session.shellArgs ?? []),
           group: data.session.group
         });
       } else {
@@ -88,6 +120,45 @@ export default function QuickConnectWindow() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadLocalShellCatalog()
+      .then((loaded) => {
+        if (!cancelled) {
+          setCatalog(loaded);
+        }
+      })
+      .catch(() => {
+        /* probe unavailable — the select falls back to the default shell */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Map an edited session's stored shell back to a preset once the catalog
+  // (and its probe results) has loaded; runs once per modal.
+  useEffect(() => {
+    if (!payload || !catalog || shellInitializedRef.current) {
+      return;
+    }
+    shellInitializedRef.current = true;
+    const session = payload.session;
+    if (session?.kind === 'local' && session.shellCommand) {
+      const presetId = matchLocalShellPreset(
+        session.shellCommand,
+        session.shellArgs ?? [],
+        catalog
+      );
+      setForm((current) => ({
+        ...current,
+        shellPreset: presetId,
+        shellCommand: session.shellCommand ?? '',
+        shellArgs: formatShellArgs(session.shellArgs ?? [])
+      }));
+    }
+  }, [payload, catalog]);
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -129,6 +200,10 @@ export default function QuickConnectWindow() {
       setError('请填写主机地址');
       return;
     }
+    if (!isRemote && form.shellPreset === 'custom' && !normalizeShellCommand(form.shellCommand)) {
+      setError('请填写自定义 Shell 的可执行文件');
+      return;
+    }
     if (hasAuth && form.authMethod === 'key' && !form.keyPath.trim()) {
       setError('请选择私钥文件');
       return;
@@ -152,6 +227,22 @@ export default function QuickConnectWindow() {
     setBusy(true);
     setError(null);
     try {
+      const shellForDraft = (() => {
+        if (isRemote) {
+          return { shellCommand: '', shellArgs: [] as string[] };
+        }
+        if (form.shellPreset === 'custom') {
+          return {
+            shellCommand: normalizeShellCommand(form.shellCommand),
+            shellArgs: splitShellArgs(form.shellArgs)
+          };
+        }
+        const resolved = catalog?.commands[form.shellPreset];
+        return {
+          shellCommand: resolved?.command ?? '',
+          shellArgs: resolved?.args ?? []
+        };
+      })();
       await submitModal({
         draft: {
           kind: form.kind,
@@ -163,6 +254,8 @@ export default function QuickConnectWindow() {
           keyPath: hasAuth ? form.keyPath : '',
           certPath: hasAuth ? form.certPath : '',
           jumpSessionId: hasAuth ? form.jumpSessionId : '',
+          shellCommand: shellForDraft.shellCommand,
+          shellArgs: shellForDraft.shellArgs,
           group: form.group
         },
         password: form.password,
@@ -201,6 +294,61 @@ export default function QuickConnectWindow() {
               placeholder={isRemote ? '例如：生产服务器' : '例如：本地终端'}
             />
           </div>
+
+          {!isRemote ? (
+            <>
+              <div>
+                <Label htmlFor="session-shell">Shell</Label>
+                <Select
+                  id="session-shell"
+                  value={form.shellPreset}
+                  onChange={(event) => update('shellPreset', event.target.value)}
+                >
+                  {(catalog?.presets ?? [{ id: 'default', labelKey: 'localShell.default' }]).map(
+                    (preset) => (
+                      <option
+                        key={preset.id}
+                        value={preset.id}
+                        disabled={preset.available === false}
+                      >
+                        {SHELL_LABELS[preset.labelKey] ?? preset.labelKey}
+                        {preset.available === false ? '（未检测到）' : ''}
+                      </option>
+                    )
+                  )}
+                  <option value="custom">自定义 Shell…</option>
+                </Select>
+                <p className="mt-1 text-[11px] text-muted">
+                  本地会话启动的 Shell；「系统默认」在 Windows 上为 cmd.exe，其他平台跟随登录
+                  Shell。
+                </p>
+              </div>
+              {form.shellPreset === 'custom' ? (
+                <>
+                  <div>
+                    <Label htmlFor="session-shell-command">可执行文件</Label>
+                    <Input
+                      id="session-shell-command"
+                      value={form.shellCommand}
+                      onChange={(event) => update('shellCommand', event.target.value)}
+                      placeholder="pwsh.exe 或 C:\Program Files\Git\bin\bash.exe"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="session-shell-args">启动参数（可选）</Label>
+                    <Input
+                      id="session-shell-args"
+                      value={form.shellArgs}
+                      onChange={(event) => update('shellArgs', event.target.value)}
+                      placeholder="--cd ~（空格分隔，双引号包裹含空格的参数）"
+                      autoComplete="off"
+                    />
+                  </div>
+                </>
+              ) : null}
+            </>
+          ) : null}
 
           {isRemote ? (
             <>

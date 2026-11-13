@@ -34,6 +34,8 @@ function buildSession(draft: SessionDraft): Session {
     keyPath: draft.kind === 'local' ? undefined : draft.keyPath?.trim() || undefined,
     certPath: draft.kind === 'local' ? undefined : draft.certPath?.trim() || undefined,
     jumpSessionId: draft.kind === 'local' ? undefined : draft.jumpSessionId?.trim() || undefined,
+    shellCommand: draft.kind === 'local' ? draft.shellCommand?.trim() || undefined : undefined,
+    shellArgs: draft.kind === 'local' && draft.shellArgs?.length ? draft.shellArgs : undefined,
     group: draft.group.trim() || DEFAULT_GROUP,
     favorite: draft.favorite ?? false,
     status: 'idle',
@@ -110,6 +112,21 @@ export const useSessionStore = create<SessionState>()(
                   : patch.jumpSessionId !== undefined
                     ? patch.jumpSessionId.trim() || undefined
                     : session.jumpSessionId,
+              // Same explicit-clear semantics as keyPath: the local form always
+              // sends a string ('' = platform default shell), an omitted field
+              // keeps the previous override.
+              shellCommand:
+                nextKind === 'local'
+                  ? (patch.shellCommand ?? session.shellCommand)?.trim() || undefined
+                  : undefined,
+              shellArgs:
+                nextKind === 'local'
+                  ? patch.shellArgs !== undefined
+                    ? patch.shellArgs.length
+                      ? patch.shellArgs
+                      : undefined
+                    : session.shellArgs
+                  : undefined,
               group: patch.group !== undefined ? patch.group.trim() || DEFAULT_GROUP : session.group
             };
           })
