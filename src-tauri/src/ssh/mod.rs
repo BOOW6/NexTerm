@@ -1588,7 +1588,7 @@ impl SshManager {
 
         Ok(())
     }
-    async fn open_sftp(&self, id: &str) -> anyhow::Result<Arc<SftpSession>> {
+    pub(crate) async fn open_sftp(&self, id: &str) -> anyhow::Result<Arc<SftpSession>> {
         let connection = self.connection(id)?;
         let mut cached = connection.sftp.lock().await;
 
@@ -1624,6 +1624,12 @@ impl SshManager {
         *cached = Some(session.clone());
 
         Ok(session)
+    }
+
+    /// Whether a live connection exists for the session (used by features
+    /// that outlive a single command call, e.g. the remote-edit watcher).
+    pub(crate) fn has_connection(&self, id: &str) -> bool {
+        self.connection(id).is_ok()
     }
 
     fn connection(&self, id: &str) -> anyhow::Result<Arc<SshConnection>> {

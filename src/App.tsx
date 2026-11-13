@@ -8,6 +8,7 @@ import { WorkspaceProvider } from './features/workspace/WorkspaceContext';
 import { useSftpConflictEvents } from './hooks/useSftpConflictEvents';
 import { useSftpTransferEvents } from './hooks/useSftpTransferEvents';
 import { useSshHostKeyEvents } from './hooks/useSshHostKeyEvents';
+import { useRemoteEditEvents } from './hooks/useRemoteEditEvents';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
 import { useSettingsSync } from './hooks/useSettingsSync';
 import { useSessionLogRootSync } from './hooks/useSessionLogRootSync';
@@ -21,6 +22,7 @@ function AppShell() {
   useSftpTransferEvents();
   useSftpConflictEvents();
   useSshHostKeyEvents();
+  useRemoteEditEvents();
   useGlobalShortcuts();
   useSettingsSync();
   useSnippetSync();

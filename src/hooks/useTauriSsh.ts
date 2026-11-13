@@ -351,3 +351,12 @@ export async function listenHostKeyTimeout(
     onTimeout(event.payload);
   });
 }
+
+export interface RemoteEditSession {
+  tempPath: string;
+  size: number;
+}
+
+export async function remoteEditOpen(id: string, remotePath: string): Promise<RemoteEditSession> {
+  return invoke<RemoteEditSession>('remote_edit_open', { id, remotePath });
+}

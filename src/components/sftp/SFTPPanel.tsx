@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
+import { openPath } from '@tauri-apps/plugin-opener';
 import type { IDockviewPanelProps } from 'dockview-react';
 import {
   ArrowUpDown,
@@ -15,6 +16,7 @@ import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialo
 import { writeText as writeClipboardText } from '@tauri-apps/plugin-clipboard-manager';
 import {
   listSftp,
+  remoteEditOpen,
   listenSftpTransferDone,
   mkdirSftp,
   removeSftp,
@@ -392,6 +394,25 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
     }
   };
 
+  // Download the file to a scratch copy and open it in the local editor;
+  // the backend watcher syncs saves back automatically.
+  const handleRemoteEdit = async (entry: SftpEntry) => {
+    if (!sshId) {
+      return;
+    }
+    try {
+      const session = await remoteEditOpen(sshId, entry.path);
+      await openPath(session.tempPath);
+      toast({ title: t('sftp.edit.openedToast', { name: entry.name }), variant: 'success' });
+    } catch (reason) {
+      toast({
+        title: t('sftp.edit.failedToast'),
+        description: String(reason),
+        variant: 'error'
+      });
+    }
+  };
+
   const handleDownload = async (entry: SftpEntry) => {
     if (!sshId || !boundSessionId) {
       return;
@@ -571,6 +592,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         { label: t('sftp.menu.downloadFolder'), run: () => void handleDownload(entry) }
       );
     } else {
+      actions.push({ label: t('sftp.menu.edit'), run: () => void handleRemoteEdit(entry) });
       actions.push({ label: t('sftp.menu.download'), run: () => void handleDownload(entry) });
     }
 

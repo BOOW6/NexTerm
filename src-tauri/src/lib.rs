@@ -2,6 +2,7 @@ pub mod commands;
 pub mod fonts;
 pub mod log_sink;
 pub mod pty;
+mod remote_edit;
 pub mod ssh;
 pub mod telnet;
 pub mod text_stream;
@@ -29,6 +30,7 @@ pub fn run() {
         .manage(commands::SessionLogRoot::default())
         .manage(ModalManager::default())
         .manage(FontManager::default())
+        .manage(remote_edit::RemoteEditManager::default())
         .setup(|app| {
             // Load the bundled ConPTY before the first PTY session is created.
             pty::conpty_bundle::install(app.handle());
@@ -106,6 +108,8 @@ pub fn run() {
             commands::sftp_upload,
             commands::sftp_remove,
             commands::sftp_rename,
+            remote_edit::remote_edit_open,
+            remote_edit::remote_edit_stop,
             commands::sftp_mkdir,
             commands::sftp_pause_transfer,
             commands::sftp_cancel_transfer,
