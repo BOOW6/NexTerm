@@ -30,6 +30,12 @@ export const ZH: Dictionary = {
   'settings.appearance.language.system': '跟随系统',
   'settings.appearance.language.zh': '简体中文',
   'settings.appearance.language.partialNote': '部分面板暂未跟随界面语言，仍以中文显示。',
+  'settings.appearance.closeToTray': '关闭窗口时最小化到托盘',
+  'settings.appearance.closeToTrayHint': '关闭主窗口后保留在系统托盘，从托盘图标可重新打开或退出。',
+  'settings.appearance.globalShowHotkey': '全局唤起快捷键',
+  'settings.appearance.globalShowHotkeyHint':
+    '在任何应用中按下即可显示/隐藏 NexTerm 主窗口；留空禁用，如 Ctrl+Shift+Space。',
+
   'settings.appearance.themeMode': '主题策略',
   'settings.appearance.mode.lightDesc': '始终使用亮色主题',
   'settings.appearance.mode.darkDesc': '始终使用暗色主题',
@@ -264,6 +270,12 @@ export const EN: Dictionary = {
   'settings.appearance.language.zh': '简体中文',
   'settings.appearance.language.partialNote':
     'Some panels do not follow the interface language yet and still display in Chinese.',
+  'settings.appearance.closeToTray': 'Hide to tray when the window closes',
+  'settings.appearance.closeToTrayHint':
+    'Keep NexTerm in the system tray after closing the main window; reopen or quit from the tray icon.',
+  'settings.appearance.globalShowHotkey': 'Global show/hide hotkey',
+  'settings.appearance.globalShowHotkeyHint':
+    'Press anywhere to show or hide the NexTerm window; empty disables it, e.g. Ctrl+Shift+Space.',
   'settings.appearance.themeMode': 'Theme mode',
   'settings.appearance.mode.lightDesc': 'Always use the light theme',
   'settings.appearance.mode.darkDesc': 'Always use the dark theme',

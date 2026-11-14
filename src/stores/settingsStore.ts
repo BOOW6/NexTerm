@@ -55,6 +55,10 @@ export interface SettingsSnapshot {
   sessionLogEnabled: boolean;
   /** Directory for session output logs; empty disables path-based logging. */
   sessionLogDir: string;
+  /** Hide to tray instead of quitting when the main window closes. */
+  closeToTray: boolean;
+  /** Global accelerator that toggles the main window (empty = disabled). */
+  globalShowHotkey: string;
   shortcuts: Record<ShortcutAction, string>;
 }
 
@@ -87,6 +91,8 @@ export const DEFAULT_SETTINGS: SettingsSnapshot = {
   defaultUsername: '',
   sessionLogEnabled: false,
   sessionLogDir: '',
+  closeToTray: false,
+  globalShowHotkey: '',
   shortcuts: DEFAULT_SHORTCUTS
 };
 
@@ -156,6 +162,9 @@ function normalizeSettings(input: SettingsSnapshot): SettingsSnapshot {
     defaultPort: Math.min(65535, Math.max(1, Math.round(input.defaultPort) || 22)),
     defaultUsername: input.defaultUsername.trim(),
     sessionLogEnabled: Boolean(input.sessionLogEnabled),
+    closeToTray: Boolean(input.closeToTray),
+    globalShowHotkey:
+      typeof input.globalShowHotkey === 'string' ? input.globalShowHotkey.trim() : '',
     sessionLogDir: (input.sessionLogDir ?? '').trim(),
     shortcuts: {
       ...DEFAULT_SHORTCUTS,
@@ -255,6 +264,8 @@ export function settingsSnapshot(): SettingsSnapshot {
     defaultUsername: state.defaultUsername,
     sessionLogEnabled: state.sessionLogEnabled,
     sessionLogDir: state.sessionLogDir,
+    closeToTray: state.closeToTray,
+    globalShowHotkey: state.globalShowHotkey,
     shortcuts: { ...state.shortcuts }
   };
 }

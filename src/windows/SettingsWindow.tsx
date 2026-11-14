@@ -949,6 +949,35 @@ export default function SettingsWindow() {
               {t('settings.appearance.language.partialNote')}
             </p>
           </div>
+
+          <div>
+            <label className="flex items-center gap-2 text-[11px] text-muted">
+              <input
+                type="checkbox"
+                className="app-checkbox h-3.5 w-3.5 accent-accent"
+                checked={draft.closeToTray}
+                onChange={(event) => update('closeToTray', event.target.checked)}
+              />
+              {t('settings.appearance.closeToTray')}
+            </label>
+            <p className="mt-1 text-[10px] text-muted-foreground">
+              {t('settings.appearance.closeToTrayHint')}
+            </p>
+          </div>
+
+          <div>
+            <Label htmlFor="global-show-hotkey">{t('settings.appearance.globalShowHotkey')}</Label>
+            <Input
+              id="global-show-hotkey"
+              value={draft.globalShowHotkey}
+              onChange={(event) => update('globalShowHotkey', event.target.value)}
+              placeholder="Ctrl+Shift+Space"
+              autoComplete="off"
+            />
+            <p className="mt-1 text-[10px] text-muted-foreground">
+              {t('settings.appearance.globalShowHotkeyHint')}
+            </p>
+          </div>
         </div>
 
         <div className="rounded-sm border border-border bg-surface p-3">

@@ -1,12 +1,50 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use tauri::{ipc::Response, AppHandle, Emitter, State};
+use tauri::{ipc::Response, AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 /// Backend-held root directory for session output logs, synced from settings.
 /// Every `log_path` crossing IPC must live underneath it, so a compromised
 /// renderer cannot point session logging at arbitrary locations.
+/// Window-level behavior synced from the settings store: whether the main
+/// window hides to the tray instead of quitting on close.
+#[derive(Default)]
+pub struct WindowBehavior {
+    pub(crate) close_to_tray: std::sync::atomic::AtomicBool,
+}
+
+#[tauri::command]
+pub async fn set_window_behavior(
+    app: AppHandle,
+    close_to_tray: bool,
+    global_show_hotkey: Option<String>,
+) -> Result<(), String> {
+    app.state::<WindowBehavior>()
+        .close_to_tray
+        .store(close_to_tray, std::sync::atomic::Ordering::SeqCst);
+
+    // Re-register the global show/hide shortcut from scratch on every sync;
+    // an empty value disables it entirely.
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    let shortcuts = app.global_shortcut();
+    shortcuts.unregister_all().map_err(|err| err.to_string())?;
+    if let Some(hotkey) = global_show_hotkey
+        .as_deref()
+        .map(str::trim)
+        .filter(|hotkey| !hotkey.is_empty())
+    {
+        let accelerator = hotkey
+            .to_lowercase()
+            .parse::<tauri_plugin_global_shortcut::Shortcut>()
+            .map_err(|err| format!("无效的全局快捷键 \"{hotkey}\": {err}"))?;
+        shortcuts
+            .register(accelerator)
+            .map_err(|err| format!("全局快捷键注册失败: {err}"))?;
+    }
+    Ok(())
+}
+
 #[derive(Default)]
 pub struct SessionLogRoot(Mutex<Option<PathBuf>>);
 

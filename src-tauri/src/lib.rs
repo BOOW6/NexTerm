@@ -14,7 +14,11 @@ mod zmodem;
 use fonts::FontManager;
 use pty::PtySessionManager;
 use ssh::SshManager;
-use tauri::{Manager, WindowEvent};
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconEvent},
+    Manager, WindowEvent,
+};
 use tauri_plugin_decorum::WebviewWindowExt;
 use vault::VaultManager;
 use windows::ModalManager;
@@ -27,6 +31,26 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_decorum::init())
         .manage(PtySessionManager::default())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let visible = window.is_visible().unwrap_or(false);
+                            let focused = window.is_focused().unwrap_or(false);
+                            if visible && focused {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    }
+                })
+                .build(),
+        )
+        .manage(commands::WindowBehavior::default())
         .manage(telnet::TelnetSessionManager::default())
         .manage(commands::SessionLogRoot::default())
         .manage(ModalManager::default())
@@ -48,14 +72,61 @@ pub fn run() {
 
                 let app_handle = app.handle().clone();
                 window.on_window_event(move |event| {
-                    if matches!(event, WindowEvent::CloseRequested { .. }) {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
                         for (label, child) in app_handle.webview_windows() {
                             if label != "main" {
                                 let _ = child.close();
                             }
                         }
+                        // The tray setting is applied by the frontend via
+                        // set_window_behavior; default stays "really quit".
+                        let behavior = app_handle.state::<commands::WindowBehavior>();
+                        if behavior
+                            .close_to_tray
+                            .load(std::sync::atomic::Ordering::SeqCst)
+                        {
+                            api.prevent_close();
+                            let _ = app_handle.get_webview_window("main").map(|w| w.hide());
+                        }
                     }
                 });
+            }
+
+            // System tray: quick launcher + quit (menu labels follow the
+            // codebase-wide Chinese UI strings).
+            {
+                let show = MenuItem::with_id(app, "tray-show", "显示 NexTerm", true, None::<&str>)?;
+                let new_local =
+                    MenuItem::with_id(app, "tray-new-local", "新建本地终端", true, None::<&str>)?;
+                let quit = MenuItem::with_id(app, "tray-quit", "退出 NexTerm", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&show, &new_local, &quit])?;
+                let mut tray = tauri::tray::TrayIconBuilder::with_id("main-tray")
+                    .menu(&menu)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "tray-show" => show_main_window(app),
+                        "tray-new-local" => {
+                            show_main_window(app);
+                            use tauri::Emitter;
+                            let _ = app.emit("tray-new-local", ());
+                        }
+                        "tray-quit" => app.exit(0),
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            show_main_window(tray.app_handle());
+                        }
+                    });
+                if let Some(icon) = app.default_window_icon() {
+                    tray = tray.icon(icon.clone());
+                }
+                tray.build(app)?;
             }
 
             // Without a usable config directory the known-hosts store stays
@@ -85,6 +156,7 @@ pub fn run() {
             commands::font_data,
             commands::pty_platform_info,
             commands::probe_shell_availability,
+            commands::set_window_behavior,
             commands::create_pty_session,
             commands::write_pty,
             commands::resize_pty,
@@ -140,4 +212,13 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Bring the main window back from the tray (show, unminimize, focus).
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
 }
