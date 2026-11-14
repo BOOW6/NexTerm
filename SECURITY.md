@@ -41,3 +41,21 @@ host-key prompts.
 CI runs `cargo audit` (Rustsec advisory DB) and `npm audit --omit=dev`
 on every push; failures block merges. Dev-only npm advisories are triaged
 but do not gate.
+
+Vulnerabilities in third-party crates that cannot be upgraded away (e.g.
+version-pinned by an upstream dependency) may be ignored in
+`src-tauri/.cargo/audit.toml` only with a written justification covering
+exposure and a removal condition; entries are re-evaluated on every bump
+of the pinning dependency. Currently triaged:
+
+- **RUSTSEC-2023-0071** — `rsa` 0.10.0-rc.18, Marvin Attack (timing side
+  channel). Pinned by `russh`'s default `rsa` feature
+  (`=0.10.0-rc.18`); an exact pin cannot be overridden by `cargo update`
+  or `[patch]`, and disabling the feature would drop ssh-rsa host-key /
+  user-key support, breaking servers that still rely on RSA keys.
+  Accepted as an SSH **client**: the vulnerable PKCS#1 v1.5
+  decryption/blinding path is executed by the SSH server, and our
+  client-side RSA use is a handful of signatures per handshake with no
+  high-volume timing oracle. Removal condition: upgrade to a russh
+  release depending on stable RustCrypto `rsa 0.10` and delete the
+  ignore entry in `src-tauri/.cargo/audit.toml`.

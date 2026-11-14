@@ -1,0 +1,26 @@
+# cargo audit configuration (see SECURITY.md > Dependency auditing).
+#
+# Only *vulnerabilities* gate CI; unmaintained warnings are tracked but do
+# not block. Ignored advisories must carry a justification and a removal
+# condition — re-evaluate on every russh dependency bump.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2023-0071 — Marvin Attack (timing side channel) in the RustCrypto
+    # `rsa` crate. Unfixable upstream for now: `russh` (our SSH engine) pins
+    # `rsa =0.10.0-rc.18` via its default `rsa` feature, and an exact version
+    # pin cannot be overridden by `cargo update` or `[patch]`.
+    #
+    # Why we accept the risk as an SSH *client* instead of disabling russh's
+    # `rsa` feature (which would drop ssh-rsa host-key/user-key support and
+    # break real-world servers that still use RSA keys):
+    #   * the vulnerable path is PKCS#1 v1.5 *decryption/blinding*, which is
+    #     executed by the SSH server, not the client;
+    #   * our client-side RSA use is a handful of signatures per handshake
+    #     with no attacker-tunable high-volume timing oracle;
+    #   * the advisory itself is aimed at server deployments.
+    #
+    # Removal condition: upgrade to a russh release that depends on the
+    # stable RustCrypto `rsa 0.10` and delete this entry.
+    "RUSTSEC-2023-0071"
+]
