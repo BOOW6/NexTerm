@@ -7,11 +7,14 @@ export interface Snippet {
   id: string;
   name: string;
   command: string;
+  /** Ask before the command text is sent to the terminal. */
+  confirm?: boolean;
 }
 
 export interface SnippetDraft {
   name: string;
   command: string;
+  confirm?: boolean;
 }
 
 interface SnippetState {
@@ -54,7 +57,8 @@ export const useSnippetStore = create<SnippetState>()(
         const snippet: Snippet = {
           id: crypto.randomUUID(),
           name: draft.name.trim() || draft.command.trim() || tStatic('snippet.fallbackTitle'),
-          command: draft.command
+          command: draft.command,
+          confirm: draft.confirm ?? false
         };
         set((state) => ({ snippets: [...state.snippets, snippet] }));
         broadcastSnippetsChanged(useSnippetStore.getState().snippets);

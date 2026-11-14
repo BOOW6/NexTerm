@@ -232,6 +232,7 @@ export const ZH: Dictionary = {
   'settings.macros.deleteTitle': '删除',
   'settings.macros.deleteAria': '删除宏 {name}',
   'settings.macros.deletedToast': '已删除宏「{name}」',
+  'settings.snippets.confirmLabel': '发送前确认命令',
   'settings.snippets.hint':
     '片段保存在本地，可从命令面板（{palette}）搜索并一键发送到当前终端，发送后自动执行回车。',
   'settings.snippets.namePlaceholder': '名称',
@@ -490,6 +491,7 @@ export const EN: Dictionary = {
   'settings.macros.deleteTitle': 'Delete',
   'settings.macros.deleteAria': 'Delete macro {name}',
   'settings.macros.deletedToast': 'Deleted macro "{name}"',
+  'settings.snippets.confirmLabel': 'Confirm before sending',
   'settings.snippets.hint':
     'Snippets are stored locally. Search them in the command palette ({palette}) and send one to the current terminal in a single click; Enter runs automatically after sending.',
   'settings.snippets.namePlaceholder': 'Name',

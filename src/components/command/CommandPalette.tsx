@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Circle,
@@ -37,7 +37,7 @@ import { toast } from '../ui/toastStore';
 import { useBroadcastStore, broadcastCount } from '../../stores/broadcastStore';
 import { useMacroStore, useMacroRecorderStore } from '../../stores/macroStore';
 import { replayMacro } from '../../lib/terminalWrite';
-import { promptText } from '../../lib/appWindows';
+import { promptText, confirmAction } from '../../lib/appWindows';
 import { SESSION_KIND_LABEL_KEY, sessionSubtitle } from '../../types/session';
 import { useI18n } from '../../i18n';
 import { SESSION_KIND_ICON } from '../../lib/sessionVisuals';
@@ -104,6 +104,46 @@ export default function CommandPalette() {
   const [selected, setSelected] = useState(0);
 
   const activeSession = sessions.find((session) => session.id === activeSessionId);
+
+  const runSnippet = useCallback(
+    async (snippet: {
+      id: string;
+      name: string;
+      command: string;
+      confirm?: boolean;
+    }): Promise<void> => {
+      // {{variable}} placeholders are prompted in order of first appearance.
+      const variables = [...new Set(snippet.command.match(/\{\{([^{}]+)\}\}/g) ?? [])].map(
+        (token) => token.slice(2, -2).trim()
+      );
+      const values = new Map<string, string>();
+      for (const variable of variables) {
+        const value = await promptText(
+          t('palette.snippet.varPrompt', { name: variable }),
+          t('palette.snippet.varOk')
+        );
+        if (value === null) {
+          return;
+        }
+        values.set(variable, value);
+      }
+      let text = snippet.command;
+      for (const [variable, value] of values) {
+        text = text.split('{{' + variable + '}}').join(value);
+      }
+      if (snippet.confirm) {
+        const ok = await confirmAction(text, {
+          title: t('palette.snippet.confirmTitle', { name: snippet.name }),
+          okLabel: t('palette.snippet.confirmOk')
+        });
+        if (!ok) {
+          return;
+        }
+      }
+      dispatchTerminalAction({ type: 'send-text', text, execute: true });
+    },
+    [t]
+  );
 
   const items = useMemo<CommandItem[]>(() => {
     const sessionItems: CommandItem[] = sessions.map((session) => ({
@@ -309,7 +349,7 @@ export default function CommandPalette() {
           toast({ title: t('palette.noActiveTerminal'), variant: 'warning' });
           return;
         }
-        dispatchTerminalAction({ type: 'send-text', text: snippet.command, execute: true });
+        void runSnippet(snippet);
       }
     }));
 

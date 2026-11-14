@@ -287,6 +287,7 @@ export default function SettingsWindow() {
   const removeSnippet = useSnippetStore((state) => state.removeSnippet);
   const [snippetName, setSnippetName] = useState('');
   const [snippetCommand, setSnippetCommand] = useState('');
+  const [snippetConfirm, setSnippetConfirm] = useState(false);
   const [editingSnippetId, setEditingSnippetId] = useState<string | null>(null);
 
   const [updateState, setUpdateState] = useState<'idle' | 'checking' | 'latest' | 'available'>(
@@ -318,8 +319,9 @@ export default function SettingsWindow() {
   };
 
   const resetSnippetForm = () => {
-    setEditingSnippetId(null);
     setSnippetName('');
+    setSnippetCommand('');
+    setSnippetConfirm(false);
     setSnippetCommand('');
   };
 
@@ -327,6 +329,7 @@ export default function SettingsWindow() {
     setEditingSnippetId(snippet.id);
     setSnippetName(snippet.name);
     setSnippetCommand(snippet.command);
+    setSnippetConfirm(Boolean(snippet.confirm));
   };
 
   const submitSnippet = () => {
@@ -335,10 +338,14 @@ export default function SettingsWindow() {
       return;
     }
     if (editing) {
-      updateSnippet(editing, { name: snippetName, command: snippetCommand });
+      updateSnippet(editing, {
+        name: snippetName,
+        command: snippetCommand,
+        confirm: snippetConfirm
+      });
       toast({ title: t('settings.snippets.updatedToast'), variant: 'success' });
     } else {
-      addSnippet({ name: snippetName, command: snippetCommand });
+      addSnippet({ name: snippetName, command: snippetCommand, confirm: snippetConfirm });
       toast({ title: t('settings.snippets.addedToast'), variant: 'success' });
     }
     resetSnippetForm();
@@ -1742,6 +1749,15 @@ export default function SettingsWindow() {
             aria-label={t('settings.snippets.commandAria')}
             className="font-mono"
           />
+          <label className="flex items-center gap-2 text-[11px] text-muted">
+            <input
+              type="checkbox"
+              className="app-checkbox h-3.5 w-3.5 accent-accent"
+              checked={snippetConfirm}
+              onChange={(event) => setSnippetConfirm(event.target.checked)}
+            />
+            {t('settings.snippets.confirmLabel')}
+          </label>
         </div>
         <div className="flex justify-end gap-2">
           {editingSnippetId ? (
