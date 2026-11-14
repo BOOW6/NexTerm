@@ -43,6 +43,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - **主机密钥校验（TOFU）**：首次连接弹出 SHA256 指纹确认，写入应用配置目录的 `known_hosts.json`；后续自动比对，不匹配则中止。支持 OpenSSH `known_hosts` 导入/导出（导出可选 hashed host 格式；导入会跳过哈希与通配符条目）。
 - 后端命令：`ssh_connect` / `ssh_write` / `ssh_resize` / `ssh_disconnect` / `ssh_host_key_response` / `known_hosts_list` / `known_hosts_remove` / `known_hosts_import` / `known_hosts_export`；`set_session_log` 用于对活动会话（SSH / PTY / Telnet）即时切换输出日志。
 - **Telnet**（`src-tauri/src/telnet/mod.rs`）：最小 RFC 854 NVT 实现——拒绝一切选项协商（`decode_telnet` 纯函数处理 IAC 转义/子协商跨块、带单测），输出走同一解码/事件/日志管线，事件 `telnet-output-{id}`、`telnet-closed-{id}`；resize 为 no-op（未协商窗口尺寸）。
+- **串口**（`src-tauri/src/serial.rs`）：命令 `serial_list` / `serial_connect` / `serial_write` / `serial_resize`（no-op）/ `serial_disconnect`；事件 `serial-output-{id}`、`serial-closed-{id}`；复用日志管线与 `Utf8StreamDecoder`；断开即关闭端口句柄，由读取线程统一发出关闭事件。
 - 输出事件：`ssh-output-{id}`、`ssh-closed-{id}`；主机密钥事件：`ssh-host-key`、`ssh-host-key-mismatch`。
 - **端口转发**：命令 `port_forward_list` / `port_forward_start` / `port_forward_stop`，事件 `port-forwards-changed`；支持本地（`-L`）、远程（`-R`）与动态 SOCKS5（`-D`）。UI 为独立「端口转发」面板。
 - SFTP：
@@ -61,16 +62,16 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 
 ## 技术栈
 
-| 层次            | 技术                                                                            |
-| --------------- | ------------------------------------------------------------------------------- |
-| 应用外壳        | Tauri 2.0（Rust 后端）                                                          |
-| 前端            | React 18 + TypeScript + Vite                                                    |
-| 状态管理        | Zustand                                                                         |
-| UI / 样式       | TailwindCSS + CSS Variables + Lucide React（Web 2.0 经典后台风格）              |
-| 停靠/多标签布局 | `dockview-react`                                                                |
-| 终端模拟器      | `@xterm/xterm` + `addon-fit` + `addon-search` + `addon-webgl`                   |
-| Rust 核心依赖   | `tokio`、`portable-pty`、`russh`、`russh-sftp`、`serde` / `serde_json`          |
-| 桌面集成        | `tauri-plugin-clipboard-manager`、`tauri-plugin-dialog`、`tauri-plugin-decorum` |
+| 层次            | 技术                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------ |
+| 应用外壳        | Tauri 2.0（Rust 后端）                                                               |
+| 前端            | React 18 + TypeScript + Vite                                                         |
+| 状态管理        | Zustand                                                                              |
+| UI / 样式       | TailwindCSS + CSS Variables + Lucide React（Web 2.0 经典后台风格）                   |
+| 停靠/多标签布局 | `dockview-react`                                                                     |
+| 终端模拟器      | `@xterm/xterm` + `addon-fit` + `addon-search` + `addon-webgl`                        |
+| Rust 核心依赖   | `tokio`、`portable-pty`、`russh`、`russh-sftp`、`serialport`、`serde` / `serde_json` |
+| 桌面集成        | `tauri-plugin-clipboard-manager`、`tauri-plugin-dialog`、`tauri-plugin-decorum`      |
 
 ## 目录结构
 
@@ -101,6 +102,10 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 │   ├── src/
 │   │   ├── pty/mod.rs        # 本地 PTY 会话管理
 │   │   ├── ssh/mod.rs        # SSH / SFTP 连接管理
+│   │   ├── telnet/mod.rs     # Telnet（最小 NVT）
+│   │   ├── serial.rs         # 串口会话（serialport + 阻塞读线程）
+│   │   ├── zmodem.rs         # ZMODEM 接收状态机（含 tests/）
+│   │   ├── remote_edit.rs    # 远程文件本地编辑（下载/监视/回传）
 │   │   ├── vault.rs          # 加密凭据保险库（Argon2id + AES-256-GCM）
 │   │   ├── commands/mod.rs   # Tauri IPC 命令
 │   │   ├── windows.rs        # 模态窗口与原生菜单
@@ -213,4 +218,9 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - [x] 远程文件本地编辑（临时副本 + 保存自动回传，走 SFTP 上传引擎与传输队列）
 - [x] ZMODEM 接收（sz 自动下载到系统下载目录，纯状态机 + 离线单测；复用传输队列展示与取消）
 - [x] 发布 CI（release.yml：v* 标签三平台构建 + updater 签名产物 + Draft Release）
-- [ ] trzsz / rz 发送端（ZMODEM 上行）、串口支持、可访问性增强
+- [x] 系统托盘（快速启动菜单 + 左键唤起）、全局唤起快捷键、关闭最小化到托盘（设置 > 外观）
+- [x] 宏录制/回放（命令面板录制/保存/回放，按键与停顿按序发送；设置 > 片段 管理）
+- [x] 片段变量占位（{{变量}} 顺序提示输入）与执行前确认（单片段开关）
+- [x] 串口会话（serialport；端口探测/波特率预设；无自动重连，手动重连）
+- [x] 依赖审计门禁（cargo audit + npm audit --omit=dev）与 SECURITY.md 漏洞披露流程
+- [ ] trzsz / rz 发送端（ZMODEM 上行）、SSH Agent 转发、多跳 ProxyJump、可访问性增强
