@@ -368,6 +368,80 @@ pub async fn set_session_log(
 }
 
 #[tauri::command]
+pub async fn serial_list(
+    state: State<'_, crate::serial::SerialSessionManager>,
+) -> Result<Vec<crate::serial::SerialPortInfo>, String> {
+    state.list_ports().await.map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn serial_connect(
+    app: AppHandle,
+    state: State<'_, crate::serial::SerialSessionManager>,
+    log_root: State<'_, SessionLogRoot>,
+    id: String,
+    port_name: String,
+    baud: u32,
+    data_bits: Option<String>,
+    parity: Option<String>,
+    stop_bits: Option<String>,
+    flow_control: Option<String>,
+    log_path: Option<String>,
+) -> Result<String, String> {
+    let log_path = confine_log_path(&log_root, log_path);
+    let parse = |value: Option<String>, default: &'static str| -> String {
+        value
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| default.to_string())
+    };
+    state
+        .connect(
+            app,
+            id,
+            port_name,
+            baud,
+            parse(data_bits, "eight"),
+            parse(parity, "none"),
+            parse(stop_bits, "one"),
+            parse(flow_control, "none"),
+            log_path,
+        )
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn serial_write(
+    state: State<'_, crate::serial::SerialSessionManager>,
+    id: String,
+    data: String,
+) -> Result<(), String> {
+    state
+        .write(&id, data.into_bytes().as_slice())
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn serial_resize(
+    state: State<'_, crate::serial::SerialSessionManager>,
+    id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    state.resize(&id, cols, rows).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub async fn serial_disconnect(
+    state: State<'_, crate::serial::SerialSessionManager>,
+    id: String,
+) -> Result<(), String> {
+    state.disconnect(&id).await.map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 pub async fn telnet_connect(
     app: AppHandle,
     state: State<'_, TelnetSessionManager>,

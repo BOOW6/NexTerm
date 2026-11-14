@@ -1,11 +1,12 @@
-import { FolderTree, Globe, Server, TerminalSquare, type LucideIcon } from 'lucide-react';
+import { Cable, FolderTree, Globe, Server, TerminalSquare, type LucideIcon } from 'lucide-react';
 import type { SessionKind, SessionStatus } from '../types/session';
 
 export const SESSION_KIND_ICON: Record<SessionKind, LucideIcon> = {
   local: TerminalSquare,
   ssh: Server,
   sftp: FolderTree,
-  telnet: Globe
+  telnet: Globe,
+  serial: Cable
 };
 
 const SESSION_STATUS_COLOR: Record<SessionStatus, string> = {

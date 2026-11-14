@@ -93,7 +93,7 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
           ? tStatic('quickConnect.windowTitleEdit')
           : tStatic('quickConnect.windowTitleNew'),
         width: 500,
-        height: session?.kind === 'local' ? 570 : 620,
+        height: session?.kind === 'local' ? 570 : session?.kind === 'serial' ? 560 : 620,
         data: {
           defaults: {
             kind: options?.kind ?? session?.kind ?? 'local',

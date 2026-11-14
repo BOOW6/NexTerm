@@ -136,9 +136,10 @@ export default function TerminalTab(props: IDockviewPanelProps) {
   }
 
   const isLocal = session.kind === 'local';
+  const isSerial = session.kind === 'serial';
   const authMethod = session.authMethod ?? 'password';
   const keyPath = session.keyPath ?? '';
-  const needsAuth = !isLocal && (authMethod === 'password' ? !password : !authorized);
+  const needsAuth = !isLocal && !isSerial && (authMethod === 'password' ? !password : !authorized);
 
   if (needsAuth) {
     return <SshConnectForm session={session} />;
@@ -378,10 +379,18 @@ export default function TerminalTab(props: IDockviewPanelProps) {
           sessionId={session.id}
           fontSize={fontSize}
           visible={isVisible}
-          transport={session.kind === 'telnet' ? 'telnet' : isLocal ? 'local' : 'ssh'}
+          transport={
+            session.kind === 'telnet'
+              ? 'telnet'
+              : session.kind === 'serial'
+                ? 'serial'
+                : isLocal
+                  ? 'local'
+                  : 'ssh'
+          }
           logTitle={session.title}
           ssh={
-            isLocal
+            isLocal || isSerial
               ? undefined
               : {
                   host: session.host ?? '',

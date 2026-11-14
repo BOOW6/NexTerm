@@ -39,6 +39,13 @@ import {
 import { useConnectionStore } from '../../stores/connectionStore';
 import { broadcastInput } from '../../stores/broadcastStore';
 import { recordKeystroke } from '../../stores/macroStore';
+import {
+  connectSerial,
+  disconnectSerial,
+  listenSerialClosed,
+  listenSerialOutput,
+  writeSerial
+} from '../../hooks/useTauriSerial';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTransferStore } from '../../stores/transferStore';
@@ -82,7 +89,7 @@ export interface XtermHandle {
   reset: () => void;
 }
 
-export type TerminalTransport = 'local' | 'ssh' | 'telnet';
+export type TerminalTransport = 'local' | 'ssh' | 'telnet' | 'serial';
 
 export interface SshTarget {
   host: string;
@@ -1208,11 +1215,124 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         }
       };
 
+      const connectSerialTransport = async (instance: Terminal) => {
+        if (disposed) {
+          return;
+        }
+        clearTransportListeners();
+        const generation = ++transportGeneration;
+        if (backendId) {
+          void disconnectSerial(backendId);
+          backendId = '';
+          backendIdRef.current = '';
+          resizeTarget = null;
+        }
+
+        const id = crypto.randomUUID();
+        let established = false;
+        let closedEarly = false;
+
+        try {
+          // Read the port config at connect time so an edit applied after
+          // the session list rendered still takes effect.
+          const sessionRecord = useSessionStore.getState().getSession(sessionId);
+          const portName = sessionRecord?.serialPort ?? '';
+          if (!portName) {
+            throw new Error(t('terminal.missingSerialPort'));
+          }
+          useSessionStore.getState().setStatus(sessionId, 'connecting');
+
+          const stopOutput = await listenSerialOutput(id, ({ data }) => {
+            if (generation === transportGeneration && !disposed) {
+              enqueueWrite(data);
+            }
+          });
+          if (disposed || generation !== transportGeneration) {
+            stopOutput();
+            return;
+          }
+          unlistenOutput = stopOutput;
+
+          const stopClosed = await listenSerialClosed(id, () => {
+            if (disposed || generation !== transportGeneration) {
+              return;
+            }
+            if (!established) {
+              closedEarly = true;
+              return;
+            }
+            clearTransportListeners();
+            backendId = '';
+            backendIdRef.current = '';
+            resizeTarget = null;
+            // No auto-reconnect: unplugged adapters stay unplugged until the
+            // user explicitly reconnects.
+            useSessionStore.getState().setStatus(sessionId, 'idle');
+            void writeScrollbackNotice(
+              instance,
+              `\x1b[33m[${t('terminal.serialDisconnected')}][0m`,
+              true
+            );
+          });
+          if (disposed || generation !== transportGeneration) {
+            stopClosed();
+            return;
+          }
+          unlistenClosed = stopClosed;
+
+          const connectedId = await connectSerial({
+            id,
+            portName,
+            baud: sessionRecord?.serialBaud ?? 115200,
+            logPath: sessionLogTarget() || undefined
+          });
+          if (disposed || generation !== transportGeneration || closedEarly) {
+            void disconnectSerial(connectedId);
+            if (closedEarly && !disposed && generation === transportGeneration) {
+              clearTransportListeners();
+              useSessionStore.getState().setStatus(sessionId, 'idle');
+              void writeScrollbackNotice(
+                instance,
+                `\x1b[33m[${t('terminal.serialDisconnected')}][0m`,
+                true
+              );
+            }
+            return;
+          }
+
+          established = true;
+          backendId = connectedId;
+          backendIdRef.current = connectedId;
+          // Serial has no window-size negotiation: no resizeTarget.
+          useSessionStore.getState().setStatus(sessionId, 'connected');
+
+          dataDisposable = instance.onData((data) => {
+            void writeSerial(connectedId, data);
+            broadcastInput(sessionId, data);
+            recordKeystroke(data);
+          });
+
+          if (useWorkspaceStore.getState().activeSessionId === sessionId) {
+            instance.focus();
+          }
+        } catch (error) {
+          if (!disposed && generation === transportGeneration) {
+            clearTransportListeners();
+            useSessionStore.getState().setStatus(sessionId, 'error');
+            enqueueWrite(
+              `\r\n\x1b[31m${t('terminal.serialConnectFailed', { message: errorMessage(error) })}\x1b[0m\r\n`
+            );
+          }
+        }
+      };
+
       const run = async (instance: Terminal) => {
         if (isSsh) {
           await connectSshTransport(instance);
         } else if (transport === 'telnet') {
           await connectTelnetTransport(instance);
+        } else if (transport === 'serial') {
+          await connectSerialTransport(instance);
         } else {
           await connectLocalTransport(instance);
         }

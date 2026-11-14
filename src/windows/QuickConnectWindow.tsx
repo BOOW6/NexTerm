@@ -13,6 +13,7 @@ import {
   splitShellArgs,
   type LocalShellCatalog
 } from '../lib/localShells';
+import { listSerialPorts, type SerialPortInfo } from '../hooks/useTauriSerial';
 import { useI18n } from '../i18n';
 import {
   DEFAULT_GROUP,
@@ -40,6 +41,8 @@ interface FormState {
   shellPreset: string;
   shellCommand: string;
   shellArgs: string;
+  serialPort: string;
+  serialBaud: string;
   group: string;
 }
 
@@ -58,6 +61,8 @@ const EMPTY_FORM: FormState = {
   shellPreset: 'default',
   shellCommand: '',
   shellArgs: '',
+  serialPort: '',
+  serialBaud: '115200',
   group: DEFAULT_GROUP
 };
 
@@ -68,6 +73,7 @@ export default function QuickConnectWindow() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [catalog, setCatalog] = useState<LocalShellCatalog | null>(null);
+  const [serialPorts, setSerialPorts] = useState<SerialPortInfo[]>([]);
   const shellInitializedRef = useRef(false);
 
   useEffect(() => {
@@ -93,6 +99,8 @@ export default function QuickConnectWindow() {
           shellPreset: data.session.shellCommand ? 'custom' : 'default',
           shellCommand: data.session.shellCommand ?? '',
           shellArgs: formatShellArgs(data.session.shellArgs ?? []),
+          serialPort: data.session.serialPort ?? '',
+          serialBaud: data.session.serialBaud ? String(data.session.serialBaud) : '115200',
           group: data.session.group
         });
       } else {
@@ -109,6 +117,27 @@ export default function QuickConnectWindow() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (form.kind !== 'serial') {
+      return;
+    }
+    let cancelled = false;
+    void listSerialPorts()
+      .then((ports) => {
+        if (!cancelled) {
+          setSerialPorts(ports);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSerialPorts([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.kind]);
 
   useEffect(() => {
     let cancelled = false;
@@ -153,7 +182,8 @@ export default function QuickConnectWindow() {
     setForm((current) => ({ ...current, [key]: value }));
   };
 
-  const isRemote = form.kind !== 'local';
+  const isRemote = form.kind !== 'local' && form.kind !== 'serial';
+  const isSerial = form.kind === 'serial';
   // Telnet authenticates in-band after connecting; only SSH/SFTP sessions
   // carry NexTerm-side credentials and jump hosts.
   const hasAuth = form.kind === 'ssh' || form.kind === 'sftp';
@@ -195,6 +225,14 @@ export default function QuickConnectWindow() {
       setError(t('quickConnect.errorHostRequired'));
       return;
     }
+    if (isSerial && !form.serialPort.trim()) {
+      setError(t('quickConnect.serialPortRequired'));
+      return;
+    }
+    if (isSerial && form.serialBaud && !Number.isFinite(Number(form.serialBaud))) {
+      setError(t('quickConnect.serialBaudInvalid'));
+      return;
+    }
     if (!isRemote && form.shellPreset === 'custom' && !normalizeShellCommand(form.shellCommand)) {
       setError(t('quickConnect.errorShellRequired'));
       return;
@@ -223,7 +261,7 @@ export default function QuickConnectWindow() {
     setError(null);
     try {
       const shellForDraft = (() => {
-        if (isRemote) {
+        if (isRemote || isSerial) {
           return { shellCommand: '', shellArgs: [] as string[] };
         }
         if (form.shellPreset === 'custom') {
@@ -251,6 +289,8 @@ export default function QuickConnectWindow() {
           jumpSessionId: hasAuth ? form.jumpSessionId : '',
           shellCommand: shellForDraft.shellCommand,
           shellArgs: shellForDraft.shellArgs,
+          serialPort: isSerial ? form.serialPort.trim() : '',
+          serialBaud: isSerial ? Number(form.serialBaud) || 115200 : undefined,
           group: form.group
         },
         password: form.password,
@@ -277,6 +317,7 @@ export default function QuickConnectWindow() {
               <option value="ssh">{t(SESSION_KIND_LABEL_KEY.ssh)}</option>
               <option value="sftp">{t(SESSION_KIND_LABEL_KEY.sftp)}</option>
               <option value="telnet">{t(SESSION_KIND_LABEL_KEY.telnet)}</option>
+              <option value="serial">{t(SESSION_KIND_LABEL_KEY.serial)}</option>
             </Select>
           </div>
 
@@ -346,6 +387,59 @@ export default function QuickConnectWindow() {
                 </>
               ) : null}
             </>
+          ) : null}
+
+          {isSerial ? (
+            <div>
+              <Label htmlFor="session-serial-port">{t('quickConnect.serialPort')}</Label>
+              <div className="flex items-stretch gap-1">
+                <Input
+                  id="session-serial-port"
+                  value={form.serialPort}
+                  onChange={(event) => update('serialPort', event.target.value)}
+                  placeholder={t('quickConnect.serialPortPlaceholder')}
+                  autoComplete="off"
+                  className="flex-1"
+                  list="serial-port-options"
+                />
+                <datalist id="serial-port-options">
+                  {serialPorts.map((port) => (
+                    <option key={port.name} value={port.name}>
+                      {port.kind}
+                    </option>
+                  ))}
+                </datalist>
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  aria-label={t('quickConnect.serialRefresh')}
+                  title={t('quickConnect.serialRefresh')}
+                  onClick={() => {
+                    void listSerialPorts()
+                      .then(setSerialPorts)
+                      .catch(() => setSerialPorts([]));
+                  }}
+                >
+                  <FolderOpen className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div className="mt-2">
+                <Label htmlFor="session-serial-baud">{t('quickConnect.serialBaud')}</Label>
+                <Select
+                  id="session-serial-baud"
+                  value={form.serialBaud}
+                  onChange={(event) => update('serialBaud', event.target.value)}
+                >
+                  {['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'].map(
+                    (baud) => (
+                      <option key={baud} value={baud}>
+                        {baud}
+                      </option>
+                    )
+                  )}
+                </Select>
+              </div>
+            </div>
           ) : null}
 
           {isRemote ? (

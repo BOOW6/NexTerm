@@ -3,6 +3,7 @@ pub mod fonts;
 pub mod log_sink;
 pub mod pty;
 mod remote_edit;
+mod serial;
 pub mod ssh;
 pub mod telnet;
 pub mod text_stream;
@@ -51,6 +52,7 @@ pub fn run() {
                 .build(),
         )
         .manage(commands::WindowBehavior::default())
+        .manage(serial::SerialSessionManager::default())
         .manage(telnet::TelnetSessionManager::default())
         .manage(commands::SessionLogRoot::default())
         .manage(ModalManager::default())
@@ -181,6 +183,11 @@ pub fn run() {
             commands::sftp_upload,
             commands::sftp_remove,
             commands::sftp_rename,
+            commands::serial_list,
+            commands::serial_connect,
+            commands::serial_write,
+            commands::serial_resize,
+            commands::serial_disconnect,
             remote_edit::remote_edit_open,
             remote_edit::remote_edit_stop,
             commands::sftp_mkdir,

@@ -377,6 +377,7 @@ export default function CommandPalette() {
     macros,
     recording,
     activeSessionId,
+    runSnippet,
     activeSession,
     themeLabel,
     cycle,

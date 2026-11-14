@@ -22,6 +22,7 @@ font-kit = "0.14"
 hmac = "0.12"
 portable-pty = "0.8"
 rand = "0.8"
+serialport = "4"
 russh = "0.63.1"
 russh-sftp = "3.0.1"
 serde = { version = "1", features = ["derive"] }

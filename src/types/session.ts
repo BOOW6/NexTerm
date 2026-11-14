@@ -1,4 +1,4 @@
-export type SessionKind = 'local' | 'ssh' | 'sftp' | 'telnet';
+export type SessionKind = 'local' | 'ssh' | 'sftp' | 'telnet' | 'serial';
 
 export type SessionStatus = 'idle' | 'connecting' | 'connected' | 'error';
 
@@ -20,6 +20,9 @@ export interface Session {
   /** Local sessions only: executable to spawn instead of the platform shell. */
   shellCommand?: string;
   shellArgs?: string[];
+  /** Serial sessions only. */
+  serialPort?: string;
+  serialBaud?: number;
   group: string;
   favorite: boolean;
   status: SessionStatus;
@@ -40,6 +43,9 @@ export interface SessionDraft {
   /** Local sessions only. An empty string clears an existing override. */
   shellCommand?: string;
   shellArgs?: string[];
+  /** Serial sessions only. */
+  serialPort?: string;
+  serialBaud?: number;
   group: string;
   favorite?: boolean;
 }
@@ -52,10 +58,15 @@ export const SESSION_KIND_LABEL_KEY: Record<SessionKind, string> = {
   local: 'session.kind.local',
   ssh: 'session.kind.ssh',
   sftp: 'session.kind.sftp',
-  telnet: 'session.kind.telnet'
+  telnet: 'session.kind.telnet',
+  serial: 'session.kind.serial'
 };
 
 export function sessionSubtitle(session: Session, t: SessionTranslate): string {
+  if (session.kind === 'serial') {
+    const port = session.serialPort ?? '';
+    return session.serialBaud ? `${port} @ ${session.serialBaud}` : port;
+  }
   if (session.kind === 'local') {
     const shellName = session.shellCommand?.split(/[\\/]/).pop();
     return shellName ? shellName.replace(/\.exe$/i, '') : t('session.subtitle.localShell');

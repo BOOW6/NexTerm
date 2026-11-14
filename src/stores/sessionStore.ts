@@ -24,19 +24,24 @@ interface SessionState {
 
 function buildSession(draft: SessionDraft): Session {
   const now = Date.now();
+  // Serial sessions are "local-like": no host/auth fields, but they carry
+  // their own port configuration.
+  const localLike = draft.kind === 'local' || draft.kind === 'serial';
   return {
     id: crypto.randomUUID(),
     kind: draft.kind,
     title: draft.title.trim() || tStatic(SESSION_KIND_LABEL_KEY[draft.kind]),
-    host: draft.kind === 'local' ? undefined : draft.host?.trim() || undefined,
-    port: draft.kind === 'local' ? undefined : draft.port,
-    username: draft.kind === 'local' ? undefined : draft.username?.trim() || undefined,
-    authMethod: draft.kind === 'local' ? undefined : (draft.authMethod ?? 'password'),
-    keyPath: draft.kind === 'local' ? undefined : draft.keyPath?.trim() || undefined,
-    certPath: draft.kind === 'local' ? undefined : draft.certPath?.trim() || undefined,
-    jumpSessionId: draft.kind === 'local' ? undefined : draft.jumpSessionId?.trim() || undefined,
+    host: localLike ? undefined : draft.host?.trim() || undefined,
+    port: localLike ? undefined : draft.port,
+    username: localLike ? undefined : draft.username?.trim() || undefined,
+    authMethod: localLike ? undefined : (draft.authMethod ?? 'password'),
+    keyPath: localLike ? undefined : draft.keyPath?.trim() || undefined,
+    certPath: localLike ? undefined : draft.certPath?.trim() || undefined,
+    jumpSessionId: localLike ? undefined : draft.jumpSessionId?.trim() || undefined,
     shellCommand: draft.kind === 'local' ? draft.shellCommand?.trim() || undefined : undefined,
     shellArgs: draft.kind === 'local' && draft.shellArgs?.length ? draft.shellArgs : undefined,
+    serialPort: draft.kind === 'serial' ? draft.serialPort?.trim() || undefined : undefined,
+    serialBaud: draft.kind === 'serial' ? draft.serialBaud : undefined,
     group: draft.group.trim() || DEFAULT_GROUP,
     favorite: draft.favorite ?? false,
     status: 'idle',
@@ -71,6 +76,7 @@ export const useSessionStore = create<SessionState>()(
               return session;
             }
             const nextKind = patch.kind ?? session.kind;
+            const nextLocalLike = nextKind === 'local' || nextKind === 'serial';
             return {
               ...session,
               ...patch,
@@ -82,37 +88,32 @@ export const useSessionStore = create<SessionState>()(
               host: nextKind === 'local' ? undefined : patch.host?.trim() || session.host,
               // An explicitly cleared username (empty string) must stick; the
               // old value is only kept when the patch omits the field.
-              username:
-                nextKind === 'local'
-                  ? undefined
-                  : patch.username !== undefined
-                    ? patch.username.trim() || undefined
-                    : session.username,
-              port: nextKind === 'local' ? undefined : (patch.port ?? session.port),
-              authMethod:
-                nextKind === 'local'
-                  ? undefined
-                  : (patch.authMethod ?? session.authMethod ?? 'password'),
-              keyPath:
-                nextKind === 'local'
-                  ? undefined
-                  : patch.keyPath !== undefined
-                    ? patch.keyPath.trim() || undefined
-                    : session.keyPath,
-              certPath:
-                nextKind === 'local'
-                  ? undefined
-                  : patch.certPath !== undefined
-                    ? patch.certPath.trim() || undefined
-                    : session.certPath,
+              username: nextLocalLike
+                ? undefined
+                : patch.username !== undefined
+                  ? patch.username.trim() || undefined
+                  : session.username,
+              port: nextLocalLike ? undefined : (patch.port ?? session.port),
+              authMethod: nextLocalLike
+                ? undefined
+                : (patch.authMethod ?? session.authMethod ?? 'password'),
+              keyPath: nextLocalLike
+                ? undefined
+                : patch.keyPath !== undefined
+                  ? patch.keyPath.trim() || undefined
+                  : session.keyPath,
+              certPath: nextLocalLike
+                ? undefined
+                : patch.certPath !== undefined
+                  ? patch.certPath.trim() || undefined
+                  : session.certPath,
               // An empty string clears the jump host (same explicit-clear
               // semantics as username/keyPath); an omitted field keeps it.
-              jumpSessionId:
-                nextKind === 'local'
-                  ? undefined
-                  : patch.jumpSessionId !== undefined
-                    ? patch.jumpSessionId.trim() || undefined
-                    : session.jumpSessionId,
+              jumpSessionId: nextLocalLike
+                ? undefined
+                : patch.jumpSessionId !== undefined
+                  ? patch.jumpSessionId.trim() || undefined
+                  : session.jumpSessionId,
               // Same explicit-clear semantics as keyPath: the local form always
               // sends a string ('' = platform default shell), an omitted field
               // keeps the previous override.
@@ -128,6 +129,14 @@ export const useSessionStore = create<SessionState>()(
                       : undefined
                     : session.shellArgs
                   : undefined,
+              serialPort:
+                nextKind === 'serial'
+                  ? patch.serialPort !== undefined
+                    ? patch.serialPort.trim() || undefined
+                    : session.serialPort
+                  : undefined,
+              serialBaud:
+                nextKind === 'serial' ? (patch.serialBaud ?? session.serialBaud) : undefined,
               group: patch.group !== undefined ? patch.group.trim() || DEFAULT_GROUP : session.group
             };
           })
