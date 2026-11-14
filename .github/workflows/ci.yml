@@ -64,6 +64,26 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
 
+  security:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      # Runtime dependencies ship inside the desktop app; dev-only advisories
+      # are triaged but must not block (see SECURITY.md).
+      - run: npm audit --omit=dev --audit-level=high
+
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: src-tauri
+
   tauri-build:
     name: Tauri build (${{ matrix.os }}, no bundle)
     strategy:
