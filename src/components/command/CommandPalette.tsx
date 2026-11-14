@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  Circle,
+  CircleStop,
+  Play,
   Radio,
   ArrowUpDown,
   Columns2,
@@ -32,13 +35,16 @@ import { useQuickConnectLauncher } from '../../features/workspace/useQuickConnec
 import { dispatchTerminalAction } from '../../lib/terminalCommands';
 import { toast } from '../ui/toastStore';
 import { useBroadcastStore, broadcastCount } from '../../stores/broadcastStore';
+import { useMacroStore, useMacroRecorderStore } from '../../stores/macroStore';
+import { replayMacro } from '../../lib/terminalWrite';
+import { promptText } from '../../lib/appWindows';
 import { SESSION_KIND_LABEL_KEY, sessionSubtitle } from '../../types/session';
 import { useI18n } from '../../i18n';
 import { SESSION_KIND_ICON } from '../../lib/sessionVisuals';
 
 interface CommandItem {
   id: string;
-  group: 'sessions' | 'commands' | 'snippets';
+  group: 'sessions' | 'commands' | 'snippets' | 'macros';
   label: string;
   hint?: string;
   keywords?: string;
@@ -49,7 +55,8 @@ interface CommandItem {
 const GROUP_LABEL_KEY: Record<CommandItem['group'], string> = {
   sessions: 'palette.group.sessions',
   commands: 'palette.group.commands',
-  snippets: 'palette.group.snippets'
+  snippets: 'palette.group.snippets',
+  macros: 'palette.group.macros'
 };
 
 function CommandWindow({ children, onClose }: { children: ReactNode; onClose: () => void }) {
@@ -77,6 +84,8 @@ export default function CommandPalette() {
   const sessions = useSessionStore((state) => state.sessions);
   const toggleFavorite = useSessionStore((state) => state.toggleFavorite);
   const snippets = useSnippetStore((state) => state.snippets);
+  const macros = useMacroStore((state) => state.macros);
+  const recording = useMacroRecorderStore((state) => state.recording);
   const activeSessionId = useWorkspaceStore((state) => state.activeSessionId);
   const { themeLabel, cycle } = useTheme();
   const {
@@ -246,6 +255,34 @@ export default function CommandPalette() {
           run: () => toggleFavorite(activeSession.id)
         },
         {
+          id: 'macro-record',
+          group: 'commands',
+          label: recording ? t('palette.macro.stop') : t('palette.macro.start'),
+          icon: recording ? CircleStop : Circle,
+          keywords: 'macro record 录制 宏',
+          run: () => {
+            const recorder = useMacroRecorderStore.getState();
+            if (recorder.recording) {
+              const steps = recorder.stop();
+              if (steps.length === 0) {
+                toast({ title: t('macro.emptyToast'), variant: 'warning' });
+                return;
+              }
+              void promptText(t('macro.namePrompt'), t('macro.saveLabel')).then((name) => {
+                if (name === null) {
+                  toast({ title: t('macro.discardedToast'), variant: 'warning' });
+                  return;
+                }
+                useMacroStore.getState().save(name, steps);
+                toast({ title: t('macro.savedToast', { name }), variant: 'success' });
+              });
+            } else {
+              recorder.start();
+              toast({ title: t('macro.startedToast'), variant: 'success' });
+            }
+          }
+        },
+        {
           id: 'close',
           group: 'commands',
           label: t('palette.closeCurrentTab'),
@@ -276,10 +313,30 @@ export default function CommandPalette() {
       }
     }));
 
-    return [...sessionItems, ...commandItems, ...snippetItems];
+    const macroItems: CommandItem[] = macros.map((macro) => ({
+      id: `macro-${macro.id}`,
+      group: 'macros' as const,
+      label: macro.name,
+      hint: t('macro.hint', { count: macro.steps.length }),
+      keywords: 'macro replay 宏 回放',
+      icon: Play,
+      run: () => {
+        const activePanelId = getApi()?.activePanel?.id;
+        if (!activePanelId || !activePanelId.startsWith('panel-')) {
+          toast({ title: t('palette.noActiveTerminal'), variant: 'warning' });
+          return;
+        }
+        void replayMacro(activeSessionId ?? '', macro.steps);
+      }
+    }));
+
+    return [...sessionItems, ...commandItems, ...snippetItems, ...macroItems];
   }, [
     sessions,
     snippets,
+    macros,
+    recording,
+    activeSessionId,
     activeSession,
     themeLabel,
     cycle,

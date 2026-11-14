@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { cn } from '../../lib/cn';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useBroadcastStore } from '../../stores/broadcastStore';
+import { useMacroRecorderStore } from '../../stores/macroStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { SESSION_KIND_LABEL_KEY, sessionSubtitle, type SessionStatus } from '../../types/session';
 import { useI18n } from '../../i18n';
@@ -18,6 +19,7 @@ export default function StatusBar() {
   const { t } = useI18n();
   const activeSessionId = useWorkspaceStore((state) => state.activeSessionId);
   const broadcastIds = useBroadcastStore((state) => state.ids);
+  const macroRecording = useMacroRecorderStore((state) => state.recording);
   const session = useSessionStore((state) =>
     state.sessions.find((item) => item.id === activeSessionId)
   );
@@ -53,6 +55,11 @@ export default function StatusBar() {
         ) : (
           <span>{t('status.noSession')}</span>
         )}
+        {macroRecording ? (
+          <span className="ml-2 shrink-0 rounded-sm bg-error/10 px-1.5 py-0.5 font-medium text-error">
+            {t('status.recordingBadge')}
+          </span>
+        ) : null}
         {liveBroadcastCount >= 2 ? (
           <button
             type="button"

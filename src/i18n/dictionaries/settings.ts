@@ -223,6 +223,15 @@ export const ZH: Dictionary = {
   'settings.about.updateFailed': '检查更新失败：{error}',
 
   // Snippets
+  'settings.macros.title': '宏',
+  'settings.macros.hint':
+    '从命令面板（{palette}）开始/停止录制，回放时按键与停顿将按录制顺序发送到当前终端。',
+  'settings.macros.empty': '还没有宏。用命令面板录制一个试试。',
+  'settings.macros.count': '{count} 个按键步骤',
+  'settings.macros.deleteConfirm': '确定删除宏「{name}」吗？',
+  'settings.macros.deleteTitle': '删除',
+  'settings.macros.deleteAria': '删除宏 {name}',
+  'settings.macros.deletedToast': '已删除宏「{name}」',
   'settings.snippets.hint':
     '片段保存在本地，可从命令面板（{palette}）搜索并一键发送到当前终端，发送后自动执行回车。',
   'settings.snippets.namePlaceholder': '名称',
@@ -472,6 +481,15 @@ export const EN: Dictionary = {
   'settings.about.updateFailed': 'Update check failed: {error}',
 
   // Snippets
+  'settings.macros.title': 'Macros',
+  'settings.macros.hint':
+    'Start/stop recording from the command palette ({palette}); replay sends keystrokes and pauses to the current terminal in order.',
+  'settings.macros.empty': 'No macros yet. Record one from the command palette.',
+  'settings.macros.count': '{count} keystroke steps',
+  'settings.macros.deleteConfirm': 'Delete macro "{name}"?',
+  'settings.macros.deleteTitle': 'Delete',
+  'settings.macros.deleteAria': 'Delete macro {name}',
+  'settings.macros.deletedToast': 'Deleted macro "{name}"',
   'settings.snippets.hint':
     'Snippets are stored locally. Search them in the command palette ({palette}) and send one to the current terminal in a single click; Enter runs automatically after sending.',
   'settings.snippets.namePlaceholder': 'Name',

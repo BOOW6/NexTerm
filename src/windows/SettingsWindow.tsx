@@ -56,6 +56,7 @@ import type { SystemFontFamily } from '../lib/systemFonts';
 import { useFontCatalogStore } from '../stores/fontCatalogStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSnippetStore, type Snippet } from '../stores/snippetStore';
+import { useMacroStore } from '../stores/macroStore';
 import {
   exportKnownHosts,
   importKnownHosts,
@@ -268,6 +269,19 @@ export default function SettingsWindow() {
   const refreshSystemFonts = useFontCatalogStore((state) => state.refresh);
 
   const snippets = useSnippetStore((state) => state.snippets);
+  const macros = useMacroStore((state) => state.macros);
+  const removeMacro = useMacroStore((state) => state.remove);
+
+  const handleMacroDelete = async (id: string, name: string) => {
+    const ok = await confirmAction(t('settings.macros.deleteConfirm', { name }), {
+      title: t('settings.macros.deleteTitle'),
+      okLabel: t('settings.macros.deleteTitle')
+    });
+    if (ok) {
+      removeMacro(id);
+      toast({ title: t('settings.macros.deletedToast', { name }), variant: 'success' });
+    }
+  };
   const addSnippet = useSnippetStore((state) => state.addSnippet);
   const updateSnippet = useSnippetStore((state) => state.updateSnippet);
   const removeSnippet = useSnippetStore((state) => state.removeSnippet);
@@ -1778,6 +1792,43 @@ export default function SettingsWindow() {
           ))}
         </ul>
       )}
+
+      <div className="mt-4 border-t border-border pt-3">
+        <h3 className="text-xs font-semibold text-foreground">{t('settings.macros.title')}</h3>
+        <p className="mt-1 text-[10px] text-muted">
+          {t('settings.macros.hint', { palette: DEFAULT_SETTINGS.shortcuts.commandPalette })}
+        </p>
+        {macros.length === 0 ? (
+          <p className="px-2 py-4 text-center text-[11px] text-muted">
+            {t('settings.macros.empty')}
+          </p>
+        ) : (
+          <ul className="mt-2 space-y-1">
+            {macros.map((macro) => (
+              <li
+                key={macro.id}
+                className="flex items-center gap-2 rounded-sm border border-border bg-surface px-2 py-1.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-foreground">{macro.name}</p>
+                  <p className="text-[10px] text-muted">
+                    {t('settings.macros.count', { count: macro.steps.length })}
+                  </p>
+                </div>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={t('settings.macros.deleteAria', { name: macro.name })}
+                  title={t('settings.macros.deleteTitle')}
+                  onClick={() => void handleMacroDelete(macro.id, macro.name)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 

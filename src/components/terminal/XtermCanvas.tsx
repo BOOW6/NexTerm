@@ -38,6 +38,7 @@ import {
 } from '../../hooks/useTauriTelnet';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { broadcastInput } from '../../stores/broadcastStore';
+import { recordKeystroke } from '../../stores/macroStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTransferStore } from '../../stores/transferStore';
@@ -935,6 +936,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           dataDisposable = instance.onData((data) => {
             void writeSsh(connectedId, data);
             broadcastInput(sessionId, data);
+            recordKeystroke(data);
           });
           resizeDisposable = instance.onResize(({ cols, rows }) => {
             sendBackendResize(cols, rows);
@@ -1070,6 +1072,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           dataDisposable = instance.onData((data) => {
             void writePty(createdId, data);
             broadcastInput(sessionId, data);
+            recordKeystroke(data);
           });
           resizeDisposable = instance.onResize(({ cols, rows }) => {
             sendBackendResize(cols, rows);
@@ -1183,6 +1186,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           dataDisposable = instance.onData((data) => {
             void writeTelnet(connectedId, data);
             broadcastInput(sessionId, data);
+            recordKeystroke(data);
           });
           resizeDisposable = instance.onResize(({ cols, rows }) => {
             sendBackendResize(cols, rows);

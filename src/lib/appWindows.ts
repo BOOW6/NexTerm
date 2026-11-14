@@ -182,3 +182,24 @@ export async function showAboutDialog(): Promise<void> {
     /* dialog unavailable */
   }
 }
+
+/** Generic single-input prompt (the vault prompt window without masking). */
+export async function promptText(
+  label: string,
+  confirmLabel: string,
+  options?: { initialValue?: string; placeholder?: string }
+): Promise<string | null> {
+  return openModalWindow<string>('prompt', {
+    title: label,
+    width: 420,
+    height: 200,
+    data: {
+      title: label,
+      label,
+      initialValue: options?.initialValue ?? '',
+      placeholder: options?.placeholder ?? label,
+      confirmLabel,
+      password: false
+    }
+  });
+}

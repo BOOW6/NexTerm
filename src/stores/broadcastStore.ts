@@ -1,13 +1,5 @@
 import { create } from 'zustand';
-import { writePty } from '../hooks/useTauriPty';
-import { writeSsh } from '../hooks/useTauriSsh';
-import { writeTelnet } from '../hooks/useTauriTelnet';
-import {
-  currentSshId,
-  transportIds,
-  useConnectionStore,
-  type ConnectionEntry
-} from './connectionStore';
+import { writeToSession } from '../lib/terminalWrite';
 import { useSessionStore } from './sessionStore';
 
 interface BroadcastState {
@@ -51,31 +43,9 @@ export function broadcastInput(selfSessionId: string, data: string): void {
   if (ids.length < 2 || !ids.includes(selfSessionId)) {
     return;
   }
-  const sessions = useSessionStore.getState().sessions;
-  const connections = useConnectionStore.getState().connections;
-
   for (const sessionId of ids) {
-    if (sessionId === selfSessionId) {
-      continue;
-    }
-    const session = sessions.find((item) => item.id === sessionId);
-    if (!session || session.status !== 'connected') {
-      continue;
-    }
-    const entry: ConnectionEntry | undefined = connections[sessionId];
-    if (session.kind === 'ssh' || session.kind === 'sftp') {
-      const sshId = currentSshId(entry);
-      if (sshId) {
-        void writeSsh(sshId, data).catch(() => {});
-      }
-    } else if (session.kind === 'local') {
-      for (const id of transportIds(entry, 'pty')) {
-        void writePty(id, data).catch(() => {});
-      }
-    } else if (session.kind === 'telnet') {
-      for (const id of transportIds(entry, 'telnet')) {
-        void writeTelnet(id, data).catch(() => {});
-      }
+    if (sessionId !== selfSessionId) {
+      writeToSession(sessionId, data);
     }
   }
 }
