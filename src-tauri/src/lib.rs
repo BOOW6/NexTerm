@@ -7,6 +7,7 @@ mod serial;
 pub mod ssh;
 pub mod telnet;
 pub mod text_stream;
+mod themes;
 pub mod vault;
 pub mod windows;
 pub mod windows_ext;
@@ -150,6 +151,22 @@ pub fn run() {
             });
             app.manage(VaultManager::new(vault_path));
 
+            // Custom theme folder: scanned on demand by themes_list; a
+            // watcher re-emits `themes-changed` so dropped-in files are
+            // picked up live. The JSON Schema is materialized next to the
+            // themes so editors can autocomplete them.
+            let themes_dir = app.path().app_config_dir().ok().and_then(|dir| {
+                std::fs::create_dir_all(&dir).ok()?;
+                Some(dir.join("themes"))
+            });
+            if let Some(dir) = &themes_dir {
+                let _ = std::fs::create_dir_all(dir);
+                themes::ensure_schema_file(dir);
+            }
+            let theme_manager = themes::ThemeManager::new(themes_dir);
+            theme_manager.spawn_watcher(app.handle().clone());
+            app.manage(theme_manager);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -190,6 +207,8 @@ pub fn run() {
             commands::serial_disconnect,
             remote_edit::remote_edit_open,
             remote_edit::remote_edit_stop,
+            themes::themes_list,
+            themes::themes_open_folder,
             commands::sftp_mkdir,
             commands::sftp_pause_transfer,
             commands::sftp_cancel_transfer,

@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "nexterm-theme-schema",
+  "title": "NexTerm custom theme",
+  "description": "NexTerm custom theme file. Drop it into the NexTerm themes folder (%APPDATA%/com.boow6.nexterm/themes on Windows). `colors` values are hex colors (#rgb, #rgba, #rrggbb or #rrggbbaa); unspecified keys are inherited from the base theme selected by `extends`. `terminal.palette` lists 16 colors: black, red, green, yellow, blue, magenta, cyan, white, then the bright variants.",
+  "type": "object",
+  "required": ["name", "variant"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Reference this file, e.g. \"./theme.schema.json\", for editor autocompletion."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Display name shown in the settings window."
+    },
+    "variant": {
+      "enum": ["light", "dark"],
+      "description": "Which theme mode (light/dark) this theme belongs to."
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional description shown under the theme name."
+    },
+    "extends": {
+      "enum": ["day", "dim", "aqua-light", "aqua-dark", "holo-light", "holo-dark"],
+      "description": "Built-in base theme providing every color not listed here. Must match `variant`; defaults to day (light) or dim (dark)."
+    },
+    "colors": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Hex overrides for the UI palette.",
+      "properties": {
+        "background": { "$ref": "#/definitions/hex" },
+        "backgroundAlt": { "$ref": "#/definitions/hex" },
+        "surface": { "$ref": "#/definitions/hex" },
+        "surfaceElevated": { "$ref": "#/definitions/hex" },
+        "surfaceHeader": { "$ref": "#/definitions/hex" },
+        "surfaceHover": { "$ref": "#/definitions/hex" },
+        "surfaceActive": { "$ref": "#/definitions/hex" },
+        "border": { "$ref": "#/definitions/hex" },
+        "borderMuted": { "$ref": "#/definitions/hex" },
+        "borderStrong": { "$ref": "#/definitions/hex" },
+        "foreground": { "$ref": "#/definitions/hex" },
+        "muted": { "$ref": "#/definitions/hex" },
+        "mutedForeground": { "$ref": "#/definitions/hex" },
+        "accent": { "$ref": "#/definitions/hex" },
+        "accentStrong": { "$ref": "#/definitions/hex" },
+        "accentSoft": { "$ref": "#/definitions/hex" },
+        "accentForeground": { "$ref": "#/definitions/hex" },
+        "link": { "$ref": "#/definitions/hex" },
+        "linkHover": { "$ref": "#/definitions/hex" },
+        "success": { "$ref": "#/definitions/hex" },
+        "warning": { "$ref": "#/definitions/hex" },
+        "error": { "$ref": "#/definitions/hex" },
+        "focusRing": { "$ref": "#/definitions/hex" },
+        "tableHeader": { "$ref": "#/definitions/hex" },
+        "rowHover": { "$ref": "#/definitions/hex" },
+        "rowSelected": { "$ref": "#/definitions/hex" },
+        "headerForeground": { "$ref": "#/definitions/hex" },
+        "headerMuted": { "$ref": "#/definitions/hex" },
+        "terminalBackground": { "$ref": "#/definitions/hex" },
+        "terminalForeground": { "$ref": "#/definitions/hex" },
+        "terminalCursor": { "$ref": "#/definitions/hex" },
+        "terminalSelection": {
+          "$ref": "#/definitions/hex",
+          "description": "Selection highlight; #rrggbbaa controls opacity."
+        }
+      }
+    },
+    "terminal": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Terminal color scheme. Appears as a selectable scheme in Settings > Terminal; the palette should list all 16 colors.",
+      "properties": {
+        "background": { "$ref": "#/definitions/hex" },
+        "foreground": { "$ref": "#/definitions/hex" },
+        "cursor": { "$ref": "#/definitions/hex" },
+        "selectionBackground": { "$ref": "#/definitions/hex" },
+        "palette": {
+          "type": "array",
+          "minItems": 16,
+          "maxItems": 16,
+          "items": { "$ref": "#/definitions/hex" },
+          "description": "black, red, green, yellow, blue, magenta, cyan, white, brightBlack, brightRed, brightGreen, brightYellow, brightBlue, brightMagenta, brightCyan, brightWhite."
+        }
+      }
+    }
+  },
+  "definitions": {
+    "hex": {
+      "type": "string",
+      "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
+    }
+  }
+}
