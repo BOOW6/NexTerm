@@ -45,6 +45,13 @@ export const ZH: Dictionary = {
   'settings.appearance.themesTitle': '主题',
   'settings.appearance.familyHint': '按家族选择暗色 / 亮色',
   'settings.appearance.applyHint': '主题与字体将在点击「应用」后生效。',
+  'settings.appearance.customThemesTitle': '自定义主题',
+  'settings.appearance.customThemesHint':
+    '把主题 JSON 放入主题文件夹即可使用（支持 Windows Terminal 配色与 iTerm2 .itermcolors 导入），文件名即主题 id。',
+  'settings.appearance.openThemesFolder': '打开主题文件夹',
+  'settings.appearance.refreshThemes': '刷新',
+  'settings.appearance.customThemesEmpty': '还没有自定义主题，点击「打开主题文件夹」添加。',
+  'settings.appearance.customThemeLoadFailed': '以下主题文件加载失败：',
 
   // Fonts
   'settings.fonts.uiTitle': '界面字体',
@@ -80,6 +87,7 @@ export const ZH: Dictionary = {
   'settings.terminal.schemeFollowTheme': '跟随界面主题',
   'settings.terminal.schemeGroupDark': 'QTerminal 暗色',
   'settings.terminal.schemeGroupLight': 'QTerminal 亮色',
+  'settings.terminal.schemeGroupCustom': '自定义',
   'settings.terminal.fontSize': '字号',
   'settings.terminal.cursorStyle': '光标样式',
   'settings.terminal.cursor.block': '方块',
@@ -295,6 +303,14 @@ export const EN: Dictionary = {
   'settings.appearance.themesTitle': 'Themes',
   'settings.appearance.familyHint': 'Pick dark / light per family',
   'settings.appearance.applyHint': 'Themes and fonts take effect after clicking "Apply".',
+  'settings.appearance.customThemesTitle': 'Custom themes',
+  'settings.appearance.customThemesHint':
+    'Drop theme JSON files into the themes folder (Windows Terminal schemes and iTerm2 .itermcolors palettes are imported too); the file name becomes the theme id.',
+  'settings.appearance.openThemesFolder': 'Open themes folder',
+  'settings.appearance.refreshThemes': 'Refresh',
+  'settings.appearance.customThemesEmpty':
+    'No custom themes yet — open the themes folder to add some.',
+  'settings.appearance.customThemeLoadFailed': 'Some theme files failed to load:',
 
   // Fonts
   'settings.fonts.uiTitle': 'Interface font',
@@ -330,6 +346,7 @@ export const EN: Dictionary = {
   'settings.terminal.schemeFollowTheme': 'Follow interface theme',
   'settings.terminal.schemeGroupDark': 'QTerminal dark',
   'settings.terminal.schemeGroupLight': 'QTerminal light',
+  'settings.terminal.schemeGroupCustom': 'Custom',
   'settings.terminal.fontSize': 'Font size',
   'settings.terminal.cursorStyle': 'Cursor style',
   'settings.terminal.cursor.block': 'Block',

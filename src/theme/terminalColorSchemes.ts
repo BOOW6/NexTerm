@@ -1,4 +1,7 @@
 import type { ITheme } from '@xterm/xterm';
+import type { CustomThemeDefinition } from './customThemes';
+import { useCustomThemesStore } from './customThemesStore';
+import { hexToRgba } from './applyCustomTheme';
 
 export type TerminalColorSchemeVariant = 'dark' | 'light';
 
@@ -491,12 +494,92 @@ export const TERMINAL_COLOR_SCHEME_IDS = new Set(TERMINAL_COLOR_SCHEMES.map((sch
 
 export const DEFAULT_TERMINAL_COLOR_SCHEME = 'theme';
 
+export const FALLBACK_TERMINAL_BACKGROUND = '#1b2632';
+export const FALLBACK_TERMINAL_FOREGROUND = '#dce6f2';
+
+/** Palette used when a custom scheme omits colors (mirrors terminalTheme.ts). */
+export const FALLBACK_TERMINAL_COLORS: TerminalColorScheme['colors'] = {
+  black: '#1b2632',
+  red: '#d9534f',
+  green: '#4caf70',
+  yellow: '#e0a030',
+  blue: '#5b9bd5',
+  magenta: '#b07cc6',
+  cyan: '#4bb3c4',
+  white: '#dce6f2',
+  brightBlack: '#5a6b7b',
+  brightRed: '#ef7a76',
+  brightGreen: '#6fd394',
+  brightYellow: '#f0c060',
+  brightBlue: '#7fb2e5',
+  brightMagenta: '#c79bd8',
+  brightCyan: '#6fd0df',
+  brightWhite: '#f4f8fc'
+};
+
+const PALETTE_FIELDS = [
+  'black',
+  'red',
+  'green',
+  'yellow',
+  'blue',
+  'magenta',
+  'cyan',
+  'white',
+  'brightBlack',
+  'brightRed',
+  'brightGreen',
+  'brightYellow',
+  'brightBlue',
+  'brightMagenta',
+  'brightCyan',
+  'brightWhite'
+] as const;
+
+const CUSTOM_SCHEME_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+
 export function normalizeTerminalColorSchemeId(value: unknown): string {
-  return value === DEFAULT_TERMINAL_COLOR_SCHEME || TERMINAL_COLOR_SCHEME_IDS.has(String(value))
-    ? String(value)
-    : DEFAULT_TERMINAL_COLOR_SCHEME;
+  if (typeof value !== 'string') {
+    return DEFAULT_TERMINAL_COLOR_SCHEME;
+  }
+  if (value === DEFAULT_TERMINAL_COLOR_SCHEME || TERMINAL_COLOR_SCHEME_IDS.has(value)) {
+    return value;
+  }
+  // Custom themes register schemes by their theme id; accept the id shape
+  // and let the registry resolve it once loaded (getTerminalColorScheme).
+  if (CUSTOM_SCHEME_ID_PATTERN.test(value)) {
+    return value;
+  }
+  return DEFAULT_TERMINAL_COLOR_SCHEME;
 }
 
 export function getTerminalColorScheme(id: string): TerminalColorScheme | undefined {
-  return TERMINAL_COLOR_SCHEMES.find((scheme) => scheme.id === id);
+  const builtin = TERMINAL_COLOR_SCHEMES.find((scheme) => scheme.id === id);
+  if (builtin) {
+    return builtin;
+  }
+  const custom = useCustomThemesStore
+    .getState()
+    .themes.find((theme) => theme.id === id && theme.terminal);
+  return custom ? buildCustomScheme(custom) : undefined;
+}
+
+function buildCustomScheme(theme: CustomThemeDefinition): TerminalColorScheme {
+  const terminal = theme.terminal ?? {};
+  const foreground = terminal.foreground ?? FALLBACK_TERMINAL_FOREGROUND;
+  const palette =
+    terminal.palette ?? PALETTE_FIELDS.map((field) => FALLBACK_TERMINAL_COLORS[field]);
+  return {
+    id: theme.id,
+    name: theme.name,
+    description: theme.description,
+    variant: theme.variant,
+    background: terminal.background ?? FALLBACK_TERMINAL_BACKGROUND,
+    foreground,
+    cursor: terminal.cursor ?? foreground,
+    selectionBackground: terminal.selectionBackground ?? hexToRgba(foreground) ?? foreground,
+    colors: Object.fromEntries(
+      PALETTE_FIELDS.map((field, index) => [field, palette[index]])
+    ) as TerminalColorScheme['colors']
+  };
 }

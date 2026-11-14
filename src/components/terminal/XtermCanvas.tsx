@@ -55,6 +55,7 @@ import { resumeInterruptedTransfers } from '../../lib/sftpTransfer';
 import { sessionLogPath } from '../../lib/sessionLog';
 import { useTheme } from '../../theme/useTheme';
 import { getTerminalTheme } from '../../theme/terminalTheme';
+import { useCustomThemesStore } from '../../theme/customThemesStore';
 import { NativeLigaturesAddon } from '../../theme/nativeLigaturesAddon';
 import {
   clearTerminalSnapshot,
@@ -209,6 +210,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       (state) => state.terminalFontFeatureSettings
     );
     const terminalColorScheme = useSettingsStore((state) => state.terminalColorScheme);
+    const customThemes = useCustomThemesStore((state) => state.themes);
     const terminalCursorStyle = useSettingsStore((state) => state.terminalCursorStyle);
     const terminalCursorBlink = useSettingsStore((state) => state.terminalCursorBlink);
     const terminalScrollback = useSettingsStore((state) => state.terminalScrollback);
@@ -2102,7 +2104,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       if (terminalRef.current) {
         terminalRef.current.options.theme = getTerminalTheme(terminalColorScheme);
       }
-    }, [terminalColorScheme, themeId]);
+      // customThemes in deps: a custom scheme becomes resolvable once the
+      // folder scan lands, and must re-resolve when its files change.
+    }, [terminalColorScheme, themeId, customThemes]);
 
     useEffect(() => {
       ligaturesRef.current?.(terminalFontLigatures, terminalFontFeatureSettings);

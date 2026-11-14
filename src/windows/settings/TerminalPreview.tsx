@@ -5,6 +5,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { getTerminalTheme } from '../../theme/terminalTheme';
 import { NativeLigaturesAddon } from '../../theme/nativeLigaturesAddon';
+import { useCustomThemesStore } from '../../theme/customThemesStore';
 import { useTheme } from '../../theme/useTheme';
 import { tStatic } from '../../i18n';
 import type { TerminalCursorStyle } from '../../stores/settingsStore';
@@ -43,6 +44,7 @@ export default function TerminalPreview({
   const fontReadyRef = useRef(false);
   const fontFamilyRef = useRef(fontFamily);
   const { themeId } = useTheme();
+  const customThemes = useCustomThemesStore((state) => state.themes);
 
   useEffect(() => {
     fontFamilyRef.current = fontFamily;
@@ -247,7 +249,9 @@ export default function TerminalPreview({
     if (terminalRef.current) {
       terminalRef.current.options.theme = getTerminalTheme(colorScheme);
     }
-  }, [colorScheme, themeId]);
+    // customThemes in deps: custom schemes must re-resolve once the folder
+    // scan lands and whenever its files change.
+  }, [colorScheme, themeId, customThemes]);
 
   useEffect(() => {
     if (!visible) {

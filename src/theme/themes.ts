@@ -1,7 +1,22 @@
+import type { CustomThemeDefinition } from './customThemes';
+import { useCustomThemesStore } from './customThemesStore';
+
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type ThemeVariant = 'light' | 'dark';
 
-export type ThemeId = 'day' | 'dim' | 'aqua-light' | 'aqua-dark' | 'holo-light' | 'holo-dark';
+export type BuiltinThemeId =
+  'day' | 'dim' | 'aqua-light' | 'aqua-dark' | 'holo-light' | 'holo-dark';
+/**
+ * Built-in ids plus user-defined theme ids from the themes folder. Custom ids
+ * are `[a-z0-9-]` strings (enforced by the backend scanner); they are kept
+ * even before the registry loads so persisted settings survive reloads.
+ */
+export type ThemeId = BuiltinThemeId | (string & {});
+
+/** Any theme definition: built-in catalog entry or custom folder theme. */
+export type AnyThemeDefinition = ThemeDefinition | CustomThemeDefinition;
+
+const CUSTOM_THEME_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 
 export interface ThemeDefinition {
   id: ThemeId;
@@ -97,17 +112,32 @@ export const THEME_FAMILIES: ThemeFamily[] = [
 export const DEFAULT_LIGHT_THEME: ThemeId = 'day';
 export const DEFAULT_DARK_THEME: ThemeId = 'dim';
 
-export function getTheme(id: string): ThemeDefinition {
+export function isBuiltinThemeId(id: string): boolean {
+  return THEMES.some((theme) => theme.id === id);
+}
+
+export function getTheme(id: string): AnyThemeDefinition {
+  const custom = useCustomThemesStore.getState().themes.find((theme) => theme.id === id);
+  if (custom) {
+    return custom;
+  }
   return THEMES.find((theme) => theme.id === id) ?? LIGHT_THEMES[0];
 }
 
 export function normalizeThemeId(value: unknown, variant: ThemeVariant): ThemeId {
-  const themes = variant === 'light' ? LIGHT_THEMES : DARK_THEMES;
-  return themes.some((theme) => theme.id === value)
-    ? (value as ThemeId)
-    : variant === 'light'
-      ? DEFAULT_LIGHT_THEME
-      : DEFAULT_DARK_THEME;
+  if (typeof value === 'string' && value) {
+    const themes = variant === 'light' ? LIGHT_THEMES : DARK_THEMES;
+    if (themes.some((theme) => theme.id === value)) {
+      return value as ThemeId;
+    }
+    // Custom theme ids are kept even when the registry has not loaded yet;
+    // built-in ids of the other variant and malformed values fall back to
+    // the variant default.
+    if (!isBuiltinThemeId(value) && CUSTOM_THEME_ID_PATTERN.test(value)) {
+      return value;
+    }
+  }
+  return variant === 'light' ? DEFAULT_LIGHT_THEME : DEFAULT_DARK_THEME;
 }
 
 export function normalizeThemeMode(value: unknown): ThemeMode {

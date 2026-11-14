@@ -1,7 +1,25 @@
-import { useCallback, useLayoutEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useSyncExternalStore,
+  type ReactNode
+} from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { useI18n } from '../i18n';
 import { useSettingsStore } from '../stores/settingsStore';
-import { getTheme, type ThemeId, type ThemeMode, type ThemeVariant } from './themes';
+import { useCustomThemesStore } from './customThemesStore';
+import { applyCustomThemeVars } from './applyCustomTheme';
+import {
+  DEFAULT_DARK_THEME,
+  DEFAULT_LIGHT_THEME,
+  getTheme,
+  isBuiltinThemeId,
+  type ThemeId,
+  type ThemeMode,
+  type ThemeVariant
+} from './themes';
 import { ThemeContext, type ThemeContextValue } from './useTheme';
 
 export type { ThemeId, ThemeMode, ThemeVariant } from './themes';
@@ -30,6 +48,31 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     getSystemTheme,
     () => 'light'
   );
+  const customThemes = useCustomThemesStore((state) => state.themes);
+  const loadCustomThemes = useCustomThemesStore((state) => state.load);
+
+  // Load the custom theme folder once per window and follow backend changes
+  // live (see the `themes-changed` watcher in themes.rs).
+  useEffect(() => {
+    void loadCustomThemes();
+    let dispose: (() => void) | undefined;
+    let cancelled = false;
+    listen('themes-changed', () => {
+      void useCustomThemesStore.getState().load();
+    })
+      .then((unlisten) => {
+        if (cancelled) {
+          unlisten();
+        } else {
+          dispose = unlisten;
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      dispose?.();
+    };
+  }, [loadCustomThemes]);
 
   const resolved: ThemeVariant = mode === 'system' ? systemTheme : mode;
   const themeId = resolved === 'light' ? lightTheme : darkTheme;
@@ -40,9 +83,24 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useLayoutEffect(() => {
     const root = document.documentElement;
-    root.dataset.theme = themeId;
+    const custom = customThemes.find((theme) => theme.id === themeId);
+    if (custom) {
+      // Custom themes cascade on top of their built-in base: the base's
+      // tokens.css block provides everything, inline overrides win.
+      root.dataset.theme = custom.extends;
+      applyCustomThemeVars(root, custom);
+    } else {
+      applyCustomThemeVars(root, null);
+      root.dataset.theme = isBuiltinThemeId(themeId)
+        ? themeId
+        : // A custom id the registry has not loaded (or no longer has):
+          // degrade to the variant default instead of unstyled vars.
+          resolved === 'light'
+          ? DEFAULT_LIGHT_THEME
+          : DEFAULT_DARK_THEME;
+    }
     root.dataset.colorScheme = resolved;
-  }, [themeId, resolved]);
+  }, [themeId, resolved, customThemes]);
 
   const setMode = useCallback((next: ThemeMode) => setThemeMode(next), [setThemeMode]);
 

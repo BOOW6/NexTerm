@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { emit, listen } from '@tauri-apps/api/event';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
@@ -10,6 +11,7 @@ import {
   Moon,
   Palette,
   Pencil,
+  RefreshCw,
   Server,
   Shield,
   SquareTerminal,
@@ -39,6 +41,9 @@ import {
 } from '../stores/settingsStore';
 import { THEME_FAMILIES, getTheme, type ThemeDefinition, type ThemeMode } from '../theme/themes';
 import { TERMINAL_COLOR_SCHEMES } from '../theme/terminalColorSchemes';
+import { useCustomThemesStore } from '../theme/customThemesStore';
+import { customThemeSpecimenStyle } from '../theme/applyCustomTheme';
+import type { CustomThemeDefinition } from '../theme/customThemes';
 import { confirmAction, openModalWindow } from '../lib/appWindows';
 import {
   changeVaultPassword,
@@ -203,10 +208,18 @@ function initialTab(): SettingsTab {
   return TABS.some((item) => item.id === tab) ? (tab as SettingsTab) : 'appearance';
 }
 
-function ThemeSpecimen({ theme, className }: { theme: ThemeDefinition; className?: string }) {
+function ThemeSpecimen({
+  theme,
+  className
+}: {
+  theme: ThemeDefinition | CustomThemeDefinition;
+  className?: string;
+}) {
+  const isCustom = 'source' in theme;
   return (
     <div
-      data-theme={theme.id}
+      data-theme={isCustom ? theme.extends : theme.id}
+      style={isCustom ? customThemeSpecimenStyle(theme) : undefined}
       className={cn(
         'pointer-events-none overflow-hidden rounded-sm border border-border bg-background text-foreground shadow-panel',
         className
@@ -267,6 +280,9 @@ export default function SettingsWindow() {
   const systemFontsError = useFontCatalogStore((state) => state.error);
   const loadSystemFonts = useFontCatalogStore((state) => state.load);
   const refreshSystemFonts = useFontCatalogStore((state) => state.refresh);
+  const customThemes = useCustomThemesStore((state) => state.themes);
+  const customThemeErrors = useCustomThemesStore((state) => state.errors);
+  const reloadCustomThemes = useCustomThemesStore((state) => state.load);
 
   const snippets = useSnippetStore((state) => state.snippets);
   const macros = useMacroStore((state) => state.macros);
@@ -1108,6 +1124,92 @@ export default function SettingsWindow() {
                 </div>
               );
             })}
+            <div className="flex items-center justify-between gap-2 pt-2">
+              <div>
+                <h3 className="text-xs font-semibold text-foreground">
+                  {t('settings.appearance.customThemesTitle')}
+                </h3>
+                <span className="text-[10px] text-muted-foreground">
+                  {t('settings.appearance.customThemesHint')}
+                </span>
+              </div>
+              <div className="flex shrink-0 gap-1">
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  onClick={() => void invoke('themes_open_folder').catch(() => undefined)}
+                >
+                  <FolderOpen className="h-3 w-3" />
+                  {t('settings.appearance.openThemesFolder')}
+                </Button>
+                <Button size="xs" variant="secondary" onClick={() => void reloadCustomThemes()}>
+                  <RefreshCw className="h-3 w-3" />
+                  {t('settings.appearance.refreshThemes')}
+                </Button>
+              </div>
+            </div>
+            {customThemes.map((theme) => {
+              const selected =
+                theme.variant === 'dark'
+                  ? draft.darkTheme === theme.id
+                  : draft.lightTheme === theme.id;
+
+              return (
+                <div
+                  key={theme.id}
+                  className={cn(
+                    'flex flex-wrap items-center gap-3 rounded-sm border p-2 transition-colors',
+                    selected ? 'border-accent/60 bg-accent/5' : 'border-border bg-surface'
+                  )}
+                >
+                  <div className="flex shrink-0">
+                    <ThemeSpecimen theme={theme} className="h-14 w-20" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-semibold text-foreground">{theme.name}</div>
+                    {theme.description && (
+                      <div className="text-[10px] text-muted">{theme.description}</div>
+                    )}
+                    <div className="mt-1 text-[10px] text-muted-foreground">{theme.id}</div>
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <Button
+                      size="xs"
+                      variant={selected ? 'primary' : 'secondary'}
+                      onClick={() =>
+                        update(theme.variant === 'dark' ? 'darkTheme' : 'lightTheme', theme.id)
+                      }
+                    >
+                      {theme.variant === 'dark' ? (
+                        <Moon className="h-3 w-3" />
+                      ) : (
+                        <Sun className="h-3 w-3" />
+                      )}
+                      {theme.variant === 'dark' ? t('theme.mode.dark') : t('theme.mode.light')}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+            {customThemes.length === 0 && customThemeErrors.length === 0 && (
+              <div className="rounded-sm border border-border bg-surface p-3 text-[10px] text-muted-foreground">
+                {t('settings.appearance.customThemesEmpty')}
+              </div>
+            )}
+            {customThemeErrors.length > 0 && (
+              <div className="rounded-sm border border-error/40 bg-surface p-2">
+                <div className="text-[10px] font-semibold text-error">
+                  {t('settings.appearance.customThemeLoadFailed')}
+                </div>
+                <ul className="mt-1 space-y-0.5">
+                  {customThemeErrors.map((error) => (
+                    <li key={error.file} className="selectable text-[10px] text-muted-foreground">
+                      {error.file} — {error.message}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1244,6 +1346,17 @@ export default function SettingsWindow() {
                 </option>
               ))}
             </optgroup>
+            {customThemes.some((theme) => theme.terminal) && (
+              <optgroup label={t('settings.terminal.schemeGroupCustom')}>
+                {customThemes
+                  .filter((theme) => theme.terminal)
+                  .map((theme) => (
+                    <option key={theme.id} value={theme.id}>
+                      {theme.name}
+                    </option>
+                  ))}
+              </optgroup>
+            )}
           </Select>
         </div>
       </div>

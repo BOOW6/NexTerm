@@ -1,5 +1,10 @@
 import type { ITheme } from '@xterm/xterm';
-import { getTerminalColorScheme } from './terminalColorSchemes';
+import {
+  FALLBACK_TERMINAL_BACKGROUND,
+  FALLBACK_TERMINAL_COLORS,
+  FALLBACK_TERMINAL_FOREGROUND,
+  getTerminalColorScheme
+} from './terminalColorSchemes';
 
 function readHsl(styles: CSSStyleDeclaration, name: string, fallback: string): string {
   const raw = styles.getPropertyValue(name).trim();
@@ -30,27 +35,12 @@ export function getTerminalTheme(colorSchemeId = 'theme'): ITheme {
   const styles = getComputedStyle(document.documentElement);
 
   return {
-    background: readHsl(styles, '--terminal-background', '#16202b'),
-    foreground: readHsl(styles, '--terminal-foreground', '#dce6f2'),
+    background: readHsl(styles, '--terminal-background', FALLBACK_TERMINAL_BACKGROUND),
+    foreground: readHsl(styles, '--terminal-foreground', FALLBACK_TERMINAL_FOREGROUND),
     cursor: readHsl(styles, '--terminal-cursor', '#5b9bd5'),
-    cursorAccent: readHsl(styles, '--terminal-background', '#16202b'),
+    cursorAccent: readHsl(styles, '--terminal-background', FALLBACK_TERMINAL_BACKGROUND),
     selectionBackground:
       styles.getPropertyValue('--terminal-selection').trim() || 'rgba(91,155,213,0.35)',
-    black: '#1b2632',
-    red: '#d9534f',
-    green: '#4caf70',
-    yellow: '#e0a030',
-    blue: '#5b9bd5',
-    magenta: '#b07cc6',
-    cyan: '#4bb3c4',
-    white: '#dce6f2',
-    brightBlack: '#5a6b7b',
-    brightRed: '#ef7a76',
-    brightGreen: '#6fd394',
-    brightYellow: '#f0c060',
-    brightBlue: '#7fb2e5',
-    brightMagenta: '#c79bd8',
-    brightCyan: '#6fd0df',
-    brightWhite: '#f4f8fc'
+    ...FALLBACK_TERMINAL_COLORS
   };
 }

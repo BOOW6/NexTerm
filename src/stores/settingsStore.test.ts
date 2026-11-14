@@ -87,7 +87,7 @@ describe('applySettings', () => {
     useSettingsStore.getState().applySettings(
       snapshot({
         terminalFontFeatureSettings: '"ss03" 1',
-        terminalColorScheme: 'not-a-scheme'
+        terminalColorScheme: 'Not a Scheme!'
       })
     );
     expect(useSettingsStore.getState().terminalFontFeatureSettings).toBe('"ss03" 1');
