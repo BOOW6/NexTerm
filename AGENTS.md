@@ -53,10 +53,16 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
   - ZMODEM 接收（`src-tauri/src/zmodem.rs`，纯状态机 + 单测）：SSH 读循环在 UTF-8 解码前拦截 `sz` 流，文件落系统下载目录；进度复用 `sftp-progress`（id 前缀 `zmodem-`，取消走取消序列，暂停被拒绝）。
   - UI：目录浏览、文件/文件夹上传、文件/文件夹下载、新建文件夹、重命名、删除、传输队列、远程文件本地编辑、拖拽上传/移动。
 
-### 设置与主题（P4）
+### 设置与主题（P4 / P5）
 
-- Web 2.0 视觉：CSS Variables + Tailwind 语义 token，支持明亮 / 暗黑 / 跟随系统。
-- **自定义主题（插件化）**：把主题文件放入主题文件夹（`app_config_dir/themes/`）即生效——NexTerm JSON（`name`+`variant`，可选 `extends` 内置基底 / `colors` 语义色（hex）/ `terminal` 16 色板），并按内容识别导入 Windows Terminal scheme 与 iTerm2 `.itermcolors`；后端 `src-tauri/src/themes/` 扫描校验（`themes_list` / `themes_open_folder`，坏文件逐个报错不拖垮扫描），notify watcher 节流发 `themes-changed`，前端注册表 `customThemesStore` 两窗口共享、`ThemeProvider` 用内联 CSS 变量在 `extends` 基底上叠加（hex→HSL 三元组换算见 `applyCustomTheme.ts`）；`theme.schema.json` 自动生成到主题文件夹供编辑器 `$schema` 自动补全。
+- 主题目录 7 族 14 款，分为「现代」与「复古」两组（`THEME_FAMILIES` 的 `group` 字段，设置面板分组渲染）：现代化 Slate / Graphite / Terminal Green / Sandstone，复古为 Day-Dim / Aqua / Holo。默认明暗为 `slate-light` / `slate-dark`（DEFAULT_*_THEME；持久化选择不受影响）。
+- **Token + 皮肤分层**（P5-1）：`tokens.css` 的每个 `[data-theme]` 块同时定义颜色与「结构 token」（操作栏/状态栏底色、交互覆盖色、细线、圆角、标签几何、面板标题字重等）——必须逐主题声明，因为自定义属性在声明处替换 `var()`，写在 `:root` 会冻结首个主题的调色板。`skin-tokens.css` 把结构 token 落成交互与骨架规则（选择器多一级 `:root`，靠特异性而非顺序赢过 Tailwind 工具类，因为 `@import` 必须排在 `@tailwind` 之前）；`theme/skins/<族>.css` 只放无法用 token 表达的结构差异，Graphite/Terminal Green/Sandstone 先 `@import './slate.css'` 再叠加。
+- **强调色自定义**：设置 `themeAccent`（hex，空=主题自带）→ `theme/accent.ts` 由单色派生 `--accent(-strong/-soft/-rgb/-foreground/-text)`、focus-ring、链接与 hover/选中混合色；在基底主题之后应用，自定义主题延伸现代族时同样生效。预设见 `MODERN_THEME_ACCENTS`。
+- **终端跟随**：`terminalTheme.ts` 的 `FAMILY_TERMINAL_THEMES` 为 8 款现代主题各带一份 xterm 16 色板；终端配色为「跟随界面主题」时优先使用，复古族保持从 CSS token 派生。显式配色始终优先。
+- Web 2.0 视觉（复古族）：CSS Variables + Tailwind 语义 token，支持明亮 / 暗黑 / 跟随系统。
+- **自定义主题（插件化）**：把主题文件放入主题文件夹（`app_config_dir/themes/`）即生效——NexTerm JSON（`name`+`variant`，可选 `extends` 内置基底 / `colors` 语义色（hex）/ `terminal` 16 色板 / `structure` 结构覆盖：圆角、标签几何、强调条、面板标题字重与字距、chrome 颜色），并按内容识别导入 Windows Terminal scheme 与 iTerm2 `.itermcolors`；后端 `src-tauri/src/themes/` 扫描校验（`themes_list` / `themes_open_folder`，坏文件逐个报错不拖垮扫描），notify watcher 节流发 `themes-changed`，前端注册表 `customThemesStore` 两窗口共享、`ThemeProvider` 用内联 CSS 变量在 `extends` 基底上叠加（hex→HSL 三元组换算与 `STRUCTURE_VARS` 映射见 `applyCustomTheme.ts`）；`theme.schema.json`（`src-tauri/src/themes/schema.json`）随扫描写出到主题文件夹供编辑器 `$schema` 自动补全，其 `extends` 枚举与 `structure` 键由单元测试钉死。
+- **主题质量门禁**：`src/theme/contrast.test.ts` 直接解析 `tokens.css` 校验 14 个主题的 WCAG AA 对比度（正文 4.5:1、微标签/链接/状态色 3:1）；`terminalTheme.test.ts` 要求每个现代主题自带完整 16 色板。视觉对照截图存于 [`doc/themes/`](doc/themes/README.md)。
+- 新增主题的约定：在 `tokens.css` 追加完整的颜色 + 结构 token 块 → 在 `themes.ts` 注册（含 `group` 与 `family`）→ 需要结构差异再写 `skins/<族>.css` → 补 i18n 文案 → 跑对比度测试与截图脚本（`doc/themes/README.md`）。不要用组件内的 Tailwind 覆盖实现主题差异。
 - 设置面板：外观、终端外观（字体/字号/光标/回滚/行高）、命令片段管理、SSH 默认值、可配置快捷键、known_hosts 管理、恢复默认。
 - **会话日志**：设置 > 终端 开启并选择目录后，PTY 与 SSH 读循环把解码后的输出（含 ANSI 序列）追加写入 `会话名-时间.log`（`src-tauri/src/log_sink.rs`，`Arc<LogSink>` 挂在会话上，零额外 IPC）；日志路径在终端面板挂载时决定，自动重连续写同一文件，切换开关对活动会话即时生效。
 - **自动更新**：`tauri-plugin-updater` 已接线（capability `updater:default`；公钥与更新源在 `tauri.conf.json` 的 `plugins.updater`），设置 > 关于 提供「检查更新」。签名私钥在 `~/.tauri/nexterm-updater.key`（不进仓库），发布流程见 `doc/build.md`。
@@ -68,7 +74,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 | 应用外壳        | Tauri 2.0（Rust 后端）                                                               |
 | 前端            | React 18 + TypeScript + Vite                                                         |
 | 状态管理        | Zustand                                                                              |
-| UI / 样式       | TailwindCSS + CSS Variables + Lucide React（Web 2.0 经典后台风格）                   |
+| UI / 样式       | TailwindCSS + CSS Variables + Lucide React（token + 皮肤分层，现代 / 复古两组主题）  |
 | 停靠/多标签布局 | `dockview-react`                                                                     |
 | 终端模拟器      | `@xterm/xterm` + `addon-fit` + `addon-search` + `addon-webgl`                        |
 | Rust 核心依赖   | `tokio`、`portable-pty`、`russh`、`russh-sftp`、`serialport`、`serde` / `serde_json` |
@@ -93,7 +99,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 │   ├── i18n/                 # 中英文文案与 useI18n
 │   ├── lib/                  # cn、快捷键、格式化、会话导入、终端快照、凭据保险库
 │   ├── stores/               # session / workspace / ui / credentials / vault / connections / transfer / settings
-│   ├── theme/                # tokens、ThemeProvider、xterm 主题
+│   ├── theme/                # tokens、skins、ThemeProvider、accent、xterm 主题
 │   ├── types/
 │   ├── windows/              # 设置、快速连接、主机密钥等独立窗口
 │   ├── App.tsx
@@ -119,7 +125,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 │   ├── app-icon.png          # 应用图标位图源
 │   ├── Cargo.toml
 │   └── tauri.conf.json
-├── doc/                      # 设计、构建与阶段说明
+├── doc/                      # 设计、构建与阶段说明（doc/themes/ 存主题对照截图）
 ├── package.json
 ├── vite.config.ts
 ├── tailwind.config.js
@@ -223,6 +229,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - [x] 宏录制/回放（命令面板录制/保存/回放，按键与停顿按序发送；设置 > 片段 管理）
 - [x] 片段变量占位（{{变量}} 顺序提示输入）与执行前确认（单片段开关）
 - [x] 串口会话（serialport；端口探测/波特率预设；无自动重连，手动重连）
-- [x] 自定义主题（主题文件夹 drop-in JSON + Windows Terminal / iTerm2 配色导入、notify 热重载、$schema 自动补全）
+- [x] 自定义主题（主题文件夹 drop-in JSON + Windows Terminal / iTerm2 配色导入、notify 热重载、编辑器 schema 自动补全；structure 结构覆盖）
+- [x] 现代主题 4 族 8 款（Slate / Graphite / Terminal Green / Sandstone）、强调色自定义、终端配色跟随界面、对比度门禁
 - [x] 依赖审计门禁（cargo audit + npm audit --omit=dev）与 SECURITY.md 漏洞披露流程
 - [ ] trzsz / rz 发送端（ZMODEM 上行）、SSH Agent 转发、多跳 ProxyJump、可访问性增强
