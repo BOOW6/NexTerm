@@ -175,6 +175,7 @@ pub fn run() {
             commands::font_data,
             commands::pty_platform_info,
             commands::probe_shell_availability,
+            commands::detect_git_bash,
             commands::set_window_behavior,
             commands::create_pty_session,
             commands::write_pty,

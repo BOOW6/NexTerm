@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildShellCatalog,
   formatShellArgs,
   matchLocalShellPreset,
   normalizeShellCommand,
   splitShellArgs,
-  type LocalShellCatalog
+  type LocalShellCatalog,
+  type LocalShellPreset
 } from './localShells';
 
 describe('splitShellArgs', () => {
@@ -74,5 +76,75 @@ describe('matchLocalShellPreset', () => {
 
   it('falls back to custom for unknown commands', () => {
     expect(matchLocalShellPreset('fish', [], catalog)).toBe('custom');
+  });
+});
+
+describe('buildShellCatalog', () => {
+  const presets: LocalShellPreset[] = [
+    { id: 'default', labelKey: 'localShell.default' },
+    { id: 'powershell', labelKey: 'localShell.powershell', command: 'powershell.exe' },
+    { id: 'pwsh', labelKey: 'localShell.pwsh', command: 'pwsh.exe' },
+    { id: 'wsl', labelKey: 'localShell.wsl', command: 'wsl.exe', args: ['--cd', '~'] },
+    {
+      id: 'gitbash',
+      labelKey: 'localShell.gitbash',
+      probeCandidates: ['C:\\Program Files\\Git\\bin\\bash.exe', 'C:\\Git\\bin\\bash.exe']
+    },
+    { id: 'cmd', labelKey: 'localShell.cmd', command: 'cmd.exe' }
+  ];
+
+  it('does not shift probe results when the default preset has no command', () => {
+    // Regression: the empty candidate the default preset used to contribute
+    // shifted every later slice by one, so Git Bash resolved to wsl.exe.
+    const resolved = [
+      'powershell.exe',
+      'pwsh.exe',
+      'wsl.exe',
+      'C:\\Git\\bin\\bash.exe',
+      null,
+      'cmd.exe'
+    ];
+    const catalog = buildShellCatalog(presets, resolved);
+
+    expect(catalog.commands.gitbash).toEqual({ command: 'C:\\Git\\bin\\bash.exe', args: [] });
+    expect(catalog.commands.powershell).toEqual({ command: 'powershell.exe', args: [] });
+    expect(catalog.commands.cmd).toEqual({ command: 'cmd.exe', args: [] });
+    expect(catalog.presets.find((preset) => preset.id === 'default')?.available).toBe(true);
+  });
+
+  it('reports each preset availability from its own probe result', () => {
+    const catalog = buildShellCatalog(presets, [
+      'powershell.exe',
+      null,
+      'wsl.exe',
+      null,
+      null,
+      null
+    ]);
+    const availability = Object.fromEntries(
+      catalog.presets.map((preset) => [preset.id, preset.available])
+    );
+    expect(availability).toEqual({
+      default: true,
+      powershell: true,
+      pwsh: false,
+      wsl: true,
+      gitbash: false,
+      cmd: false
+    });
+  });
+
+  it('keeps fixed-command presets usable when the probe fails', () => {
+    const catalog = buildShellCatalog(presets, null);
+    const availability = Object.fromEntries(
+      catalog.presets.map((preset) => [preset.id, preset.available])
+    );
+    // Probe-only presets must not be guessed (that is how Git Bash ran WSL).
+    expect(availability.gitbash).toBe(false);
+    expect(availability.default).toBe(true);
+    expect(availability.powershell).toBe(true);
+    expect(availability.cmd).toBe(true);
+    expect(catalog.commands.gitbash).toBeUndefined();
+    expect(catalog.commands.wsl).toEqual({ command: 'wsl.exe', args: ['--cd', '~'] });
   });
 });

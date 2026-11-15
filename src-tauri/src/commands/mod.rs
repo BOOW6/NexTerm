@@ -221,6 +221,126 @@ fn resolve_executable(candidate: &str) -> Option<String> {
     None
 }
 
+/// Locate Git for Windows' `bin\bash.exe` when it is installed somewhere other
+/// than the standard `C:\Program Files\Git` (the installer allows any drive).
+/// The registry `InstallPath` is authoritative; PATH entries ending in
+/// `...\Git\cmd` / `...\Git\bin` are the fallback for installs that skipped the
+/// registry (portable/extracted copies).
+///
+/// Returns `None` on non-Windows platforms and when no usable copy exists.
+#[tauri::command]
+pub async fn detect_git_bash() -> Result<Option<String>, String> {
+    tokio::task::spawn_blocking(discover_git_bash)
+        .await
+        .map_err(|err| format!("git bash detection failed: {err}"))
+}
+
+#[cfg(windows)]
+fn discover_git_bash() -> Option<String> {
+    let mut roots = registry_git_roots();
+    let path_entries: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|value| std::env::split_paths(&value).collect())
+        .unwrap_or_default();
+    roots.extend(git_roots_from_path_entries(&path_entries));
+    git_bash_from_roots(&roots, |candidate| candidate.is_file())
+        .map(|candidate| candidate.to_string_lossy().into_owned())
+}
+
+#[cfg(not(windows))]
+fn discover_git_bash() -> Option<String> {
+    None
+}
+
+/// Derive install roots from PATH entries shaped like `<root>\Git\cmd` or
+/// `<root>\Git\bin`. Kept free of Windows APIs so it is unit-testable.
+#[cfg(windows)]
+fn git_roots_from_path_entries(entries: &[PathBuf]) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    for entry in entries {
+        let Some(name) = entry.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !name.eq_ignore_ascii_case("cmd") && !name.eq_ignore_ascii_case("bin") {
+            continue;
+        }
+        let Some(root) = entry.parent() else {
+            continue;
+        };
+        let is_git_root = root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| name.eq_ignore_ascii_case("Git"))
+            .unwrap_or(false);
+        if is_git_root {
+            roots.push(root.to_path_buf());
+        }
+    }
+    roots
+}
+
+/// First `<root>\bin\bash.exe` that satisfies `exists`.
+#[cfg(windows)]
+fn git_bash_from_roots(roots: &[PathBuf], exists: impl Fn(&Path) -> bool) -> Option<PathBuf> {
+    roots
+        .iter()
+        .map(|root| root.join("bin").join("bash.exe"))
+        .find(|candidate| exists(candidate))
+}
+
+#[cfg(windows)]
+fn registry_git_roots() -> Vec<PathBuf> {
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::ERROR_SUCCESS;
+    use windows::Win32::System::Registry::{
+        RegGetValueW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ,
+    };
+
+    fn read_install_path(hive: HKEY, subkey: &str) -> Option<PathBuf> {
+        let subkey: Vec<u16> = subkey.encode_utf16().chain(std::iter::once(0)).collect();
+        let value: Vec<u16> = "InstallPath"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let mut buffer = [0u16; 512];
+        let mut size = (buffer.len() * 2) as u32;
+        // SAFETY: both strings are NUL-terminated and outlive the call; the
+        // buffer is sized in bytes and the API writes at most `size` bytes.
+        let status = unsafe {
+            RegGetValueW(
+                hive,
+                PCWSTR(subkey.as_ptr()),
+                PCWSTR(value.as_ptr()),
+                RRF_RT_REG_SZ,
+                None,
+                Some(buffer.as_mut_ptr() as *mut _),
+                Some(&mut size),
+            )
+        };
+        if status != ERROR_SUCCESS {
+            return None;
+        }
+        let len = (size as usize / 2).saturating_sub(1);
+        let path = String::from_utf16_lossy(&buffer[..len.min(buffer.len())]);
+        let path = path.trim();
+        (!path.is_empty()).then(|| PathBuf::from(path))
+    }
+
+    let mut roots = Vec::new();
+    // HKLM covers machine-wide installs; the WOW6432Node view covers a 32-bit
+    // Git on 64-bit Windows. HKCU covers per-user installs.
+    for hive in [HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER] {
+        for subkey in [
+            "SOFTWARE\\GitForWindows",
+            "SOFTWARE\\WOW6432Node\\GitForWindows",
+        ] {
+            if let Some(root) = read_install_path(hive, subkey) {
+                roots.push(root);
+            }
+        }
+    }
+    roots
+}
+
 /// Expand `%NAME%` segments (Windows style) using process environment values;
 /// unresolved or unterminated segments are kept literally.
 fn expand_env_vars(input: &str) -> String {
@@ -996,5 +1116,53 @@ mod tests {
             bytes.extend_from_slice(&unit.to_le_bytes());
         }
         assert_eq!(decode_text(bytes), "Windows Registry Editor Version 5.00");
+    }
+}
+
+#[cfg(all(test, windows))]
+mod git_bash_tests {
+    use std::path::{Path, PathBuf};
+
+    use super::{git_bash_from_roots, git_roots_from_path_entries};
+
+    fn paths(entries: &[&str]) -> Vec<PathBuf> {
+        entries.iter().map(PathBuf::from).collect()
+    }
+
+    #[test]
+    fn derives_install_root_from_git_cmd_on_path() {
+        let roots = git_roots_from_path_entries(&paths(&[
+            r"D:\Program Files\Git\cmd",
+            r"C:\Windows\System32",
+            r"D:\Program Files\Git\bin",
+            r"C:\Tools\Git\cmd",
+            r"D:\GitStuff\cmd",
+        ]));
+        assert_eq!(
+            roots,
+            paths(&[
+                r"D:\Program Files\Git",
+                r"D:\Program Files\Git",
+                r"C:\Tools\Git",
+            ])
+        );
+    }
+
+    #[test]
+    fn git_bash_picks_the_first_root_with_a_bash_binary() {
+        let roots = paths(&[r"C:\Missing\Git", r"D:\Program Files\Git"]);
+        let found = git_bash_from_roots(&roots, |candidate| {
+            candidate == Path::new(r"D:\Program Files\Git\bin\bash.exe")
+        });
+        assert_eq!(
+            found,
+            Some(PathBuf::from(r"D:\Program Files\Git\bin\bash.exe"))
+        );
+    }
+
+    #[test]
+    fn git_bash_returns_none_when_no_root_has_bash() {
+        let roots = paths(&[r"C:\Missing\Git"]);
+        assert_eq!(git_bash_from_roots(&roots, |_| false), None);
     }
 }

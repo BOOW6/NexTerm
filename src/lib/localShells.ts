@@ -20,10 +20,14 @@ export interface LocalShellCatalog {
   commands: Record<string, { command: string; args: string[] } | undefined>;
 }
 
-/** Git for Windows installs bash in one of these locations. */
+/** Git for Windows installs bash in one of these locations. `%VAR%` segments
+ * are expanded by the backend probe; the registry/PATH lookup
+ * (`detect_git_bash`) runs first and covers installs on other drives. */
 const GIT_BASH_CANDIDATES = [
   'C:\\Program Files\\Git\\bin\\bash.exe',
   'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+  '%ProgramFiles%\\Git\\bin\\bash.exe',
+  '%ProgramFiles(x86)%\\Git\\bin\\bash.exe',
   '%LOCALAPPDATA%\\Programs\\Git\\bin\\bash.exe'
 ];
 
@@ -43,32 +47,46 @@ const UNIX_PRESETS: LocalShellPreset[] = [
   { id: 'fish', labelKey: 'localShell.fish', command: 'fish' }
 ];
 
-/**
- * Probe the presets' executables and build the resolved command map. Without
- * the probe every preset stays visible; spawn errors surface in the terminal
- * if a shell is genuinely missing.
- */
-async function probeAvailability(presets: LocalShellPreset[]): Promise<LocalShellCatalog> {
-  const probeList = presets.flatMap((preset) => preset.probeCandidates ?? [preset.command ?? '']);
-  let resolved: Array<string | null> = [];
-  try {
-    resolved = await invoke<Array<string | null>>('probe_shell_availability', {
-      candidates: probeList
-    });
-  } catch {
-    resolved = probeList.map((candidate) => candidate || null);
-  }
+interface ProbeSlot {
+  preset: LocalShellPreset;
+  candidates: string[];
+}
 
-  let probeIndex = 0;
+/** One probe entry list per preset, in preset order. Presets without a command
+ * or candidates (the platform default) contribute nothing, so probe results
+ * never shift between presets. */
+function probeSlots(presets: LocalShellPreset[]): ProbeSlot[] {
+  return presets.map((preset) => ({
+    preset,
+    candidates: preset.probeCandidates ?? (preset.command ? [preset.command] : [])
+  }));
+}
+
+/**
+ * Merge probe results into a catalog. `resolved === null` means the probe
+ * itself failed: fixed-command presets stay selectable (spawn errors surface
+ * in the terminal), while probe-based presets become unavailable — spawning a
+ * guessed path is exactly how Git Bash used to launch WSL.
+ */
+export function buildShellCatalog(
+  presets: LocalShellPreset[],
+  resolved: Array<string | null> | null
+): LocalShellCatalog {
   const commands: LocalShellCatalog['commands'] = {};
-  const probed: LocalShellPreset[] = presets.map((preset) => {
-    if (!preset.command && !preset.probeCandidates) {
+  let cursor = 0;
+  const probed: LocalShellPreset[] = probeSlots(presets).map(({ preset, candidates }) => {
+    if (candidates.length === 0) {
       return { ...preset, available: true };
     }
-    const candidateIds = preset.probeCandidates ?? [preset.command ?? ''];
-    const slice = resolved.slice(probeIndex, probeIndex + candidateIds.length);
-    probeIndex += candidateIds.length;
-
+    if (resolved === null) {
+      if (!preset.probeCandidates) {
+        commands[preset.id] = { command: preset.command ?? '', args: preset.args ?? [] };
+        return { ...preset, available: true };
+      }
+      return { ...preset, available: false };
+    }
+    const slice = resolved.slice(cursor, cursor + candidates.length);
+    cursor += candidates.length;
     if (preset.probeCandidates) {
       const hit = slice.find((entry): entry is string => entry !== null);
       if (hit === undefined) {
@@ -77,7 +95,6 @@ async function probeAvailability(presets: LocalShellPreset[]): Promise<LocalShel
       commands[preset.id] = { command: hit, args: preset.args ?? [] };
       return { ...preset, available: true };
     }
-
     commands[preset.id] = { command: preset.command ?? '', args: preset.args ?? [] };
     return { ...preset, available: slice[0] !== null };
   });
@@ -85,10 +102,55 @@ async function probeAvailability(presets: LocalShellPreset[]): Promise<LocalShel
   return { presets: probed, commands };
 }
 
+/**
+ * Probe the presets' executables and build the resolved command map.
+ * A failed probe leaves fixed-command presets usable and hides probe-only
+ * ones instead of inventing a path for them.
+ */
+async function probeAvailability(presets: LocalShellPreset[]): Promise<LocalShellCatalog> {
+  const probeList = probeSlots(presets).flatMap((slot) => slot.candidates);
+  let resolved: Array<string | null> | null = null;
+  try {
+    resolved = await invoke<Array<string | null>>('probe_shell_availability', {
+      candidates: probeList
+    });
+  } catch {
+    resolved = null;
+  }
+  return buildShellCatalog(presets, resolved);
+}
+
+/** Registry/PATH lookup for a Git for Windows install on any drive. Returns a
+ * verified `bin\bash.exe` path, or null when Git Bash is not installed. */
+async function detectGitBash(): Promise<string | null> {
+  try {
+    return await invoke<string | null>('detect_git_bash');
+  } catch {
+    return null;
+  }
+}
+
 export async function loadLocalShellCatalog(): Promise<LocalShellCatalog> {
   const info = await getPtyPlatformInfo();
   const isWindows = info.backend === 'conpty';
-  return probeAvailability(isWindows ? WINDOWS_PRESETS : UNIX_PRESETS);
+  if (!isWindows) {
+    return probeAvailability(UNIX_PRESETS);
+  }
+
+  const presets = WINDOWS_PRESETS.map((preset) => ({ ...preset }));
+  const detected = await detectGitBash();
+  if (detected) {
+    const gitBash = presets.find((preset) => preset.id === 'gitbash');
+    if (gitBash) {
+      gitBash.probeCandidates = [
+        detected,
+        ...(gitBash.probeCandidates ?? []).filter(
+          (candidate) => candidate.toLowerCase() !== detected.toLowerCase()
+        )
+      ];
+    }
+  }
+  return probeAvailability(presets);
 }
 
 /** Map an existing session shell back to a preset id; `custom` when no match. */
