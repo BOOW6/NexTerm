@@ -24,6 +24,9 @@ export const ZH: Dictionary = {
   'theme.desc.holoDark': 'Android 4.4 Holo 暗色',
   'theme.desc.slateLight': '现代开发工具基线：中性灰、细线与单一强调色',
   'theme.desc.slateDark': '现代开发工具基线：深色中性灰，长时间盯屏不疲劳',
+  'theme.desc.graphiteLight': '深色极简的单色思路用在亮色：纸白表面、药丸标签、强调条选中',
+  'theme.desc.graphiteDark': '深色极简：近黑画布、分层表面，只有焦点有颜色',
+  'theme.family.graphite': '深色极简（Linear / Raycast 一档）',
   'theme.family.dayDim': '经典 Web 2.0 明暗配色',
   'theme.family.holo': 'Android 4.4 Holo 扁平高对比',
   'theme.family.slate': '现代开发工具基线（VS Code / Primer 一档）',
@@ -291,6 +294,11 @@ export const EN: Dictionary = {
   'theme.desc.holoDark': 'Android 4.4 Holo dark',
   'theme.desc.slateLight': 'Modern dev-tool baseline: neutral greys, hairlines, one accent',
   'theme.desc.slateDark': 'Modern dev-tool baseline: dark neutral greys for long sessions',
+  'theme.desc.graphiteLight':
+    'Graphite’s monochrome focus in daylight: paper surfaces, pill tabs, accent rail',
+  'theme.desc.graphiteDark':
+    'Monochrome focus: near-black canvas, layered surfaces, colour only on focus',
+  'theme.family.graphite': 'Monochrome focus (Linear / Raycast class)',
   'theme.family.dayDim': 'Classic Web 2.0 light and dark',
   'theme.family.holo': 'Android 4.4 Holo flat, high contrast',
   'theme.family.slate': 'Modern dev-tool baseline (VS Code / Primer class)',

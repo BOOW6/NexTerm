@@ -1,1 +1,60 @@
-/* placeholder */
+/* Graphite skin — near-monochrome focus (Linear / Raycast / Win11 feel).
+ *
+ * Builds on Slate by importing it first, so it inherits the flat chrome, the
+ * quiet group labels and the underline tabs; everything below is what makes
+ * Graphite different: a pill-shaped active tab, lighter chrome than content,
+ * floating surfaces and a keyboard-first feel with no drawn borders.
+ */
+@import './slate.css';
+
+/* Tabs read as pills sitting on the strip; only the active one is lifted. */
+:root[data-theme^='graphite'] .dockview-theme-dark .dv-tab {
+  border-right-color: transparent;
+  margin: 5px 2px;
+  border-radius: 6px;
+}
+
+:root[data-theme^='graphite'] .dockview-theme-dark .dv-tab.dv-active-tab {
+  background-color: hsl(var(--surface));
+  box-shadow:
+    inset 0 0 0 1px hsl(var(--foreground) / 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+/* The sidebar and workspace are cards on the canvas: a hairline outline and a
+ * 10px radius, no filled trays. */
+:root[data-theme^='graphite'] .app-panel-header {
+  font-size: 11px;
+  text-transform: none;
+}
+
+/* Focus rings are part of the identity here: keep them crisp and thin. */
+:root[data-theme^='graphite'] :focus-visible {
+  outline-width: 2px;
+  outline-style: solid;
+  outline-color: hsl(var(--accent) / 0.55);
+  outline-offset: 1px;
+}
+
+/* Buttons: no borders at all on secondary/ghost; the surface step carries
+ * the affordance. Primary keeps its fill but loses the gradient. */
+:root[data-theme^='graphite'] .app-button {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+:root[data-theme^='graphite'] .app-button[data-variant='secondary'] {
+  background-image: none;
+  background-color: hsl(var(--surface));
+  color: hsl(var(--foreground));
+  box-shadow: 0 0 0 1px hsl(var(--foreground) / 0.08);
+}
+
+:root[data-theme^='graphite'] .app-button[data-variant='secondary']:hover {
+  background-color: hsl(var(--surface-active));
+}
+
+:root[data-theme^='graphite'] .app-button[data-variant='primary'] {
+  background-image: none;
+  color: hsl(var(--accent-foreground));
+}

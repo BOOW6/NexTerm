@@ -12,7 +12,9 @@ export type BuiltinThemeId =
   | 'holo-light'
   | 'holo-dark'
   | 'slate-light'
-  | 'slate-dark';
+  | 'slate-dark'
+  | 'graphite-light'
+  | 'graphite-dark';
 /**
  * Built-in ids plus user-defined theme ids from the themes folder. Custom ids
  * are `[a-z0-9-]` strings (enforced by the backend scanner); they are kept
@@ -44,6 +46,14 @@ export const LIGHT_THEMES: ThemeDefinition[] = [
     variant: 'light',
     descriptionKey: 'theme.desc.slateLight',
     swatches: ['#f6f8fa', '#ffffff', '#0969da'],
+    group: 'modern'
+  },
+  {
+    id: 'graphite-light',
+    name: 'Graphite',
+    variant: 'light',
+    descriptionKey: 'theme.desc.graphiteLight',
+    swatches: ['#f6f7f8', '#ffffff', '#1f8a81'],
     group: 'modern'
   },
   {
@@ -79,6 +89,14 @@ export const DARK_THEMES: ThemeDefinition[] = [
     variant: 'dark',
     descriptionKey: 'theme.desc.slateDark',
     swatches: ['#0d1117', '#161b22', '#2f81f7'],
+    group: 'modern'
+  },
+  {
+    id: 'graphite-dark',
+    name: 'Graphite',
+    variant: 'dark',
+    descriptionKey: 'theme.desc.graphiteDark',
+    swatches: ['#0b0c0e', '#14161a', '#2dd4bf'],
     group: 'modern'
   },
   {
@@ -125,6 +143,14 @@ export const THEME_FAMILIES: ThemeFamily[] = [
     descriptionKey: 'theme.family.slate',
     light: 'slate-light',
     dark: 'slate-dark',
+    group: 'modern'
+  },
+  {
+    id: 'graphite',
+    name: 'Graphite',
+    descriptionKey: 'theme.family.graphite',
+    light: 'graphite-light',
+    dark: 'graphite-dark',
     group: 'modern'
   },
   {
