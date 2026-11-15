@@ -1,4 +1,15 @@
+/* Every @import must precede the Tailwind directives: CSS ignores an @import
+ * that follows any other rule, and Tailwind expands into rules. The skin files
+ * therefore sit *before* the utilities in source and win cascade ties by
+ * specificity — their selectors keep one extra :root or [data-theme] step over
+ * the utilities they replace (see theme/skin-tokens.css). */
 @import './theme/tokens.css';
+@import './theme/skin-tokens.css';
+@import './theme/skins/holo.css';
+@import './theme/skins/slate.css';
+@import './theme/skins/graphite.css';
+@import './theme/skins/tgreen.css';
+@import './theme/skins/sandstone.css';
 
 @tailwind base;
 @tailwind components;
@@ -15,16 +26,7 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: var(
-      --ui-font-family,
-      'Microsoft YaHei',
-      '微软雅黑',
-      Tahoma,
-      Arial,
-      'PingFang SC',
-      'Hiragino Sans GB',
-      sans-serif
-    );
+    font-family: var(--ui-font-family, var(--font-ui));
     font-variant-ligatures: var(--ui-font-ligatures, normal);
     font-feature-settings: var(--ui-font-feature-settings, normal);
     font-size: 12px;
@@ -65,12 +67,17 @@
 }
 
 /* Align dockview tabs/groups with NexTerm tokens. The theme class is fixed;
- * actual colors come from the active [data-theme] variables. */
+ * actual colors come from the active [data-theme] variables.
+ * Color/surface mappings live here; the tokens that a skin family steers
+ * (tab height, active surface) are mapped in theme/skin-tokens.css. */
 :root .dockview-theme-dark {
   --dv-group-view-background-color: hsl(var(--background));
   --dv-tabs-and-actions-container-background-color: hsl(var(--surface-header));
+  /* Active tab = --surface, hidden tab = its group's alternate background.
+   * Both are the DESKTOP_* defaults dockview used before the skin layer
+   * existed, now routed through tokens so families can restyle tabs. */
   --dv-activegroup-visiblepanel-tab-background-color: hsl(var(--surface));
-  --dv-activegroup-hiddenpanel-tab-background-color: hsl(var(--surface-header));
+  --dv-activegroup-hiddenpanel-tab-background-color: hsl(var(--background-alt));
   --dv-inactivegroup-visiblepanel-tab-background-color: hsl(var(--surface));
   --dv-inactivegroup-hiddenpanel-tab-background-color: hsl(var(--background-alt));
   --dv-tab-divider-color: hsl(var(--border-muted));
@@ -82,7 +89,6 @@
   --dv-paneview-active-outline-color: hsl(var(--accent));
   --dv-paneview-header-border-color: hsl(var(--border));
   --dv-tabs-and-actions-container-font-size: 12px;
-  --dv-tabs-and-actions-container-height: 28px;
 }
 
 :root .dockview-theme-dark .dv-tab {
@@ -92,6 +98,11 @@
 :root .dockview-theme-dark .dv-tab:focus::after,
 :root .dockview-theme-dark .dv-tab:focus-within::after {
   outline: none !important;
+}
+
+/* The active-tab underline indicator; 0px for every family without one. */
+:root .dockview-theme-dark .dv-tab.dv-active-tab {
+  box-shadow: inset 0 calc(var(--tab-indicator, 0px) * -1) 0 hsl(var(--accent));
 }
 
 /* Tab strip overflow: a native scrollbar would eat into the 28px strip, so
@@ -212,125 +223,6 @@
   -webkit-user-select: none;
 }
 
-/* Android 4.4 Holo skin.
- * The palette lives in tokens.css; these rules restore the flat action bars,
- * list separators, tab underlines and category headers of Holo. They are
- * scoped to the two Holo themes so Day / Aqua / Dim keep their own look. */
-:root[data-theme^='holo'] .app-actionbar {
-  border-bottom-width: 0;
-  box-shadow: inset 0 -2px 0 hsl(var(--accent));
-}
-
-:root[data-theme='holo-dark'] .app-actionbar,
-:root[data-theme='holo-dark'] .app-statusbar {
-  background-color: #000000;
-}
-
-:root[data-theme^='holo'] .app-dialog-window,
-:root[data-theme^='holo'] .app-dialog-header,
-:root[data-theme^='holo'] .app-dialog-footer {
-  background-color: hsl(var(--surface-elevated));
-}
-
-:root[data-theme^='holo'] .app-dialog-header {
-  border-bottom: 2px solid hsl(var(--accent));
-}
-
-:root[data-theme^='holo'] .app-dialog-title {
-  color: hsl(var(--link));
-}
-
-:root[data-theme^='holo'] .app-group-header {
-  border-bottom: 1px solid hsl(var(--border-muted));
-  border-radius: 0;
-  background-color: hsl(var(--background-alt));
-  color: hsl(var(--link));
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-:root[data-theme^='holo'] .app-group-header:hover {
-  background-color: hsl(var(--surface-hover));
-  color: hsl(var(--link-hover));
-}
-
-:root[data-theme^='holo'] .app-list > * + * {
-  margin-top: 0;
-}
-
-:root[data-theme^='holo'] .app-list-row {
-  border-width: 0;
-  border-bottom: 1px solid hsl(var(--border-muted));
-  border-radius: 0;
-}
-
-:root[data-theme^='holo'] .app-list-row:hover {
-  background-color: hsl(var(--row-hover));
-}
-
-:root[data-theme^='holo'] .app-list-row[data-active='true'] {
-  background-color: hsl(var(--row-selected));
-  border-bottom-color: hsl(var(--accent));
-}
-
-:root[data-theme^='holo'] .app-list-row[data-active='true']:hover {
-  background-color: hsl(var(--accent-strong));
-}
-
-:root[data-theme^='holo'] .app-list-row[data-active='true'] > svg,
-:root[data-theme^='holo'] .app-list-row[data-active='true'] p {
-  color: #ffffff;
-}
-
-:root[data-theme^='holo'] .app-list-row[data-active='true'] p + p {
-  color: rgba(255, 255, 255, 0.78);
-}
-
-:root[data-theme^='holo'] .dockview-theme-dark .dv-tabs-and-actions-container {
-  border-bottom: 1px solid hsl(var(--border));
-}
-
-:root[data-theme^='holo'] .dockview-theme-dark .dv-tab {
-  border-right-color: transparent;
-}
-
-:root[data-theme^='holo'] .dockview-theme-dark .dv-tab.dv-active-tab {
-  box-shadow: inset 0 -2px 0 hsl(var(--accent));
-  color: hsl(var(--foreground));
-}
-
-:root[data-theme^='holo'] .app-tab-strip > button {
-  border-width: 0;
-  border-radius: 0;
-  background-color: transparent;
-}
-
-:root[data-theme^='holo'] .app-tab-strip > button[data-active='true'] {
-  background-color: transparent;
-  box-shadow: inset 0 -2px 0 hsl(var(--accent));
-  color: hsl(var(--foreground));
-}
-
-:root[data-theme^='holo'] ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-:root[data-theme^='holo'] ::-webkit-scrollbar-track {
-  background: hsl(var(--background));
-}
-
-:root[data-theme^='holo'] ::-webkit-scrollbar-thumb {
-  border: 0;
-  border-radius: 0;
-  background: hsl(var(--border-strong));
-}
-
-:root[data-theme^='holo'] ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--accent));
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -342,10 +234,10 @@
   }
 
   /* Cursor blink is a positional indicator, not decoration: the WebGL
-     renderer drives it with a JS timer that this rule cannot reach, and the
-     DOM-renderer fallback uses a CSS animation. Keep the two in agreement so
-     a reduced-motion system does not silently disable the cursor in one path
-     only (xterm only applies the blink class while focused). */
+   * renderer drives it with a JS timer that this rule cannot reach, and the
+   * DOM-renderer fallback uses a CSS animation. Keep the two in agreement so
+   * a reduced-motion system does not silently disable the cursor in one path
+   * only (xterm only applies the blink class while focused). */
   .xterm .xterm-cursor.xterm-cursor-blink {
     animation-duration: 1s !important;
     animation-iteration-count: infinite !important;

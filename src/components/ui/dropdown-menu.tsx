@@ -75,7 +75,7 @@ export function DropdownMenu({ items, align = 'end', className, label }: Dropdow
         <div
           role="menu"
           className={cn(
-            'app-popup absolute top-full z-40 mt-0.5 min-w-40 animate-zoom-in rounded-sm border border-border-strong bg-surface-elevated p-0.5 shadow-popup',
+            'app-popup animate-zoom-in absolute top-full z-40 mt-0.5 min-w-40 border border-border-strong bg-surface-elevated',
             align === 'end' ? 'right-0' : 'left-0'
           )}
         >

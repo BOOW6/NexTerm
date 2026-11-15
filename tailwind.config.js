@@ -66,16 +66,8 @@ export default {
         'button-primary': 'var(--gradient-button-primary)'
       },
       fontFamily: {
-        sans: [
-          'Microsoft YaHei',
-          '微软雅黑',
-          'Tahoma',
-          'Arial',
-          'PingFang SC',
-          'Hiragino Sans GB',
-          'sans-serif'
-        ],
-        mono: ['Consolas', 'Courier New', 'Sarasa Mono SC', 'monospace']
+        sans: ['var(--font-ui)'],
+        mono: ['var(--font-mono)']
       },
       keyframes: {
         'fade-in': {

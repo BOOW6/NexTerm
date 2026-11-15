@@ -1,8 +1,28 @@
 /* NexTerm design tokens.
  * Colors are stored as HSL triplets so Tailwind can use hsl(var(--token) / alpha).
  * Theme variants are grouped into light (Day / Aqua / Holo) and dark
- * (Dim / Aqua / Holo) palettes. */
+ * (Dim / Aqua / Holo) palettes.
+ *
+ * Structure tokens
+ * ----------------
+ * Every [data-theme] block below declares the full structure-token set. The
+ * skin layer (theme/skins/*.css) reads them to express a family's structural
+ * language (flat action bars, underlined tabs, card panels, …) without
+ * per-component changes; skins/skin-tokens.css maps them onto the interaction
+ * rules. They are declared per theme rather than once in :root because custom
+ * properties substitute their var()s where they are declared: a root-level
+ * declaration would freeze the first family's colors for every other one.
+ *
+ * --accent-rgb mirrors --accent as an "R G B" triplet so skins can write
+ * rgb(var(--accent-rgb) / 0.12); a theme that overrides --accent must
+ * override it too (applyAccentVars does this for accent overrides).
+ */
 
+:root {
+  --font-ui:
+    'Microsoft YaHei', '微软雅黑', Tahoma, Arial, 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+  --font-mono: 'Consolas', 'Courier New', 'Sarasa Mono SC', monospace;
+}
 :root,
 [data-theme='day'] {
   --background: 216 33% 97%;
@@ -33,6 +53,46 @@
   --row-selected: 209 63% 92%;
   --header-foreground: 0 0% 100%;
   --header-muted: 210 40% 88%;
+
+  /* Structure (classic): gradient chrome, solid borders, underline-less tabs
+   * that read as raised sheets, accent-filled selected rows. */
+  --accent-rgb: 46 117 182;
+  --surface-header-bg: hsl(var(--surface-header));
+  --surface-backdrop: var(--surface-header-bg);
+  --surface-card: hsl(var(--surface));
+  --nav-hover-bg: hsl(var(--surface-hover));
+  --nav-active-bg: hsl(var(--surface-active));
+  --nav-active-color: hsl(var(--foreground));
+  --nav-hover-alpha: 1;
+  --nav-active-alpha: 1;
+  --menu-hover-bg: hsl(var(--accent));
+  --menu-hover-color: hsl(var(--accent-foreground));
+  --menu-hover-alpha: 1;
+  --menu-radius: var(--radius-sm);
+  --menu-padding: 2px;
+  --button-radius: var(--radius-sm);
+  --row-selected-bg: hsl(var(--row-selected));
+  --row-selected-alpha: 1;
+  --row-selected-accent-bar: 0px;
+  --hairline-color: hsl(var(--border));
+  --border-ctrl: hsl(var(--border-strong));
+  --accent-text: hsl(var(--link));
+  --tab-height: 28px;
+  --tab-active-bg: var(--surface);
+  --tab-hidden-bg: hsl(var(--background-alt));
+  --tab-indicator: 0px;
+  --panel-header-bg: var(--surface-header-bg);
+  --panel-header-weight: 600;
+  --panel-header-tracking: -0.01em;
+  --panel-header-transform: none;
+  --glass-blur: 0px;
+  --popup-ring: none;
+  --chip-bg: hsl(var(--accent));
+  --chip-color: hsl(var(--accent-foreground));
+  --group-header-bg: transparent;
+  --scrollbar-thumb: hsl(var(--border));
+  --elevation-1: var(--shadow-panel);
+  --elevation-2: var(--shadow-popup);
 
   --terminal-background: 210 30% 12%;
   --terminal-foreground: 210 20% 88%;
@@ -88,6 +148,44 @@
   --header-foreground: 0 0% 100%;
   --header-muted: 210 40% 82%;
 
+  --accent-rgb: 128 178 224;
+  --surface-header-bg: hsl(var(--surface-header));
+  --surface-backdrop: var(--surface-header-bg);
+  --surface-card: hsl(var(--surface));
+  --nav-hover-bg: hsl(var(--surface-hover));
+  --nav-active-bg: hsl(var(--surface-active));
+  --nav-active-color: hsl(var(--foreground));
+  --nav-hover-alpha: 1;
+  --nav-active-alpha: 1;
+  --menu-hover-bg: hsl(var(--accent));
+  --menu-hover-color: hsl(var(--accent-foreground));
+  --menu-hover-alpha: 1;
+  --menu-radius: var(--radius-sm);
+  --menu-padding: 2px;
+  --button-radius: var(--radius-sm);
+  --row-selected-bg: hsl(var(--row-selected));
+  --row-selected-alpha: 1;
+  --row-selected-accent-bar: 0px;
+  --hairline-color: hsl(var(--border));
+  --border-ctrl: hsl(var(--border-strong));
+  --accent-text: hsl(var(--link));
+  --tab-height: 28px;
+  --tab-active-bg: var(--surface);
+  --tab-hidden-bg: hsl(var(--background-alt));
+  --tab-indicator: 0px;
+  --panel-header-bg: var(--surface-header-bg);
+  --panel-header-weight: 600;
+  --panel-header-tracking: -0.01em;
+  --panel-header-transform: none;
+  --glass-blur: 0px;
+  --popup-ring: none;
+  --chip-bg: hsl(var(--accent));
+  --chip-color: hsl(var(--accent-foreground));
+  --group-header-bg: transparent;
+  --scrollbar-thumb: hsl(var(--border));
+  --elevation-1: var(--shadow-panel);
+  --elevation-2: var(--shadow-popup);
+
   --terminal-background: 211 35% 10%;
   --terminal-foreground: 213 40% 88%;
   --terminal-cursor: 210 29% 70%;
@@ -98,6 +196,16 @@
   --gradient-button: linear-gradient(180deg, #34465a, #263646);
   --gradient-button-hover: linear-gradient(180deg, #3a4e63, #2c3d50);
   --gradient-button-primary: linear-gradient(180deg, #3d7cb3, #245c8c);
+
+  --radius: 3px;
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-popup: 0 2px 6px rgba(0, 0, 0, 0.45);
+  --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-button-pressed: inset 0 1px 2px rgba(0, 0, 0, 0.45);
 
   color-scheme: dark;
 }
@@ -131,6 +239,44 @@
   --row-selected: 207 65% 90%;
   --header-foreground: 0 0% 100%;
   --header-muted: 209 35% 88%;
+
+  --accent-rgb: 27 109 191;
+  --surface-header-bg: hsl(var(--surface-header));
+  --surface-backdrop: var(--surface-header-bg);
+  --surface-card: hsl(var(--surface));
+  --nav-hover-bg: hsl(var(--surface-hover));
+  --nav-active-bg: hsl(var(--surface-active));
+  --nav-active-color: hsl(var(--foreground));
+  --nav-hover-alpha: 1;
+  --nav-active-alpha: 1;
+  --menu-hover-bg: hsl(var(--accent));
+  --menu-hover-color: hsl(var(--accent-foreground));
+  --menu-hover-alpha: 1;
+  --menu-radius: var(--radius-sm);
+  --menu-padding: 2px;
+  --button-radius: var(--radius-sm);
+  --row-selected-bg: hsl(var(--row-selected));
+  --row-selected-alpha: 1;
+  --row-selected-accent-bar: 0px;
+  --hairline-color: hsl(var(--border));
+  --border-ctrl: hsl(var(--border-strong));
+  --accent-text: hsl(var(--link));
+  --tab-height: 28px;
+  --tab-active-bg: var(--surface);
+  --tab-hidden-bg: hsl(var(--background-alt));
+  --tab-indicator: 0px;
+  --panel-header-bg: var(--surface-header-bg);
+  --panel-header-weight: 600;
+  --panel-header-tracking: -0.01em;
+  --panel-header-transform: none;
+  --glass-blur: 0px;
+  --popup-ring: none;
+  --chip-bg: hsl(var(--accent));
+  --chip-color: hsl(var(--accent-foreground));
+  --group-header-bg: transparent;
+  --scrollbar-thumb: hsl(var(--border));
+  --elevation-1: var(--shadow-panel);
+  --elevation-2: var(--shadow-popup);
 
   --terminal-background: 212 30% 13%;
   --terminal-foreground: 210 18% 91%;
@@ -192,6 +338,44 @@
   --header-foreground: 0 0% 100%;
   --header-muted: 210 25% 84%;
 
+  --accent-rgb: 75 156 222;
+  --surface-header-bg: hsl(var(--surface-header));
+  --surface-backdrop: var(--surface-header-bg);
+  --surface-card: hsl(var(--surface));
+  --nav-hover-bg: hsl(var(--surface-hover));
+  --nav-active-bg: hsl(var(--surface-active));
+  --nav-active-color: hsl(var(--foreground));
+  --nav-hover-alpha: 1;
+  --nav-active-alpha: 1;
+  --menu-hover-bg: hsl(var(--accent));
+  --menu-hover-color: hsl(var(--accent-foreground));
+  --menu-hover-alpha: 1;
+  --menu-radius: var(--radius-sm);
+  --menu-padding: 2px;
+  --button-radius: var(--radius-sm);
+  --row-selected-bg: hsl(var(--row-selected));
+  --row-selected-alpha: 1;
+  --row-selected-accent-bar: 0px;
+  --hairline-color: hsl(var(--border));
+  --border-ctrl: hsl(var(--border-strong));
+  --accent-text: hsl(var(--link));
+  --tab-height: 28px;
+  --tab-active-bg: var(--surface);
+  --tab-hidden-bg: hsl(var(--background-alt));
+  --tab-indicator: 0px;
+  --panel-header-bg: var(--surface-header-bg);
+  --panel-header-weight: 600;
+  --panel-header-tracking: -0.01em;
+  --panel-header-transform: none;
+  --glass-blur: 0px;
+  --popup-ring: none;
+  --chip-bg: hsl(var(--accent));
+  --chip-color: hsl(var(--accent-foreground));
+  --group-header-bg: transparent;
+  --scrollbar-thumb: hsl(var(--border));
+  --elevation-1: var(--shadow-panel);
+  --elevation-2: var(--shadow-popup);
+
   --terminal-background: 214 30% 8%;
   --terminal-foreground: 210 18% 90%;
   --terminal-cursor: 206 75% 68%;
@@ -252,6 +436,44 @@
   --header-foreground: 0 0% 100%;
   --header-muted: 196 60% 92%;
 
+  --accent-rgb: 51 181 229;
+  --surface-header-bg: hsl(var(--surface-header));
+  --surface-backdrop: var(--surface-header-bg);
+  --surface-card: hsl(var(--surface));
+  --nav-hover-bg: hsl(var(--surface-hover));
+  --nav-active-bg: hsl(var(--accent-strong));
+  --nav-active-color: hsl(var(--row-selected));
+  --nav-hover-alpha: 1;
+  --nav-active-alpha: 1;
+  --menu-hover-bg: hsl(var(--accent));
+  --menu-hover-color: hsl(var(--accent-foreground));
+  --menu-hover-alpha: 1;
+  --menu-radius: 0px;
+  --menu-padding: 0px;
+  --button-radius: 0px;
+  --row-selected-bg: hsl(var(--accent-strong));
+  --row-selected-alpha: 1;
+  --row-selected-accent-bar: 0px;
+  --hairline-color: hsl(var(--border));
+  --border-ctrl: hsl(var(--border-strong));
+  --accent-text: hsl(var(--link));
+  --tab-height: 28px;
+  --tab-active-bg: var(--surface);
+  --tab-hidden-bg: var(--surface-header-bg);
+  --tab-indicator: 2px;
+  --panel-header-bg: var(--surface-header-bg);
+  --panel-header-weight: 600;
+  --panel-header-tracking: -0.01em;
+  --panel-header-transform: none;
+  --glass-blur: 0px;
+  --popup-ring: none;
+  --chip-bg: hsl(var(--accent));
+  --chip-color: hsl(var(--accent-foreground));
+  --group-header-bg: transparent;
+  --scrollbar-thumb: hsl(var(--border));
+  --elevation-1: var(--shadow-panel);
+  --elevation-2: var(--shadow-popup);
+
   --terminal-background: 0 0% 0%;
   --terminal-foreground: 0 0% 90%;
   --terminal-cursor: 196 78% 55%;
@@ -305,6 +527,44 @@
   --row-selected: 196 78% 55%;
   --header-foreground: 0 0% 100%;
   --header-muted: 0 0% 80%;
+
+  --accent-rgb: 51 181 229;
+  --surface-header-bg: hsl(var(--surface-header));
+  --surface-backdrop: var(--surface-header-bg);
+  --surface-card: hsl(var(--surface));
+  --nav-hover-bg: hsl(var(--surface-hover));
+  --nav-active-bg: hsl(var(--accent-strong));
+  --nav-active-color: hsl(var(--row-selected));
+  --nav-hover-alpha: 1;
+  --nav-active-alpha: 1;
+  --menu-hover-bg: hsl(var(--accent));
+  --menu-hover-color: hsl(var(--accent-foreground));
+  --menu-hover-alpha: 1;
+  --menu-radius: 0px;
+  --menu-padding: 0px;
+  --button-radius: 0px;
+  --row-selected-bg: hsl(var(--accent-strong));
+  --row-selected-alpha: 1;
+  --row-selected-accent-bar: 0px;
+  --hairline-color: hsl(var(--border));
+  --border-ctrl: hsl(var(--border-strong));
+  --accent-text: hsl(var(--link));
+  --tab-height: 28px;
+  --tab-active-bg: var(--surface);
+  --tab-hidden-bg: var(--surface-header-bg);
+  --tab-indicator: 2px;
+  --panel-header-bg: var(--surface-header-bg);
+  --panel-header-weight: 600;
+  --panel-header-tracking: -0.01em;
+  --panel-header-transform: none;
+  --glass-blur: 0px;
+  --popup-ring: none;
+  --chip-bg: hsl(var(--accent));
+  --chip-color: hsl(var(--accent-foreground));
+  --group-header-bg: transparent;
+  --scrollbar-thumb: hsl(var(--border));
+  --elevation-1: var(--shadow-panel);
+  --elevation-2: var(--shadow-popup);
 
   --terminal-background: 0 0% 0%;
   --terminal-foreground: 0 0% 100%;

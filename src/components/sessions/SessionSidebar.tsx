@@ -61,7 +61,7 @@ function GroupSection({
         type="button"
         onClick={onToggle}
         style={{ paddingLeft: 6 + depth * 10 }}
-        className="app-group-header flex w-full items-center gap-1 rounded-sm py-1 pr-1.5 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
+        className="app-group-header flex w-full items-center gap-1 py-1 pr-1.5 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
       >
         {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
         {Icon ? <Icon className="h-3 w-3" /> : null}

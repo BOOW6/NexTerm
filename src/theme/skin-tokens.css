@@ -1,0 +1,184 @@
+/* Skin token bridge.
+ *
+ * tokens.css declares per-theme *inputs* (e.g. --surface-hover, --accent-rgb);
+ * this file turns them into the values and rules a family can steer without
+ * touching components.
+ *
+ * Import order and specificity
+ * ----------------------------
+ * `@import` must precede the Tailwind directives (CSS drops an @import that
+ * follows any rule), so these rules come *before* the utilities in source and
+ * win ties by specificity instead of source order: each selector adds one
+ * `:root` or `[data-theme]` step over the utility it replaces. Keep that
+ * pattern when adding rules.
+ *
+ * Rules of the road:
+ * - Nothing here may change the classic families' pixels. The defaults in
+ *   tokens.css reproduce the surfaces, accents and radii the components used
+ *   to hard-code.
+ * - Derived tokens are re-declared per [data-theme] block: custom properties
+ *   substitute their var()s where they are declared, so a single :root
+ *   declaration would resolve against one family's palette for all of them.
+ * - Family skins (theme/skins/*.css) may set inputs and override the base
+ *   rules below; they never target components outside this vocabulary.
+ */
+
+/* ---------------------------------------------------------------------------
+ * Derived interaction tokens, per theme.
+ * ------------------------------------------------------------------------- */
+[data-theme='day'] {
+  --hover-rgb: var(--accent-rgb);
+  --nav-hover-color: hsl(var(--foreground));
+  --nav-hover-mix: var(--nav-hover-bg);
+  --nav-active-mix: var(--nav-active-bg);
+  --menu-hover-mix: var(--menu-hover-bg);
+  --row-selected-mix: var(--row-selected-bg);
+}
+
+[data-theme='dim'] {
+  --hover-rgb: var(--accent-rgb);
+  --nav-hover-color: hsl(var(--foreground));
+  --nav-hover-mix: var(--nav-hover-bg);
+  --nav-active-mix: var(--nav-active-bg);
+  --menu-hover-mix: var(--menu-hover-bg);
+  --row-selected-mix: var(--row-selected-bg);
+}
+
+[data-theme='aqua-light'] {
+  --hover-rgb: var(--accent-rgb);
+  --nav-hover-color: hsl(var(--foreground));
+  --nav-hover-mix: var(--nav-hover-bg);
+  --nav-active-mix: var(--nav-active-bg);
+  --menu-hover-mix: var(--menu-hover-bg);
+  --row-selected-mix: var(--row-selected-bg);
+}
+
+[data-theme='aqua-dark'] {
+  --hover-rgb: var(--accent-rgb);
+  --nav-hover-color: hsl(var(--foreground));
+  --nav-hover-mix: var(--nav-hover-bg);
+  --nav-active-mix: var(--nav-active-bg);
+  --menu-hover-mix: var(--menu-hover-bg);
+  --row-selected-mix: var(--row-selected-bg);
+}
+
+[data-theme='holo-light'] {
+  --hover-rgb: var(--accent-rgb);
+  --nav-hover-color: hsl(var(--foreground));
+  --nav-hover-mix: var(--nav-hover-bg);
+  --nav-active-mix: var(--nav-active-bg);
+  --menu-hover-mix: var(--menu-hover-bg);
+  --row-selected-mix: var(--row-selected-bg);
+}
+
+[data-theme='holo-dark'] {
+  --hover-rgb: var(--accent-rgb);
+  --nav-hover-color: hsl(var(--foreground));
+  --nav-hover-mix: var(--nav-hover-bg);
+  --nav-active-mix: var(--nav-active-bg);
+  --menu-hover-mix: var(--menu-hover-bg);
+  --row-selected-mix: var(--row-selected-bg);
+}
+
+/* Modern families derive the same mixes; their inputs can be translucent. */
+[data-theme^='slate'],
+[data-theme^='graphite'],
+[data-theme^='tgreen'],
+[data-theme^='sandstone'] {
+  --hover-rgb: var(--accent-rgb);
+  --nav-hover-color: hsl(var(--foreground));
+  --nav-hover-mix: var(--nav-hover-bg);
+  --nav-active-mix: var(--nav-active-bg);
+  --menu-hover-mix: var(--menu-hover-bg);
+  --row-selected-mix: var(--row-selected-bg);
+}
+
+/* ---------------------------------------------------------------------------
+ * Interaction rules. A family picks its interaction model through the inputs:
+ * alpha 1 with solid colors reproduces the classic Web 2.0 look; alpha < 1
+ * gives translucent overlays over whatever surface sits underneath.
+ * ------------------------------------------------------------------------- */
+
+/* Navigation hover / pressed: menu buttons, icon buttons, session rows. */
+:root .hover\:bg-surface-hover:hover,
+:root .hover\:bg-row-hover:hover,
+:root .hover\:bg-surface-active:hover {
+  background-color: var(--nav-hover-mix);
+  color: var(--nav-hover-color);
+}
+
+/* Pressed / open state of the same controls. */
+:root .bg-surface-active {
+  background-color: var(--nav-active-mix);
+}
+
+/* Primary menu items: classic = accent fill with accent-foreground text. */
+:root .hover\:bg-accent:hover {
+  background-color: var(--menu-hover-mix);
+  color: var(--menu-hover-color);
+}
+
+/* Selected rows (session list, SFTP rows). Families that set
+ * --row-selected-accent-bar get a rail in addition to the fill. */
+:root .bg-row-selected {
+  background-color: var(--row-selected-mix);
+  box-shadow: inset var(--row-selected-accent-bar) 0 0 hsl(var(--accent));
+}
+
+/* ---------------------------------------------------------------------------
+ * Structure rules: chrome every family inherits. A family skin
+ * (`:root[data-theme^='x'] …`) outranks these.
+ * ------------------------------------------------------------------------- */
+
+:root .app-button {
+  border-radius: var(--button-radius);
+}
+
+:root .app-popup,
+:root .app-menu {
+  border-radius: var(--menu-radius);
+}
+
+:root .app-popup {
+  padding: var(--menu-padding);
+  box-shadow: var(--elevation-2), var(--popup-ring);
+}
+
+/* Row and group-header radii moved here from the components so a family can
+ * reshape lists without any JSX change. */
+:root .app-list-row {
+  border-radius: var(--radius-sm);
+}
+
+:root .app-group-header {
+  border-radius: var(--radius-sm);
+  background-color: var(--group-header-bg);
+}
+
+:root .app-panel-header,
+:root .app-dialog-header {
+  background-color: var(--panel-header-bg);
+  font-weight: var(--panel-header-weight);
+  letter-spacing: var(--panel-header-tracking);
+  text-transform: var(--panel-header-transform);
+}
+
+/* Chrome dividers. A family that wants hairline separation sets
+ * --hairline-color to a translucent foreground color. */
+:root .app-actionbar,
+:root .app-statusbar {
+  border-color: var(--hairline-color);
+  background-color: var(--surface-backdrop);
+}
+
+/* Dockview tab geometry. The strip height, the active tab's surface and its
+ * underline indicator come from tokens, so a family can switch between
+ * "raised sheet" tabs and a flat pinned-tab look. Defaults reproduce
+ * dockview's pre-skin values (surface / background-alt, 28px, no underline). */
+:root .dockview-theme-dark {
+  --dv-tabs-and-actions-container-height: var(--tab-height);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--tab-active-bg);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--tab-active-bg);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--tab-hidden-bg);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--tab-hidden-bg);
+}

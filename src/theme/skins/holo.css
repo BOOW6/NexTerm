@@ -1,0 +1,115 @@
+/* Android 4.4 Holo skin.
+ * The palette and the structure inputs live in theme/tokens.css; this file
+ * only holds rules that cannot be expressed as token values (scoped to the
+ * two Holo themes). Day / Aqua / Dim and the modern families are untouched. */
+:root[data-theme^='holo'] .app-actionbar {
+  border-bottom-width: 0;
+  box-shadow: inset 0 -2px 0 hsl(var(--accent));
+}
+
+:root[data-theme='holo-dark'] .app-actionbar,
+:root[data-theme='holo-dark'] .app-statusbar {
+  background-color: #000000;
+}
+
+:root[data-theme^='holo'] .app-dialog-window,
+:root[data-theme^='holo'] .app-dialog-header,
+:root[data-theme^='holo'] .app-dialog-footer {
+  background-color: hsl(var(--surface-elevated));
+}
+
+:root[data-theme^='holo'] .app-dialog-header {
+  border-bottom: 2px solid hsl(var(--accent));
+}
+
+:root[data-theme^='holo'] .app-dialog-title {
+  color: hsl(var(--link));
+}
+
+:root[data-theme^='holo'] .app-group-header {
+  border-bottom: 1px solid hsl(var(--border-muted));
+  border-radius: 0;
+  background-color: hsl(var(--background-alt));
+  color: hsl(var(--link));
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+:root[data-theme^='holo'] .app-group-header:hover {
+  background-color: hsl(var(--surface-hover));
+  color: hsl(var(--link-hover));
+}
+
+:root[data-theme^='holo'] .app-list > * + * {
+  margin-top: 0;
+}
+
+:root[data-theme^='holo'] .app-list-row {
+  border-width: 0;
+  border-bottom: 1px solid hsl(var(--border-muted));
+  border-radius: 0;
+}
+
+:root[data-theme^='holo'] .app-list-row:hover {
+  background-color: hsl(var(--row-hover));
+}
+
+/* The active row's fill now comes from --row-selected-bg (= accent-strong) in
+ * tokens.css; only the bottom border accent is structural. */
+:root[data-theme^='holo'] .app-list-row[data-active='true'] {
+  border-bottom-color: hsl(var(--accent));
+}
+
+:root[data-theme^='holo'] .app-list-row[data-active='true'] > svg,
+:root[data-theme^='holo'] .app-list-row[data-active='true'] p {
+  color: #ffffff;
+}
+
+:root[data-theme^='holo'] .app-list-row[data-active='true'] p + p {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+:root[data-theme^='holo'] .dockview-theme-dark .dv-tabs-and-actions-container {
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+:root[data-theme^='holo'] .dockview-theme-dark .dv-tab {
+  border-right-color: transparent;
+}
+
+:root[data-theme^='holo'] .dockview-theme-dark .dv-tab.dv-active-tab {
+  box-shadow: inset 0 -2px 0 hsl(var(--accent));
+  color: hsl(var(--foreground));
+}
+
+:root[data-theme^='holo'] .app-tab-strip > button {
+  border-width: 0;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+:root[data-theme^='holo'] .app-tab-strip > button[data-active='true'] {
+  background-color: transparent;
+  box-shadow: inset 0 -2px 0 hsl(var(--accent));
+  color: hsl(var(--foreground));
+}
+
+:root[data-theme^='holo'] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+:root[data-theme^='holo'] ::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+
+:root[data-theme^='holo'] ::-webkit-scrollbar-thumb {
+  border: 0;
+  border-radius: 0;
+  background: hsl(var(--border-strong));
+}
+
+:root[data-theme^='holo'] ::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--accent));
+}
