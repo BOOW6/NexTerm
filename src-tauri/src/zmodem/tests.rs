@@ -283,7 +283,10 @@ fn false_positive_sentinel_passes_through() {
         feed3.passthrough.as_slice(),
     ]
     .concat();
-    assert!(everything.ends_with(b"zz trailing"));
+    // A rejected candidate is terminal output and must reach the screen
+    // verbatim, tail included — nothing is withheld once the stream carries
+    // no pending sentinel prefix.
+    assert_eq!(everything, b"cat out **\x18B00zz trailing12345");
     assert!(everything
         .windows(6)
         .any(|w| w == [b'*', b'*', 0x18, b'B', b'0', b'0']));
@@ -308,4 +311,54 @@ fn sentinel_split_across_feeds_is_found() {
             data: hex_header(ZRINIT, 0x03)
         }
     );
+}
+
+#[test]
+fn trailing_output_is_not_withheld_when_the_stream_goes_idle() {
+    // Regression: the scanner used to keep the last 5 bytes of every feed
+    // waiting for a sentinel split across reads. A shell prompt is written
+    // and then nothing follows, so those bytes never flushed and the prompt
+    // rendered truncated (`dietpi@NanoPC-T4:~$` arrived as `dietpi@NanoPC-T`).
+    let mut z = ZmodemReceiver::new();
+    let prompt = b"dietpi@NanoPC-T4:~$ ";
+    let feed = z.feed(prompt);
+    assert_eq!(feed.passthrough, prompt, "prompt must pass through intact");
+    assert!(feed.actions.is_empty());
+
+    // A second burst must not release held bytes either — nothing is pending.
+    let feed = z.feed(b"cat .bashrc\r\n");
+    assert_eq!(feed.passthrough, b"cat .bashrc\r\n");
+}
+
+#[test]
+fn only_a_genuine_sentinel_prefix_is_held_back() {
+    // A trailing `*` may still become `** DLE B 0 0`, so it is held.
+    let mut z = ZmodemReceiver::new();
+    let feed = z.feed(b"ls *");
+    assert_eq!(feed.passthrough, b"ls ");
+    // The next chunk completes an ordinary line: the held byte flows out.
+    let feed = z.feed(b".txt\r\n");
+    assert_eq!(feed.passthrough, b"*.txt\r\n");
+
+    // Nothing else is held: text with no sentinel prefix passes fully.
+    let mut z = ZmodemReceiver::new();
+    let feed = z.feed(b"ab**cd");
+    assert_eq!(feed.passthrough, b"ab**cd");
+}
+
+#[test]
+fn sentinel_prefix_len_matches_only_real_prefixes() {
+    let s = |bytes: &[u8]| sentinel_prefix_len(bytes);
+    assert_eq!(s(b""), 0);
+    assert_eq!(s(b"hello"), 0);
+    assert_eq!(s(b"*"), 1);
+    assert_eq!(s(b"a*"), 1);
+    assert_eq!(s(b"**"), 2);
+    assert_eq!(s(b"**\x18"), 3);
+    assert_eq!(s(b"**\x18B"), 4);
+    assert_eq!(s(b"**\x18B0"), 5);
+    // A full sentinel is found by the matcher, not held as a prefix.
+    assert_eq!(s(b"**\x18B00"), 0);
+    // `*` after a non-matching byte is the only held suffix.
+    assert_eq!(s(b"***"), 2);
 }

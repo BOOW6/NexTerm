@@ -834,7 +834,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           }
           unlistenOutput = stopOutput;
 
-          const stopClosed = await listenSshClosed(id, () => {
+          const stopClosed = await listenSshClosed(id, (closed) => {
             if (disposed || generation !== transportGeneration) {
               return;
             }
@@ -854,6 +854,23 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
               useSessionStore.getState().setStatus(sessionId, 'idle');
             }
             useTransferStore.getState().markSessionDisconnected(sessionId);
+
+            // The remote shell ended on its own (`exit`, logout, a killed
+            // login shell). Re-opening a shell the user just closed is wrong,
+            // so show the exit and stop here instead of scheduling a retry.
+            if (closed.reason === 'exit') {
+              const code = typeof closed.exit_status === 'number' ? closed.exit_status : undefined;
+              const message =
+                code === undefined
+                  ? t('terminal.sshSessionEnded')
+                  : t('terminal.sshSessionEndedWithCode', { code });
+              // No `\x1b[?1049l` here: the shell already restored the normal
+              // buffer, and re-issuing the switch rewinds the viewport (the
+              // notice landed above the login banner). Just append the line.
+              enqueueWrite(`\r\n\x1b[33m[${message}]\x1b[0m\r\n`);
+              return;
+            }
+
             // Only treat a connection as healthy once it survived a while;
             // otherwise a server that accepts and immediately drops would
             // reset the backoff and reconnect forever.

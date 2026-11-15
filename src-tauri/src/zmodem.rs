@@ -58,9 +58,26 @@ const CANCEL_SEQUENCE: &[u8] = &[
 ];
 
 /// Bytes to keep back while scanning for a ZRQINIT sentinel split across
-/// reads (`** DLE B 0 0` minus one).
-const SCAN_KEEP: usize = 5;
+/// reads (`** DLE B 0 0` minus one). Only a suffix that is actually a prefix
+/// of the sentinel is held; see [`sentinel_prefix_len`].
 const SENTINEL: [u8; 6] = [ZPAD, ZPAD, ZDLE, ZHEX, b'0', b'0'];
+
+/// Length of the longest suffix of `buf` that is a proper prefix of
+/// [`SENTINEL`] — the only bytes that can still turn into a sentinel once the
+/// next read arrives.
+///
+/// Holding back a fixed window instead (the old `SCAN_KEEP`) stalled the last
+/// bytes of every burst that was followed by an idle period: a shell prompt is
+/// written and then nothing else arrives, so the withheld tail never got
+/// flushed and the prompt rendered truncated (`dietpi@NanoPC-T4:~$` showed as
+/// `dietpi@NanoPC-T`).
+fn sentinel_prefix_len(buf: &[u8]) -> usize {
+    let max = buf.len().min(SENTINEL.len() - 1);
+    (1..=max)
+        .rev()
+        .find(|&len| buf[buf.len() - len..] == SENTINEL[..len])
+        .unwrap_or(0)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -250,7 +267,7 @@ impl ZmodemReceiver {
             // consumed by the header parser.
             return input.len();
         }
-        let keep = self.scan.len().min(SCAN_KEEP);
+        let keep = sentinel_prefix_len(&self.scan);
         let split = self.scan.len() - keep;
         out.passthrough.extend_from_slice(&self.scan[..split]);
         self.scan.drain(..split);

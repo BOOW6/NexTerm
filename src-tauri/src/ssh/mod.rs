@@ -588,6 +588,15 @@ struct SshOutputPayload {
     data: String,
 }
 
+/// Why a session's read loop ended. `exit` means the remote shell ended on its
+/// own (`exit`, logout, killed login shell) and the UI must not reconnect;
+/// `dropped` is a transport failure the reconnect logic should handle.
+#[derive(Clone, Serialize)]
+pub struct SshClosedPayload {
+    pub reason: &'static str,
+    pub exit_status: Option<u32>,
+}
+
 #[derive(Clone, Serialize)]
 pub struct SftpEntry {
     pub name: String,
@@ -1120,19 +1129,23 @@ impl SshManager {
 
         // Handshake timeouts, outermost first:
         // - TCP: 15s, so a host that accepts nothing fails fast.
-        // - inactivity_timeout (russh): 30s, covers stalls after the banner
-        //   (KEX/auth). russh 0.63 arms it for the whole transport loop and
-        //   the timer only resets on loop iterations, so the 120s host-key
-        //   decision (which suspends the loop inside packet processing) does
-        //   not consume the budget.
-        // - CONNECT_DEADLINE: outer bound for a server that accepts TCP but
-        //   never sends its SSH banner — read_ssh_id runs before russh's
-        //   timers. 150s = the 120s host-key dialog + handshake slack.
+        // - CONNECT_DEADLINE: outer bound for the handshake and for a server
+        //   that accepts TCP but never sends its SSH banner. 150s = the 120s
+        //   host-key dialog + handshake slack.
+        //
+        // No `inactivity_timeout`: russh arms it for the whole transport
+        // lifetime, not just the handshake. With it set to the same 30s as
+        // `keepalive_interval`, an idle-but-healthy session died at exactly
+        // the first keepalive tick — the two timers expire together and the
+        // inactivity branch wins, disconnecting a terminal that merely sat
+        // untouched for half a minute. Liveness is detected by the keepalive
+        // probes alone: 30s interval x 3 unanswered = ~90s, the same budget
+        // OpenSSH uses for ServerAliveInterval/ServerAliveCountMax.
         const TCP_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
         const CONNECT_DEADLINE: Duration = Duration::from_secs(150);
 
         let config = Arc::new(client::Config {
-            inactivity_timeout: Some(Duration::from_secs(30)),
+            inactivity_timeout: None,
             keepalive_interval: Some(Duration::from_secs(30)),
             keepalive_max: 3,
             ..Default::default()
@@ -1296,6 +1309,12 @@ impl SshManager {
             }
             let mut zfile: Option<ZmodemFile> = None;
 
+            // Distinguishes a remote shell that ended on its own (the user
+            // typed `exit`, or the login shell was killed) from a transport
+            // that dropped. The frontend must not auto-reconnect after the
+            // former: re-opening a shell the user just closed is wrong.
+            let mut exited_normally = false;
+            let mut exit_status: Option<u32> = None;
             while let Some(message) = read_half.wait().await {
                 match message {
                     ChannelMsg::Data { data } => {
@@ -1327,7 +1346,19 @@ impl SshManager {
                         };
                         let _ = app_handle.emit(&format!("ssh-output-{}", event_id), payload);
                     }
-                    ChannelMsg::ExitStatus { .. } | ChannelMsg::Eof | ChannelMsg::Close => break,
+                    ChannelMsg::ExitStatus { exit_status: code } => {
+                        exited_normally = true;
+                        exit_status = Some(code);
+                        break;
+                    }
+                    // Eof/Close without an exit-status still means the remote
+                    // side ended the session deliberately (e.g. a shell that
+                    // exec'd away). A dropped transport ends the `wait()`
+                    // stream instead of producing these messages.
+                    ChannelMsg::Eof | ChannelMsg::Close => {
+                        exited_normally = true;
+                        break;
+                    }
                     _ => continue,
                 }
             }
@@ -1341,7 +1372,13 @@ impl SshManager {
                 state.finish(&app_handle, false, false, true, None);
             }
 
-            let _ = app_handle.emit(&format!("ssh-closed-{}", event_id), ());
+            let _ = app_handle.emit(
+                &format!("ssh-closed-{}", event_id),
+                SshClosedPayload {
+                    reason: if exited_normally { "exit" } else { "dropped" },
+                    exit_status,
+                },
+            );
 
             // The connection died on its own (network drop, server restart):
             // release its port forwards and drop the dead session entry so

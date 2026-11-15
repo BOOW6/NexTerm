@@ -14,6 +14,8 @@ export const ZH: Dictionary = {
   'terminal.jumpMissingKeyOrCert': '跳板会话缺少私钥或证书文件',
   'terminal.sshDisconnected': 'SSH 连接已断开',
   'terminal.sshClosedByServer': 'SSH 连接已被服务器关闭',
+  'terminal.sshSessionEnded': '远程 Shell 已退出，不会自动重连',
+  'terminal.sshSessionEndedWithCode': '远程 Shell 已退出（退出码 {code}），不会自动重连',
   'terminal.sshConnectFailed': 'SSH 连接失败：{message}',
   'terminal.sshConnectFailedReason': 'SSH 连接失败',
   'terminal.localShellExited': '本地 Shell 已退出',
@@ -39,6 +41,9 @@ export const EN: Dictionary = {
   'terminal.jumpMissingKeyOrCert': 'Jump host is missing a private key or certificate file',
   'terminal.sshDisconnected': 'SSH disconnected',
   'terminal.sshClosedByServer': 'SSH connection closed by server',
+  'terminal.sshSessionEnded': 'Remote shell exited; not reconnecting automatically',
+  'terminal.sshSessionEndedWithCode':
+    'Remote shell exited (status {code}); not reconnecting automatically',
   'terminal.sshConnectFailed': 'SSH connection failed: {message}',
   'terminal.sshConnectFailedReason': 'SSH connection failed',
   'terminal.localShellExited': 'Local shell exited',

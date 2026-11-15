@@ -224,9 +224,24 @@ export async function listenSshOutput(
   });
 }
 
-export async function listenSshClosed(id: string, onClosed: () => void): Promise<() => void> {
-  return listen(`ssh-closed-${id}`, () => {
-    onClosed();
+/** Why the backend read loop ended for a session. */
+export interface SshClosedPayload {
+  /**
+   * `exit`: the remote shell ended on its own (user typed `exit`/logout) —
+   * the UI must not auto-reconnect. `dropped`: transport failure.
+   */
+  reason: 'exit' | 'dropped';
+  exit_status?: number | null;
+}
+
+export async function listenSshClosed(
+  id: string,
+  onClosed: (payload: SshClosedPayload) => void
+): Promise<() => void> {
+  return listen<SshClosedPayload>(`ssh-closed-${id}`, (event) => {
+    // Older backends emitted a unit payload; treat that as a drop so the
+    // reconnect behavior is unchanged if the two sides ever skew.
+    onClosed(event.payload ?? { reason: 'dropped' });
   });
 }
 
