@@ -115,6 +115,15 @@
   --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-button-pressed: inset 0 1px 2px rgba(0, 0, 0, 0.15);
 
+  /* Button / affordance state colors. Families that reserve the accent for
+   * the primary action and tint on hover need their own values; the defaults
+   * reproduce the classic look for a gradient-capable button. */
+  --button-primary-bg: hsl(var(--accent-strong));
+  --button-primary-hover-filter: none;
+  --button-primary-border: hsl(var(--accent-strong));
+  --button-secondary-hover-bg: hsl(var(--foreground));
+  --button-secondary-hover-color: hsl(var(--accent-foreground));
+  --link-color: hsl(var(--link));
   color-scheme: light;
 }
 
@@ -207,6 +216,12 @@
   --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.25);
   --shadow-button-pressed: inset 0 1px 2px rgba(0, 0, 0, 0.45);
 
+  --button-primary-bg: hsl(var(--accent-strong));
+  --button-primary-hover-filter: none;
+  --button-primary-border: hsl(var(--accent-strong));
+  --button-secondary-hover-bg: hsl(var(--foreground));
+  --button-secondary-hover-color: hsl(var(--accent-foreground));
+  --link-color: hsl(var(--link));
   color-scheme: dark;
 }
 
@@ -305,6 +320,12 @@
   --shadow-inset: inset 0 1px 2px rgba(37, 82, 126, 0.1);
   --shadow-button-pressed: inset 0 1px 3px rgba(21, 58, 94, 0.22);
 
+  --button-primary-bg: hsl(var(--accent-strong));
+  --button-primary-hover-filter: none;
+  --button-primary-border: hsl(var(--accent-strong));
+  --button-secondary-hover-bg: hsl(var(--foreground));
+  --button-secondary-hover-color: hsl(var(--accent-foreground));
+  --link-color: hsl(var(--link));
   color-scheme: light;
 }
 
@@ -403,6 +424,12 @@
   --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-button-pressed: inset 0 1px 3px rgba(0, 0, 0, 0.5);
 
+  --button-primary-bg: hsl(var(--accent-strong));
+  --button-primary-hover-filter: none;
+  --button-primary-border: hsl(var(--accent-strong));
+  --button-secondary-hover-bg: hsl(var(--foreground));
+  --button-secondary-hover-color: hsl(var(--accent-foreground));
+  --link-color: hsl(var(--link));
   color-scheme: dark;
 }
 
@@ -495,6 +522,12 @@
   --shadow-inset: none;
   --shadow-button-pressed: inset 0 0 0 1px hsl(var(--accent) / 0.55);
 
+  --button-primary-bg: hsl(var(--accent-strong));
+  --button-primary-hover-filter: none;
+  --button-primary-border: hsl(var(--accent-strong));
+  --button-secondary-hover-bg: hsl(var(--foreground));
+  --button-secondary-hover-color: hsl(var(--accent-foreground));
+  --link-color: hsl(var(--link));
   color-scheme: light;
 }
 
@@ -587,6 +620,12 @@
   --shadow-inset: none;
   --shadow-button-pressed: inset 0 0 0 1px hsl(var(--accent) / 0.65);
 
+  --button-primary-bg: hsl(var(--accent-strong));
+  --button-primary-hover-filter: none;
+  --button-primary-border: hsl(var(--accent-strong));
+  --button-secondary-hover-bg: hsl(var(--foreground));
+  --button-secondary-hover-color: hsl(var(--accent-foreground));
+  --link-color: hsl(var(--link));
   color-scheme: dark;
 }
 
@@ -675,6 +714,12 @@
   --shadow-inset: none;
   --shadow-button-pressed: inset 0 0 0 1px hsl(var(--foreground) / 0.12);
 
+  --button-primary-bg: hsl(var(--accent));
+  --button-primary-hover-filter: brightness(1.1);
+  --button-primary-border: transparent;
+  --button-secondary-hover-bg: hsl(var(--foreground) / 0.06);
+  --button-secondary-hover-color: hsl(var(--foreground));
+  --link-color: hsl(var(--accent-text));
   color-scheme: light;
 }
 
@@ -757,6 +802,12 @@
   --shadow-inset: none;
   --shadow-button-pressed: inset 0 0 0 1px hsl(var(--foreground) / 0.1);
 
+  --button-primary-bg: hsl(var(--accent));
+  --button-primary-hover-filter: brightness(1.1);
+  --button-primary-border: transparent;
+  --button-secondary-hover-bg: hsl(var(--foreground) / 0.06);
+  --button-secondary-hover-color: hsl(var(--foreground));
+  --link-color: hsl(var(--accent-text));
   color-scheme: dark;
 }
 
@@ -846,6 +897,12 @@
   --shadow-inset: none;
   --shadow-button-pressed: inset 0 0 0 1px hsl(var(--foreground) / 0.1);
 
+  --button-primary-bg: hsl(var(--accent));
+  --button-primary-hover-filter: brightness(1.1);
+  --button-primary-border: transparent;
+  --button-secondary-hover-bg: hsl(var(--foreground) / 0.06);
+  --button-secondary-hover-color: hsl(var(--foreground));
+  --link-color: hsl(var(--accent-text));
   color-scheme: light;
 }
 
@@ -928,6 +985,12 @@
   --shadow-inset: none;
   --shadow-button-pressed: inset 0 0 0 1px hsl(var(--foreground) / 0.12);
 
+  --button-primary-bg: hsl(var(--accent));
+  --button-primary-hover-filter: brightness(1.1);
+  --button-primary-border: transparent;
+  --button-secondary-hover-bg: hsl(var(--foreground) / 0.06);
+  --button-secondary-hover-color: hsl(var(--foreground));
+  --link-color: hsl(var(--accent-text));
   color-scheme: dark;
 }
 
@@ -1018,6 +1081,12 @@
   --shadow-inset: none;
   --shadow-button-pressed: inset 0 0 0 1px hsl(var(--foreground) / 0.1);
 
+  --button-primary-bg: hsl(var(--accent));
+  --button-primary-hover-filter: brightness(1.1);
+  --button-primary-border: transparent;
+  --button-secondary-hover-bg: hsl(var(--foreground) / 0.06);
+  --button-secondary-hover-color: hsl(var(--foreground));
+  --link-color: hsl(var(--accent-text));
   color-scheme: light;
 }
 
@@ -1099,6 +1168,12 @@
   --shadow-inset: none;
   --shadow-button-pressed: inset 0 0 0 1px hsl(var(--foreground) / 0.12);
 
+  --button-primary-bg: hsl(var(--accent));
+  --button-primary-hover-filter: brightness(1.1);
+  --button-primary-border: transparent;
+  --button-secondary-hover-bg: hsl(var(--foreground) / 0.06);
+  --button-secondary-hover-color: hsl(var(--foreground));
+  --link-color: hsl(var(--accent-text));
   color-scheme: dark;
 }
 
@@ -1187,6 +1262,12 @@
   --shadow-inset: none;
   --shadow-button-pressed: inset 0 0 0 1px hsl(var(--foreground) / 0.1);
 
+  --button-primary-bg: hsl(var(--accent));
+  --button-primary-hover-filter: brightness(1.1);
+  --button-primary-border: transparent;
+  --button-secondary-hover-bg: hsl(var(--foreground) / 0.06);
+  --button-secondary-hover-color: hsl(var(--foreground));
+  --link-color: hsl(var(--accent-text));
   color-scheme: light;
 }
 
@@ -1269,5 +1350,11 @@
   --shadow-inset: none;
   --shadow-button-pressed: inset 0 0 0 1px hsl(var(--foreground) / 0.12);
 
+  --button-primary-bg: hsl(var(--accent));
+  --button-primary-hover-filter: brightness(1.1);
+  --button-primary-border: transparent;
+  --button-secondary-hover-bg: hsl(var(--foreground) / 0.06);
+  --button-secondary-hover-color: hsl(var(--foreground));
+  --link-color: hsl(var(--accent-text));
   color-scheme: dark;
 }

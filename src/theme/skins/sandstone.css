@@ -24,31 +24,46 @@
   border-radius: 6px;
 }
 
-/* Secondary buttons are warm paper cards with a hairline, never gradients. */
+/* Buttons: warm paper cards with a hairline, never gradients; primary keeps a
+ * solid accent fill. Qualified by [data-variant] to outrank the classic hover
+ * gradient utility. */
 :root[data-theme^='sandstone'] .app-button {
   box-shadow: none;
   background-image: none;
-}
-
-:root[data-theme^='sandstone'] .app-button[data-variant='secondary'] {
-  background-color: hsl(var(--surface));
-  border-color: hsl(34 20% 86%);
-}
-
-:root[data-theme^='sandstone'][data-color-scheme='dark'] .app-button[data-variant='secondary'] {
-  border-color: hsl(var(--foreground) / 0.12);
-}
-
-:root[data-theme^='sandstone'] .app-button[data-variant='secondary']:hover {
-  background-color: hsl(var(--surface-hover));
+  border-radius: var(--button-radius);
 }
 
 :root[data-theme^='sandstone'] .app-button[data-variant='primary'] {
-  background-color: hsl(var(--accent));
+  background-image: none;
+  background-color: var(--button-primary-bg);
+  border-color: var(--button-primary-border);
   color: hsl(var(--accent-foreground));
 }
 
-/* Dialog headers sit flush on the paper surface. */
-:root[data-theme^='sandstone'] .app-dialog-header {
-  border-bottom-color: hsl(var(--foreground) / 0.08);
+:root[data-theme^='sandstone'] .app-button[data-variant='primary']:hover {
+  background-image: none;
+  background-color: var(--button-primary-bg);
+  border-color: var(--button-primary-border);
+  filter: var(--button-primary-hover-filter);
+  color: hsl(var(--accent-foreground));
+}
+
+:root[data-theme^='sandstone'] .app-button[data-variant='secondary'],
+:root[data-theme^='sandstone'] .app-button[data-variant='outline'] {
+  background-image: none;
+  background-color: hsl(var(--surface));
+  border-color: hsl(var(--foreground) / 0.15);
+  color: hsl(var(--foreground));
+}
+
+:root[data-theme^='sandstone'] .app-button[data-variant='secondary']:hover,
+:root[data-theme^='sandstone'] .app-button[data-variant='outline']:hover {
+  background-image: none;
+  background-color: hsl(var(--surface-hover));
+  color: hsl(var(--foreground));
+}
+
+:root[data-theme^='sandstone'] .app-button[data-variant='danger'] {
+  background-image: none;
+  color: hsl(var(--accent-foreground));
 }

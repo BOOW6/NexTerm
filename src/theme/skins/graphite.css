@@ -36,25 +36,80 @@
   outline-offset: 1px;
 }
 
-/* Buttons: no borders at all on secondary/ghost; the surface step carries
- * the affordance. Primary keeps its fill but loses the gradient. */
+/* Buttons: secondary carries its affordance with a surface step plus a hairline
+ * ring (box-shadow, so it never fights the `border` utility), primary keeps a
+ * solid fill with dark text on the bright accent.
+ *
+ * Collapsing slate.css's `background-image: none` and the classic
+ * `hover:bg-button-hover` gradient into the same element made the gradient win
+ * on hover (the utility is `:hover` + a class, this was plain class-level), so
+ * the filled button turned into a light gradient with `--accent-foreground`
+ * text on it. Every rule here is qualified by `[data-variant]` and re-asserts
+ * its fill on hover.
+ */
 :root[data-theme^='graphite'] .app-button {
   border-color: transparent;
+  border-radius: var(--button-radius);
   box-shadow: none;
-}
-
-:root[data-theme^='graphite'] .app-button[data-variant='secondary'] {
   background-image: none;
-  background-color: hsl(var(--surface));
-  color: hsl(var(--foreground));
-  box-shadow: 0 0 0 1px hsl(var(--foreground) / 0.08);
-}
-
-:root[data-theme^='graphite'] .app-button[data-variant='secondary']:hover {
-  background-color: hsl(var(--surface-active));
 }
 
 :root[data-theme^='graphite'] .app-button[data-variant='primary'] {
   background-image: none;
+  background-color: var(--button-primary-bg);
+  color: hsl(var(--accent-foreground));
+}
+
+:root[data-theme^='graphite'] .app-button[data-variant='primary']:hover {
+  background-image: none;
+  background-color: var(--button-primary-bg);
+  filter: var(--button-primary-hover-filter);
+  color: hsl(var(--accent-foreground));
+}
+
+:root[data-theme^='graphite'] .app-button[data-variant='primary']:disabled {
+  filter: none;
+}
+
+:root[data-theme^='graphite'] .app-button[data-variant='secondary'],
+:root[data-theme^='graphite'] .app-button[data-variant='outline'] {
+  background-image: none;
+  background-color: hsl(var(--surface));
+  color: hsl(var(--foreground));
+  box-shadow: 0 0 0 1px hsl(var(--foreground) / 0.14);
+}
+
+:root[data-theme^='graphite'] .app-button[data-variant='secondary']:hover,
+:root[data-theme^='graphite'] .app-button[data-variant='outline']:hover {
+  background-image: none;
+  background-color: hsl(var(--foreground) / 0.08);
+  color: hsl(var(--foreground));
+  box-shadow: 0 0 0 1px hsl(var(--foreground) / 0.22);
+}
+
+/* Ghost buttons stay quiet but keep a faint ring, so labels like "恢复默认" and
+ * "取消" in the settings footer still read as controls on a near-black bar. */
+:root[data-theme^='graphite'] .app-button[data-variant='ghost'] {
+  color: hsl(var(--muted));
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.1);
+}
+
+:root[data-theme^='graphite'] .app-button[data-variant='ghost']:hover {
+  background-color: hsl(var(--foreground) / 0.08);
+  color: hsl(var(--foreground));
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.2);
+}
+
+/* Danger keeps its solid fill plus a visible outline, so it never merges into
+ * a dark row background. */
+:root[data-theme^='graphite'] .app-button[data-variant='danger'] {
+  background-image: none;
+  border-color: hsl(var(--error));
+  color: hsl(var(--accent-foreground));
+}
+
+:root[data-theme^='graphite'] .app-button[data-variant='danger']:hover {
+  background-image: none;
+  filter: brightness(1.08);
   color: hsl(var(--accent-foreground));
 }

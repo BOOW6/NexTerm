@@ -42,26 +42,56 @@
   border-bottom-color: var(--hairline-color);
 }
 
-/* Secondary buttons are surface-coloured with a hairline outline, so the
- * accent is reserved for the primary action. */
-:root[data-theme^='slate'] .app-button[data-variant='secondary'] {
+/* Buttons.
+ *
+ * The utilities in Components/Button paint the gradient + `hover:brightness-105`;
+ * these rules replace that with flat, token-driven states. Every rule below is
+ * qualified by `[data-variant]` so it always outranks the `hover:bg-button-hover`
+ * utility, which would otherwise beat a bare `.app-button:hover` on specificity
+ * and paint the classic gradient back on hover. Filled variants get their fill
+ * from the `bg-button-primary` utility, hover changes only its filter.
+ */
+:root[data-theme^='slate'] .app-button {
+  box-shadow: none;
+  border-radius: var(--button-radius);
+  font-weight: 500;
+}
+
+:root[data-theme^='slate'] .app-button[data-variant='primary'] {
+  background-image: none;
+  background-color: var(--button-primary-bg);
+  border-color: var(--button-primary-border);
+  color: hsl(var(--accent-foreground));
+}
+
+:root[data-theme^='slate'] .app-button[data-variant='primary']:hover {
+  background-image: none;
+  background-color: var(--button-primary-bg);
+  filter: var(--button-primary-hover-filter);
+  color: hsl(var(--accent-foreground));
+}
+
+:root[data-theme^='slate'] .app-button[data-variant='primary']:disabled {
+  filter: none;
+}
+
+:root[data-theme^='slate'] .app-button[data-variant='secondary'],
+:root[data-theme^='slate'] .app-button[data-variant='outline'] {
   background-image: none;
   background-color: hsl(var(--surface));
   border-color: hsl(var(--foreground) / 0.15);
   color: hsl(var(--foreground));
 }
 
-:root[data-theme^='slate'] .app-button[data-variant='secondary']:hover {
+:root[data-theme^='slate'] .app-button[data-variant='secondary']:hover,
+:root[data-theme^='slate'] .app-button[data-variant='outline']:hover {
   background-image: none;
   background-color: hsl(var(--foreground) / 0.06);
+  color: hsl(var(--foreground));
 }
 
-:root[data-theme^='slate'] .app-button[data-variant='primary'] {
+/* Danger keeps its red fill; only the gradient goes away. */
+:root[data-theme^='slate'] .app-button[data-variant='danger'] {
   background-image: none;
-  border-color: transparent;
-}
-
-:root[data-theme^='slate'] .app-button {
-  box-shadow: none;
-  font-weight: 500;
+  color: hsl(var(--accent-foreground));
 }

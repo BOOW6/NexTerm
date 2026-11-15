@@ -103,6 +103,7 @@ const PAIRINGS: Array<[string, string, string, number]> = [
   ['secondary text on background', '--muted', '--background', 4.5],
   ['tertiary micro-label on background', '--muted-foreground', '--background', 3],
   ['primary button label', '--accent-foreground', '--accent-strong', 3],
+  ['secondary button label', '--foreground', '--surface', 4.5],
   ['link text on background', '--link', '--background', 3],
   ['success state on surface', '--success', '--surface', 3],
   ['warning state on surface', '--warning', '--surface', 3],

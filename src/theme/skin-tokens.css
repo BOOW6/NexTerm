@@ -134,6 +134,23 @@
   border-radius: var(--button-radius);
 }
 
+/* Inline links use the family's link color so a theme whose accent is dark
+ * (e.g. a light UI's primary button) does not drag link text down with it. */
+:root .app-link {
+  color: var(--link-color);
+}
+
+:root .app-link:hover {
+  color: hsl(var(--link-hover));
+}
+
+/* Danger keeps the error fill in every family; only its label follows the
+ * family's on-accent text color (white on the classic reds, dark on the bright
+ * graphite accent). */
+:root .app-button[data-variant='danger'] {
+  color: hsl(var(--accent-foreground));
+}
+
 :root .app-popup,
 :root .app-menu {
   border-radius: var(--menu-radius);

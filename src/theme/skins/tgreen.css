@@ -45,26 +45,46 @@
   opacity: 0.85;
 }
 
-/* Secondary buttons: surface cards with a hairline, no gradient. */
+/* Buttons: surface cards with a hairline (no gradient), primary keeps a solid
+ * accent fill. Qualified by [data-variant] so the classic hover gradient
+ * utility cannot repaint the button on hover. */
 :root[data-theme^='tgreen'] .app-button {
   box-shadow: none;
   background-image: none;
-}
-
-:root[data-theme^='tgreen'] .app-button[data-variant='secondary'] {
-  background-color: hsl(var(--surface));
-  border-color: hsl(var(--foreground) / 0.12);
-}
-
-:root[data-theme^='tgreen'] .app-button[data-variant='secondary']:hover {
-  background-color: hsl(var(--surface-hover));
-}
-
-:root[data-theme^='tgreen'] .app-button {
-  background-image: none;
+  border-radius: var(--button-radius);
 }
 
 :root[data-theme^='tgreen'] .app-button[data-variant='primary'] {
-  background-color: hsl(var(--accent));
+  background-image: none;
+  background-color: var(--button-primary-bg);
+  border-color: var(--button-primary-border);
+  color: hsl(var(--accent-foreground));
+}
+
+:root[data-theme^='tgreen'] .app-button[data-variant='primary']:hover {
+  background-image: none;
+  background-color: var(--button-primary-bg);
+  border-color: var(--button-primary-border);
+  filter: var(--button-primary-hover-filter);
+  color: hsl(var(--accent-foreground));
+}
+
+:root[data-theme^='tgreen'] .app-button[data-variant='secondary'],
+:root[data-theme^='tgreen'] .app-button[data-variant='outline'] {
+  background-image: none;
+  background-color: hsl(var(--surface));
+  border-color: hsl(var(--foreground) / 0.12);
+  color: hsl(var(--foreground));
+}
+
+:root[data-theme^='tgreen'] .app-button[data-variant='secondary']:hover,
+:root[data-theme^='tgreen'] .app-button[data-variant='outline']:hover {
+  background-image: none;
+  background-color: hsl(var(--surface-hover));
+  color: hsl(var(--foreground));
+}
+
+:root[data-theme^='tgreen'] .app-button[data-variant='danger'] {
+  background-image: none;
   color: hsl(var(--accent-foreground));
 }
