@@ -1431,7 +1431,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
                     buildNumber: platform.buildNumber ?? undefined
                   }
                 : undefined,
-              theme: getTerminalTheme(settings.terminalColorScheme)
+              theme: getTerminalTheme(settings.terminalColorScheme, themeId)
             });
             terminal = instance;
 
@@ -2119,7 +2119,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
     useEffect(() => {
       if (terminalRef.current) {
-        terminalRef.current.options.theme = getTerminalTheme(terminalColorScheme);
+        terminalRef.current.options.theme = getTerminalTheme(terminalColorScheme, themeId);
       }
       // customThemes in deps: a custom scheme becomes resolvable once the
       // folder scan lands, and must re-resolve when its files change.

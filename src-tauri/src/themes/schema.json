@@ -25,8 +25,64 @@
       "description": "Optional description shown under the theme name."
     },
     "extends": {
-      "enum": ["day", "dim", "aqua-light", "aqua-dark", "holo-light", "holo-dark"],
-      "description": "Built-in base theme providing every color not listed here. Must match `variant`; defaults to day (light) or dim (dark)."
+      "enum": [
+        "day",
+        "dim",
+        "aqua-light",
+        "aqua-dark",
+        "holo-light",
+        "holo-dark",
+        "slate-light",
+        "slate-dark",
+        "graphite-light",
+        "graphite-dark",
+        "tgreen-light",
+        "tgreen-dark",
+        "sandstone-light",
+        "sandstone-dark"
+      ],
+      "description": "Built-in base theme providing every color not listed here. Must match `variant`; defaults to slate-light (light) or slate-dark (dark)."
+    },
+    "structure": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional structure overrides (radii, elevation-adjacent geometry, chrome). Numbers are pixels except panelWeight (font weight) and letterSpacing (em).",
+      "properties": {
+        "radius": { "$ref": "#/definitions/px" },
+        "radiusSm": { "$ref": "#/definitions/px" },
+        "radiusMd": { "$ref": "#/definitions/px" },
+        "radiusLg": { "$ref": "#/definitions/px" },
+        "menuRadius": { "$ref": "#/definitions/px" },
+        "menuPadding": { "$ref": "#/definitions/px" },
+        "buttonRadius": { "$ref": "#/definitions/px" },
+        "tabHeight": { "$ref": "#/definitions/px" },
+        "tabIndicator": {
+          "$ref": "#/definitions/px",
+          "description": "Thickness of the active-tab underline; 0 disables it."
+        },
+        "rowSelectedAccentBar": { "$ref": "#/definitions/px" },
+        "panelWeight": {
+          "type": "number",
+          "minimum": 100,
+          "maximum": 900,
+          "description": "Font weight of panel and dialog headers."
+        },
+        "letterSpacing": {
+          "type": "number",
+          "minimum": -0.1,
+          "maximum": 0.5,
+          "description": "Header letter spacing, in em."
+        },
+        "hairlineColor": { "$ref": "#/definitions/hex" },
+        "panelHeaderBg": { "$ref": "#/definitions/hex" },
+        "surfaceBackdrop": { "$ref": "#/definitions/hex" },
+        "rowSelectedBg": { "$ref": "#/definitions/hex" },
+        "groupHeaderBg": { "$ref": "#/definitions/hex" },
+        "menuHoverBg": { "$ref": "#/definitions/hex" },
+        "navHoverBg": { "$ref": "#/definitions/hex" },
+        "tabActiveBg": { "$ref": "#/definitions/hex" },
+        "tabHiddenBg": { "$ref": "#/definitions/hex" }
+      }
     },
     "colors": {
       "type": "object",
@@ -93,6 +149,11 @@
     "hex": {
       "type": "string",
       "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
+    },
+    "px": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 64
     }
   }
 }

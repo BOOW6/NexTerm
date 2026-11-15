@@ -98,6 +98,31 @@ describe('resolveCustomThemeVars', () => {
     const vars = resolveCustomThemeVars(customTheme({ colors: { notAColor: '#fff' } }));
     expect(Object.keys(vars)).toHaveLength(0);
   });
+
+  it('maps structure overrides onto structure tokens', () => {
+    const vars = resolveCustomThemeVars(
+      customTheme({
+        structure: {
+          radiusSm: '4px',
+          tabHeight: '32px',
+          panelWeight: '600',
+          letterSpacing: '-0.01em',
+          hairlineColor: '#c9d1d9'
+        }
+      })
+    );
+    expect(vars['--radius-sm']).toBe('4px');
+    expect(vars['--tab-height']).toBe('32px');
+    expect(vars['--panel-header-weight']).toBe('600');
+    expect(vars['--panel-header-tracking']).toBe('-0.01em');
+    // Color keys arrive as hex and are converted to the tokens.css triplet.
+    expect(vars['--hairline-color']).toBe(hexToHslTriplet('#c9d1d9'));
+  });
+
+  it('ignores unknown structure keys', () => {
+    const vars = resolveCustomThemeVars(customTheme({ structure: { mystery: '1px' } }));
+    expect(Object.keys(vars)).toHaveLength(0);
+  });
 });
 
 describe('applyCustomThemeVars', () => {
@@ -119,6 +144,14 @@ describe('applyCustomThemeVars', () => {
 
     applyCustomThemeVars(root, null);
     expect(root.style.getPropertyValue('--accent')).toBe('');
+  });
+
+  it('clears structure overrides too', () => {
+    const root = document.documentElement;
+    applyCustomThemeVars(root, customTheme({ structure: { radiusSm: '4px' } }));
+    expect(root.style.getPropertyValue('--radius-sm')).toBe('4px');
+    applyCustomThemeVars(root, null);
+    expect(root.style.getPropertyValue('--radius-sm')).toBe('');
   });
 });
 

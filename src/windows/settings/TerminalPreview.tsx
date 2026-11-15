@@ -104,7 +104,7 @@ export default function TerminalPreview({
         lineHeight,
         scrollback,
         disableStdin: true,
-        theme: getTerminalTheme(colorScheme)
+        theme: getTerminalTheme(colorScheme, themeId)
       });
       terminal = instance;
 
@@ -280,7 +280,7 @@ export default function TerminalPreview({
 
   useEffect(() => {
     if (terminalRef.current) {
-      terminalRef.current.options.theme = getTerminalTheme(colorScheme);
+      terminalRef.current.options.theme = getTerminalTheme(colorScheme, themeId);
     }
     // customThemes in deps: custom schemes must re-resolve once the folder
     // scan lands and whenever its files change.

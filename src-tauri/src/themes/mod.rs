@@ -44,7 +44,35 @@ const BUILTIN_THEMES: &[(&str, &str)] = &[
     ("aqua-dark", "dark"),
     ("holo-light", "light"),
     ("holo-dark", "dark"),
+    ("slate-light", "light"),
+    ("slate-dark", "dark"),
+    ("graphite-light", "light"),
+    ("graphite-dark", "dark"),
+    ("tgreen-light", "light"),
+    ("tgreen-dark", "dark"),
+    ("sandstone-light", "light"),
+    ("sandstone-dark", "dark"),
 ];
+
+/// Structural overrides accepted in a theme file's `structure` section. These
+/// map onto the structure tokens the modern built-in families use (radii,
+/// elevation, tab geometry, chrome), so an external theme can restyle the same
+/// things a built-in family can. Integer values are pixels/tenths of a second;
+/// `panelWeight`, `letterSpacing` float is em.
+const STRUCTURE_PX_KEYS: &[&str] = &[
+    "radius",
+    "radiusSm",
+    "radiusMd",
+    "radiusLg",
+    "menuRadius",
+    "menuPadding",
+    "buttonRadius",
+    "tabHeight",
+    "tabIndicator",
+    "rowSelectedAccentBar",
+];
+
+const STRUCTURE_FLOAT_KEYS: &[&str] = &["panelWeight", "letterSpacing"];
 
 /// Semantic color keys accepted in a theme file's `colors` section. The
 /// frontend maps them onto the CSS custom properties from tokens.css
@@ -148,6 +176,9 @@ pub struct CustomTheme {
     pub source: &'static str,
     pub colors: BTreeMap<String, String>,
     pub terminal: Option<CustomTerminalColors>,
+    /// Validated `structure` overrides, already flattened to CSS values
+    /// (`{"radiusSm": "4px"}`); empty when the file has none.
+    pub structure: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -177,6 +208,8 @@ struct ThemeFile {
     colors: BTreeMap<String, String>,
     #[serde(default)]
     terminal: Option<ThemeTerminalSection>,
+    #[serde(default)]
+    structure: BTreeMap<String, serde_json::Value>,
     #[serde(rename = "$schema", default)]
     #[allow(dead_code)]
     schema_ref: Option<String>,
@@ -283,10 +316,12 @@ fn is_builtin_theme(id: &str) -> bool {
 }
 
 fn default_extends(variant: &str) -> &'static str {
+    // Mirrors DEFAULT_LIGHT_THEME / DEFAULT_DARK_THEME on the frontend: a theme
+    // file that leaves out `extends` lands on the modern baseline.
     if variant == "light" {
-        "day"
+        "slate-light"
     } else {
-        "dim"
+        "slate-dark"
     }
 }
 
@@ -421,6 +456,8 @@ struct ThemeParts {
     extends: Option<String>,
     colors: BTreeMap<String, String>,
     terminal: Option<CustomTerminalColors>,
+    /// Flattened CSS values for the `structure` section (already validated).
+    structure: BTreeMap<String, String>,
     source: &'static str,
 }
 
@@ -432,6 +469,7 @@ fn build_custom_theme(id: String, parts: ThemeParts) -> Result<CustomTheme, Stri
         extends,
         colors,
         terminal,
+        structure,
         source,
     } = parts;
     if !matches!(variant.as_str(), "light" | "dark") {
@@ -471,8 +509,71 @@ fn build_custom_theme(id: String, parts: ThemeParts) -> Result<CustomTheme, Stri
         source,
         colors: resolved_colors,
         terminal,
+        structure,
     })
 }
+
+/// Validate a theme file's optional `structure` section and flatten it to the
+/// CSS-value map the frontend writes as inline custom properties. Color-valued
+/// keys accept hex; numeric keys are pixel/em numbers and are range-checked.
+fn validate_structure(
+    structure: Option<BTreeMap<String, serde_json::Value>>,
+) -> Result<BTreeMap<String, String>, String> {
+    let mut resolved = BTreeMap::new();
+    let Some(structure) = structure else {
+        return Ok(resolved);
+    };
+    for (key, value) in structure {
+        if STRUCTURE_PX_KEYS.contains(&key.as_str()) {
+            let number = value
+                .as_f64()
+                .ok_or_else(|| format!("structure.{key} must be a number of pixels"))?;
+            if !(0.0..=64.0).contains(&number) {
+                return Err(format!("structure.{key} must be between 0 and 64"));
+            }
+            resolved.insert(key, format!("{number}px"));
+        } else if STRUCTURE_FLOAT_KEYS.contains(&key.as_str()) {
+            let number = value
+                .as_f64()
+                .ok_or_else(|| format!("structure.{key} must be a number"))?;
+            // `letterSpacing` is em and may be negative (tightening); the other
+            // float key is a font weight.
+            let (min, max) = if key == "letterSpacing" {
+                (-0.5, 0.5)
+            } else {
+                (100.0, 900.0)
+            };
+            if !(min..=max).contains(&number) {
+                return Err(format!("structure.{key} is out of range"));
+            }
+            let unit = if key == "letterSpacing" { "em" } else { "" };
+            resolved.insert(key, format!("{number}{unit}"));
+        } else if STRUCTURE_COLOR_KEYS.contains(&key.as_str()) {
+            let text = value
+                .as_str()
+                .ok_or_else(|| format!("structure.{key} must be a hex color"))?;
+            resolved.insert(key, normalize_hex(text)?);
+        } else {
+            return Err(format!(
+                "unknown structure key '{key}' (see theme.schema.json)"
+            ));
+        }
+    }
+    Ok(resolved)
+}
+
+/// Structure keys that take a color instead of a number.
+const STRUCTURE_COLOR_KEYS: &[&str] = &[
+    "hairlineColor",
+    "panelHeaderBg",
+    "surfaceBackdrop",
+    "rowSelectedBg",
+    "groupHeaderBg",
+    "menuHoverBg",
+    "navHoverBg",
+    "tabActiveBg",
+    "tabHiddenBg",
+];
 
 fn detect_windows_terminal(value: &serde_json::Value) -> bool {
     let Some(object) = value.as_object() else {
@@ -674,6 +775,7 @@ fn load_theme_file(path: &Path, seen: &mut HashSet<String>) -> Result<CustomThem
             extends: None,
             colors: BTreeMap::new(),
             terminal: Some(terminal),
+            structure: BTreeMap::new(),
             source: "iterm2",
         }
     } else {
@@ -683,6 +785,7 @@ fn load_theme_file(path: &Path, seen: &mut HashSet<String>) -> Result<CustomThem
             let file: ThemeFile = serde_json::from_value(value)
                 .map_err(|error| format!("invalid theme file: {error}"))?;
             let terminal = validate_terminal_colors(file.terminal)?;
+            let structure = validate_structure(Some(file.structure))?;
             ThemeParts {
                 name: file.name,
                 variant: file.variant,
@@ -690,6 +793,7 @@ fn load_theme_file(path: &Path, seen: &mut HashSet<String>) -> Result<CustomThem
                 extends: file.extends,
                 colors: file.colors,
                 terminal,
+                structure,
                 source: "json",
             }
         } else if detect_windows_terminal(&value) {
@@ -701,6 +805,7 @@ fn load_theme_file(path: &Path, seen: &mut HashSet<String>) -> Result<CustomThem
                 extends: None,
                 colors: BTreeMap::new(),
                 terminal: Some(terminal),
+                structure: BTreeMap::new(),
                 source: "windows-terminal",
             }
         } else {
@@ -862,6 +967,7 @@ mod tests {
                 extends: file.extends,
                 colors: file.colors,
                 terminal: validate_terminal_colors(file.terminal).expect("terminal section"),
+                structure: BTreeMap::new(),
                 source: "json",
             },
         )
@@ -888,6 +994,7 @@ mod tests {
                 extends: None,
                 colors: BTreeMap::new(),
                 terminal: None,
+                structure: BTreeMap::new(),
                 source: "json",
             },
         )
@@ -904,6 +1011,7 @@ mod tests {
                 extends: None,
                 colors,
                 terminal: None,
+                structure: BTreeMap::new(),
                 source: "json",
             },
         )
@@ -921,6 +1029,7 @@ mod tests {
                 extends: Some("day".to_string()),
                 colors: BTreeMap::new(),
                 terminal: None,
+                structure: BTreeMap::new(),
                 source: "json",
             },
         )
@@ -1123,4 +1232,127 @@ mod tests {
         "brightCyan": "#61D6D6",
         "brightWhite": "#F2F2F2"
     }"##;
+
+    /// Parse one NexTerm theme JSON string in a throwaway folder: the test
+    /// counterpart of dropping a file into the themes directory.
+    fn load_theme_json(name: &str, json: &str) -> Result<CustomTheme, String> {
+        let dir = TempDir::new().expect("temp dir");
+        std::fs::write(dir.path().join(format!("{name}.json")), json).expect("write theme");
+        let mut seen = HashSet::new();
+        load_theme_file(&dir.path().join(format!("{name}.json")), &mut seen)
+    }
+    #[test]
+    fn structure_section_flattens_to_css_values() {
+        let theme = load_theme_json(
+            "modern",
+            r##"{
+                "name": "Modern",
+                "variant": "dark",
+                "extends": "slate-dark",
+                "structure": {
+                    "radiusSm": 4,
+                    "tabHeight": 32,
+                    "tabIndicator": 2,
+                    "panelWeight": 600,
+                    "letterSpacing": -0.01,
+                    "hairlineColor": "#2d333b"
+                }
+            }"##,
+        )
+        .expect("structure section must parse");
+        assert_eq!(theme.extends, "slate-dark");
+        assert_eq!(
+            theme.structure.get("radiusSm").map(String::as_str),
+            Some("4px")
+        );
+        assert_eq!(
+            theme.structure.get("tabHeight").map(String::as_str),
+            Some("32px")
+        );
+        assert_eq!(
+            theme.structure.get("panelWeight").map(String::as_str),
+            Some("600")
+        );
+        assert_eq!(
+            theme.structure.get("letterSpacing").map(String::as_str),
+            Some("-0.01em")
+        );
+        assert_eq!(
+            theme.structure.get("hairlineColor").map(String::as_str),
+            Some("#2d333b")
+        );
+    }
+
+    #[test]
+    fn structure_section_rejects_unknown_and_out_of_range_values() {
+        let unknown = load_theme_json(
+            "bad",
+            r##"{ "name": "Bad", "variant": "dark", "structure": { "mystery": 1 } }"##,
+        )
+        .expect_err("unknown structure key must fail");
+        assert!(unknown.contains("unknown structure key"));
+
+        let huge = load_theme_json(
+            "huge",
+            r##"{ "name": "Huge", "variant": "dark", "structure": { "radiusSm": 999 } }"##,
+        )
+        .expect_err("out-of-range radius must fail");
+        assert!(huge.contains("between 0 and 64"));
+
+        let not_hex = load_theme_json(
+            "hex",
+            r##"{ "name": "Hex", "variant": "dark", "structure": { "hairlineColor": "red" } }"##,
+        )
+        .expect_err("non-hex color must fail");
+        assert!(not_hex.contains("hex color"));
+    }
+
+    #[test]
+    fn default_extends_lands_on_the_modern_baseline() {
+        let dark = load_theme_json("x", r##"{ "name": "X", "variant": "dark" }"##)
+            .expect("theme without extends must parse");
+        assert_eq!(dark.extends, "slate-dark");
+        let light = load_theme_json("y", r##"{ "name": "Y", "variant": "light" }"##)
+            .expect("theme without extends must parse");
+        assert_eq!(light.extends, "slate-light");
+    }
+
+    #[test]
+    fn every_modern_builtin_is_accepted_as_extends() {
+        for (id, variant) in BUILTIN_THEMES {
+            let json =
+                format!(r#"{{ "name": "Base", "variant": "{variant}", "extends": "{id}" }}"#);
+            let theme =
+                load_theme_json("base", &json).unwrap_or_else(|error| panic!("{id}: {error}"));
+            assert_eq!(&theme.extends, id);
+        }
+    }
+
+    #[test]
+    fn schema_extends_enum_matches_the_builtin_table() {
+        let schema: serde_json::Value =
+            serde_json::from_str(SCHEMA_JSON).expect("schema.json must be valid JSON");
+        let ids = schema["properties"]["extends"]["enum"]
+            .as_array()
+            .expect("extends enum")
+            .iter()
+            .map(|value| value.as_str().expect("string id").to_string())
+            .collect::<Vec<_>>();
+        let expected = BUILTIN_THEMES
+            .iter()
+            .map(|(id, _)| id.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, expected);
+        // Every structure key the validator knows is documented for editors.
+        let documented = schema["properties"]["structure"]["properties"]
+            .as_object()
+            .expect("structure properties");
+        for key in STRUCTURE_PX_KEYS
+            .iter()
+            .chain(STRUCTURE_FLOAT_KEYS)
+            .chain(STRUCTURE_COLOR_KEYS)
+        {
+            assert!(documented.contains_key(*key), "schema is missing '{key}'");
+        }
+    }
 }

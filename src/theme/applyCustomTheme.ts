@@ -43,8 +43,47 @@ export const UI_COLOR_VARS: Record<string, string> = {
   terminalSelection: '--terminal-selection'
 };
 
-/** Normalize `#rgb/#rgba/#rrggbb/#rrggbbaa` (case-insensitive) to `#rrggbb[aa]`. */
-export function expandHex(value: string): string | null {
+/** Theme-file `structure` key -> CSS custom property. */
+export const STRUCTURE_VARS: Record<string, string> = {
+  radius: '--radius',
+  radiusSm: '--radius-sm',
+  radiusMd: '--radius-md',
+  radiusLg: '--radius-lg',
+  menuRadius: '--menu-radius',
+  menuPadding: '--menu-padding',
+  buttonRadius: '--button-radius',
+  tabHeight: '--tab-height',
+  tabIndicator: '--tab-indicator',
+  rowSelectedAccentBar: '--row-selected-accent-bar',
+  panelWeight: '--panel-header-weight',
+  letterSpacing: '--panel-header-tracking',
+  hairlineColor: '--hairline-color',
+  panelHeaderBg: '--panel-header-bg',
+  surfaceBackdrop: '--surface-backdrop',
+  rowSelectedBg: '--row-selected-bg',
+  groupHeaderBg: '--group-header-bg',
+  menuHoverBg: '--menu-hover-bg',
+  navHoverBg: '--nav-hover-bg',
+  tabActiveBg: '--tab-active-bg',
+  tabHiddenBg: '--tab-hidden-bg'
+};
+
+/** Structure keys whose values reach the theme as hex colors. */
+const STRUCTURE_COLOR_KEYS = new Set([
+  'hairlineColor',
+  'panelHeaderBg',
+  'surfaceBackdrop',
+  'rowSelectedBg',
+  'groupHeaderBg',
+  'menuHoverBg',
+  'navHoverBg',
+  'tabActiveBg',
+  'tabHiddenBg'
+]);
+
+/** Normalize `#rgb/#rgba/#rrggbb/#rrggbbaa` (case-insensitive) to `#rrggbb[aa]`. */ export function expandHex(
+  value: string
+): string | null {
   let body = value.trim().toLowerCase().replace(/^#/, '');
   if (!/^[0-9a-f]+$/.test(body)) {
     return null;
@@ -139,12 +178,21 @@ export function resolveCustomThemeVars(theme: CustomThemeDefinition): Record<str
         hexToRgba(terminal.selectionBackground) ?? terminal.selectionBackground;
     }
   }
+  for (const [key, value] of Object.entries(theme.structure ?? {})) {
+    const cssVar = STRUCTURE_VARS[key];
+    if (!cssVar) {
+      continue;
+    }
+    // Color keys arrive as hex and must become the `H S% L%` triplet (or
+    // rgba() for opaque fills) tokens.css expects; numbers are already CSS.
+    vars[cssVar] = STRUCTURE_COLOR_KEYS.has(key) ? (hexToHslTriplet(value) ?? value) : value;
+  }
   return vars;
 }
 
 /** Clear previous overrides, then apply the theme's (or none for built-ins). */
 export function applyCustomThemeVars(root: HTMLElement, theme: CustomThemeDefinition | null): void {
-  for (const cssVar of Object.values(UI_COLOR_VARS)) {
+  for (const cssVar of [...Object.values(UI_COLOR_VARS), ...Object.values(STRUCTURE_VARS)]) {
     root.style.removeProperty(cssVar);
   }
   if (!theme) {

@@ -23,6 +23,12 @@ export interface CustomThemeDefinition {
   /** Semantic color key -> hex, validated on the backend. */
   colors: Record<string, string>;
   terminal: CustomTerminalColors | null;
+  /**
+   * Optional structure overrides, already flattened to CSS values by the
+   * backend (e.g. `{ radiusSm: '4px', panelWeight: '600' }`). Keys mirror the
+   * structure tokens in tokens.css.
+   */
+  structure?: Record<string, string>;
 }
 
 export interface ThemeScanError {
