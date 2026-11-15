@@ -11,9 +11,12 @@ export interface ThemeContextValue {
   darkTheme: ThemeId;
   lightThemeName: string;
   darkThemeName: string;
+  /** Hex accent override for modern families ('' = the theme's own accent). */
+  themeAccent: string;
   setMode: (mode: ThemeMode) => void;
   setLightTheme: (theme: ThemeId) => void;
   setDarkTheme: (theme: ThemeId) => void;
+  setThemeAccent: (accent: string) => void;
   cycle: () => void;
 }
 

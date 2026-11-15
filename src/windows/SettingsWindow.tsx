@@ -39,7 +39,14 @@ import {
   type ShortcutAction,
   type TerminalCursorStyle
 } from '../stores/settingsStore';
-import { THEME_FAMILIES, getTheme, type ThemeDefinition, type ThemeMode } from '../theme/themes';
+import {
+  MODERN_THEME_ACCENTS,
+  themeFamiliesIn,
+  getTheme,
+  type ThemeDefinition,
+  type ThemeGroup,
+  type ThemeMode
+} from '../theme/themes';
 import { TERMINAL_COLOR_SCHEMES } from '../theme/terminalColorSchemes';
 import { useCustomThemesStore } from '../theme/customThemesStore';
 import { customThemeSpecimenStyle } from '../theme/applyCustomTheme';
@@ -202,6 +209,17 @@ function buildFontOptions(
 }
 
 const TerminalPreview = lazy(() => import('./settings/TerminalPreview'));
+
+/** Catalog groups in display order (modern families first). */
+const THEME_GROUPS: ThemeGroup[] = ['modern', 'classic'];
+
+/** Swatch row for the accent override: presets of every modern family. */
+const ACCENT_SWATCHES = [
+  ...MODERN_THEME_ACCENTS.slate,
+  ...MODERN_THEME_ACCENTS.graphite.filter(
+    (accent) => !MODERN_THEME_ACCENTS.slate.some((preset) => preset.accent === accent.accent)
+  )
+];
 
 function initialTab(): SettingsTab {
   const tab = new URLSearchParams(window.location.search).get('tab');
@@ -1076,54 +1094,118 @@ export default function SettingsWindow() {
             </span>
           </div>
           <div className="space-y-2">
-            {THEME_FAMILIES.map((family) => {
-              const darkTheme = getTheme(family.dark);
-              const lightTheme = getTheme(family.light);
-              const darkSelected = draft.darkTheme === family.dark;
-              const lightSelected = draft.lightTheme === family.light;
-
+            {THEME_GROUPS.map((group) => {
+              const families = themeFamiliesIn(group);
+              if (families.length === 0) {
+                return null;
+              }
               return (
-                <div
-                  key={family.id}
-                  className={cn(
-                    'flex flex-wrap items-center gap-3 rounded-sm border p-2 transition-colors',
-                    darkSelected || lightSelected
-                      ? 'border-accent/60 bg-accent/5'
-                      : 'border-border bg-surface'
-                  )}
-                >
-                  <div className="flex shrink-0 gap-1">
-                    <ThemeSpecimen theme={darkTheme} className="h-14 w-20" />
-                    <ThemeSpecimen theme={lightTheme} className="h-14 w-20" />
+                <div key={group} className="space-y-2">
+                  <div className="flex items-baseline gap-2 pt-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                      {t(`theme.group.${group}`)}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {group === 'modern'
+                        ? t('theme.group.modernHint')
+                        : t('theme.group.classicHint')}
+                    </span>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-semibold text-foreground">{family.name}</div>
-                    <div className="text-[10px] text-muted">{t(family.descriptionKey)}</div>
-                    <div className="mt-1 text-[10px] text-muted-foreground">
-                      {darkTheme.name} / {lightTheme.name}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 gap-1">
-                    <Button
-                      size="xs"
-                      variant={darkSelected ? 'primary' : 'secondary'}
-                      onClick={() => update('darkTheme', darkTheme.id)}
-                    >
-                      <Moon className="h-3 w-3" />
-                      {t('theme.mode.dark')}
-                    </Button>
-                    <Button
-                      size="xs"
-                      variant={lightSelected ? 'primary' : 'secondary'}
-                      onClick={() => update('lightTheme', lightTheme.id)}
-                    >
-                      <Sun className="h-3 w-3" />
-                      {t('theme.mode.light')}
-                    </Button>
-                  </div>
+                  {families.map((family) => {
+                    const darkTheme = getTheme(family.dark);
+                    const lightTheme = getTheme(family.light);
+                    const darkSelected = draft.darkTheme === family.dark;
+                    const lightSelected = draft.lightTheme === family.light;
+
+                    return (
+                      <div
+                        key={family.id}
+                        className={cn(
+                          'flex flex-wrap items-center gap-3 rounded-sm border p-2 transition-colors',
+                          darkSelected || lightSelected
+                            ? 'border-accent/60 bg-accent/5'
+                            : 'border-border bg-surface'
+                        )}
+                      >
+                        <div className="flex shrink-0 gap-1">
+                          <ThemeSpecimen theme={darkTheme} className="h-14 w-20" />
+                          <ThemeSpecimen theme={lightTheme} className="h-14 w-20" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-semibold text-foreground">{family.name}</div>
+                          <div className="text-[10px] text-muted">{t(family.descriptionKey)}</div>
+                          <div className="mt-1 text-[10px] text-muted-foreground">
+                            {darkTheme.name} / {lightTheme.name}
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 gap-1">
+                          <Button
+                            size="xs"
+                            variant={darkSelected ? 'primary' : 'secondary'}
+                            onClick={() => update('darkTheme', darkTheme.id)}
+                          >
+                            <Moon className="h-3 w-3" />
+                            {t('theme.mode.dark')}
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant={lightSelected ? 'primary' : 'secondary'}
+                            onClick={() => update('lightTheme', lightTheme.id)}
+                          >
+                            <Sun className="h-3 w-3" />
+                            {t('theme.mode.light')}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
+            <div className="rounded-sm border border-border bg-surface p-2">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold text-foreground">
+                    {t('settings.appearance.accent')}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {t('settings.appearance.accentHint')}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => update('themeAccent', '')}
+                  className={cn(
+                    'rounded-sm border px-2 py-0.5 text-[10px] transition-colors',
+                    draft.themeAccent
+                      ? 'border-border text-muted hover:bg-surface-hover hover:text-foreground'
+                      : 'border-accent/60 bg-accent/10 text-foreground'
+                  )}
+                >
+                  {t('settings.appearance.accentDefault')}
+                </button>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {ACCENT_SWATCHES.map((swatch) => {
+                  const active = draft.themeAccent.toLowerCase() === swatch.accent;
+                  return (
+                    <button
+                      key={swatch.id}
+                      type="button"
+                      aria-label={swatch.accent}
+                      title={swatch.accent}
+                      aria-pressed={active}
+                      onClick={() => update('themeAccent', swatch.accent)}
+                      className={cn(
+                        'h-5 w-5 rounded-full border-2 transition-transform hover:scale-110',
+                        active ? 'border-foreground' : 'border-transparent'
+                      )}
+                      style={{ backgroundColor: swatch.accent }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
             <div className="flex items-center justify-between gap-2 pt-2">
               <div>
                 <h3 className="text-xs font-semibold text-foreground">

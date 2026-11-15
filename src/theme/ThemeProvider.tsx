@@ -11,6 +11,7 @@ import { useI18n } from '../i18n';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCustomThemesStore } from './customThemesStore';
 import { applyCustomThemeVars } from './applyCustomTheme';
+import { accentVars, applyAccentVars } from './accent';
 import {
   DEFAULT_DARK_THEME,
   DEFAULT_LIGHT_THEME,
@@ -50,6 +51,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   );
   const customThemes = useCustomThemesStore((state) => state.themes);
   const loadCustomThemes = useCustomThemesStore((state) => state.load);
+  const themeAccent = useSettingsStore((state) => state.themeAccent);
+  const setThemeAccentRaw = useSettingsStore((state) => state.setThemeAccent);
 
   // Load the custom theme folder once per window and follow backend changes
   // live (see the `themes-changed` watcher in themes.rs).
@@ -99,8 +102,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           ? DEFAULT_LIGHT_THEME
           : DEFAULT_DARK_THEME;
     }
+    // Accent override is layered on top of whichever base won above, so a
+    // custom theme that extends a modern family keeps the chosen accent.
+    applyAccentVars(
+      root,
+      themeAccent ? accentVars({ accent: themeAccent, variant: resolved }) : null
+    );
     root.dataset.colorScheme = resolved;
-  }, [themeId, resolved, customThemes]);
+  }, [themeId, resolved, customThemes, themeAccent]);
 
   const setMode = useCallback((next: ThemeMode) => setThemeMode(next), [setThemeMode]);
 
@@ -110,6 +119,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   );
 
   const setDarkTheme = useCallback((next: ThemeId) => setDarkThemeValue(next), [setDarkThemeValue]);
+
+  const setThemeAccent = useCallback(
+    (next: string) => setThemeAccentRaw(next),
+    [setThemeAccentRaw]
+  );
 
   const cycle = useCallback(() => {
     const current = useSettingsStore.getState().themeMode;
@@ -129,9 +143,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       darkTheme,
       lightThemeName,
       darkThemeName,
+      themeAccent,
       setMode,
       setLightTheme,
       setDarkTheme,
+      setThemeAccent,
       cycle
     }),
     [
@@ -144,9 +160,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       darkTheme,
       lightThemeName,
       darkThemeName,
+      themeAccent,
       setMode,
       setLightTheme,
       setDarkTheme,
+      setThemeAccent,
       cycle
     ]
   );

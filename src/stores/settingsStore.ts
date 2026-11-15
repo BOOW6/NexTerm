@@ -33,6 +33,8 @@ export interface SettingsSnapshot {
   themeMode: ThemeMode;
   lightTheme: ThemeId;
   darkTheme: ThemeId;
+  /** Hex accent for themes that expose an accent palette ('' = theme default). */
+  themeAccent: string;
   uiFontFamily: string;
   uiFontLigatures: boolean;
   uiFontFeatureSettings: string;
@@ -70,6 +72,7 @@ export const DEFAULT_SETTINGS: SettingsSnapshot = {
   themeMode: 'system',
   lightTheme: DEFAULT_LIGHT_THEME,
   darkTheme: DEFAULT_DARK_THEME,
+  themeAccent: '',
   uiFontFamily: DEFAULT_UI_FONT_FAMILY,
   uiFontLigatures: true,
   uiFontFeatureSettings: '"liga" 1, "calt" 1',
@@ -111,12 +114,25 @@ function normalizeLanguage(value: unknown): LanguageSetting {
   return value === 'zh-CN' || value === 'en-US' ? value : 'system';
 }
 
+/** Accepts `#rgb` / `#rrggbb`; anything else clears the override. */
+function normalizeThemeAccent(value: unknown): string {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const body = value.trim().toLowerCase().replace(/^#/, '');
+  if (/^[0-9a-f]{3}$/.test(body)) {
+    return `#${[...body].map((ch) => ch + ch).join('')}`;
+  }
+  return /^[0-9a-f]{6}$/.test(body) ? `#${body}` : '';
+}
+
 function normalizeSettings(input: SettingsSnapshot): SettingsSnapshot {
   return {
     language: normalizeLanguage(input.language),
     themeMode: normalizeThemeMode(input.themeMode),
     lightTheme: normalizeThemeId(input.lightTheme, 'light'),
     darkTheme: normalizeThemeId(input.darkTheme, 'dark'),
+    themeAccent: normalizeThemeAccent(input.themeAccent),
     uiFontFamily: (input.uiFontFamily ?? '').trim() || DEFAULT_SETTINGS.uiFontFamily,
     uiFontLigatures: Boolean(input.uiFontLigatures),
     uiFontFeatureSettings:
@@ -178,6 +194,7 @@ interface SettingsState extends SettingsSnapshot {
   setThemeMode: (mode: ThemeMode) => void;
   setLightTheme: (theme: ThemeId) => void;
   setDarkTheme: (theme: ThemeId) => void;
+  setThemeAccent: (accent: string) => void;
 }
 
 /**
@@ -206,6 +223,10 @@ export const useSettingsStore = create<SettingsState>()(
       },
       setDarkTheme: (darkTheme) => {
         set({ darkTheme: normalizeThemeId(darkTheme, 'dark') });
+        broadcastSettingsApplied();
+      },
+      setThemeAccent: (themeAccent) => {
+        set({ themeAccent: normalizeThemeAccent(themeAccent) });
         broadcastSettingsApplied();
       }
     }),
@@ -243,6 +264,7 @@ export function settingsSnapshot(): SettingsSnapshot {
     themeMode: state.themeMode,
     lightTheme: state.lightTheme,
     darkTheme: state.darkTheme,
+    themeAccent: state.themeAccent,
     uiFontFamily: state.uiFontFamily,
     uiFontLigatures: state.uiFontLigatures,
     uiFontFeatureSettings: state.uiFontFeatureSettings,

@@ -140,4 +140,18 @@ describe('theme setters', () => {
     useSettingsStore.getState().setDarkTheme('day');
     expect(useSettingsStore.getState().darkTheme).toBe(DEFAULT_SETTINGS.darkTheme);
   });
+
+  it('normalizes the accent override to #rrggbb and clears garbage', () => {
+    useSettingsStore.getState().setThemeAccent('#3B82F6');
+    expect(useSettingsStore.getState().themeAccent).toBe('#3b82f6');
+
+    useSettingsStore.getState().setThemeAccent('#0af');
+    expect(useSettingsStore.getState().themeAccent).toBe('#00aaff');
+
+    useSettingsStore.getState().setThemeAccent('rebeccapurple');
+    expect(useSettingsStore.getState().themeAccent).toBe('');
+
+    useSettingsStore.getState().applySettings(snapshot({ themeAccent: '#8250df' }));
+    expect(useSettingsStore.getState().themeAccent).toBe('#8250df');
+  });
 });

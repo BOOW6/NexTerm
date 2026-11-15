@@ -1,1 +1,67 @@
-/* placeholder */
+/* Slate skin — modern family baseline (VS Code Dark Modern / GitHub Primer).
+ *
+ * Slate is almost entirely token-driven: neutral greys, hairline dividers,
+ * 4/6px radii, flat accent, no gradients. Only the few shapes that a token
+ * value cannot express live here. Families that build on Slate (Graphite,
+ * Sandstone) import this file first and override tokens afterwards.
+ */
+
+/* Flat chrome: the action bar / status bar split by a hairline, tabs pinned to
+ * the strip with an underline instead of a raised sheet. */
+:root[data-theme^='slate'] .app-actionbar {
+  border-bottom-width: 1px;
+  border-bottom-color: var(--hairline-color);
+}
+
+/* Session groups read as quiet uppercase labels rather than bars. */
+:root[data-theme^='slate'] .app-group-header {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+
+:root[data-theme^='slate'] .app-group-header:hover {
+  background-color: transparent;
+  color: hsl(var(--foreground));
+}
+
+/* Tab strip: no dividers between tabs, just spacing and the active underline. */
+:root[data-theme^='slate'] .dockview-theme-dark .dv-tab {
+  border-right-color: transparent;
+}
+
+/* Status bar sits on the same surface as the action bar, separated by a
+ * hairline rather than being a lighter tray. */
+:root[data-theme^='slate'] .app-statusbar {
+  border-top-color: var(--hairline-color);
+}
+
+/* Dialogs / popups float with a soft shadow and no gradient header. */
+:root[data-theme^='slate'] .app-dialog-header {
+  border-bottom-color: var(--hairline-color);
+}
+
+/* Secondary buttons are surface-coloured with a hairline outline, so the
+ * accent is reserved for the primary action. */
+:root[data-theme^='slate'] .app-button[data-variant='secondary'] {
+  background-image: none;
+  background-color: hsl(var(--surface));
+  border-color: hsl(var(--foreground) / 0.15);
+  color: hsl(var(--foreground));
+}
+
+:root[data-theme^='slate'] .app-button[data-variant='secondary']:hover {
+  background-image: none;
+  background-color: hsl(var(--foreground) / 0.06);
+}
+
+:root[data-theme^='slate'] .app-button[data-variant='primary'] {
+  background-image: none;
+  border-color: transparent;
+}
+
+:root[data-theme^='slate'] .app-button {
+  box-shadow: none;
+  font-weight: 500;
+}

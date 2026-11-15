@@ -22,8 +22,15 @@ export const ZH: Dictionary = {
   'theme.desc.dim': '经典 Web 2.0 暗色配色',
   'theme.desc.aquaDark': 'Mac OS X 10.6 Aqua 暗色玻璃',
   'theme.desc.holoDark': 'Android 4.4 Holo 暗色',
+  'theme.desc.slateLight': '现代开发工具基线：中性灰、细线与单一强调色',
+  'theme.desc.slateDark': '现代开发工具基线：深色中性灰，长时间盯屏不疲劳',
   'theme.family.dayDim': '经典 Web 2.0 明暗配色',
   'theme.family.holo': 'Android 4.4 Holo 扁平高对比',
+  'theme.family.slate': '现代开发工具基线（VS Code / Primer 一档）',
+  'theme.group.modern': '现代',
+  'theme.group.modernHint': '低疲劳、低噪音，适合长时间使用',
+  'theme.group.classic': '复古',
+  'theme.group.classicHint': 'Web 2.0 / Aqua / Holo 经典视觉',
 
   // Appearance
   'settings.appearance.language': '界面语言',
@@ -44,6 +51,9 @@ export const ZH: Dictionary = {
   'settings.appearance.lightThemeLabel': '亮色主题',
   'settings.appearance.themesTitle': '主题',
   'settings.appearance.familyHint': '按家族选择暗色 / 亮色',
+  'settings.appearance.accent': '强调色',
+  'settings.appearance.accentHint': '仅对支持强调色的现代主题生效；留空则使用主题自带颜色。',
+  'settings.appearance.accentDefault': '默认',
   'settings.appearance.applyHint': '主题与字体将在点击「应用」后生效。',
   'settings.appearance.customThemesTitle': '自定义主题',
   'settings.appearance.customThemesHint':
@@ -279,8 +289,15 @@ export const EN: Dictionary = {
   'theme.desc.dim': 'Classic Web 2.0 dark palette',
   'theme.desc.aquaDark': 'Mac OS X 10.6 Aqua dark glass',
   'theme.desc.holoDark': 'Android 4.4 Holo dark',
+  'theme.desc.slateLight': 'Modern dev-tool baseline: neutral greys, hairlines, one accent',
+  'theme.desc.slateDark': 'Modern dev-tool baseline: dark neutral greys for long sessions',
   'theme.family.dayDim': 'Classic Web 2.0 light and dark',
   'theme.family.holo': 'Android 4.4 Holo flat, high contrast',
+  'theme.family.slate': 'Modern dev-tool baseline (VS Code / Primer class)',
+  'theme.group.modern': 'Modern',
+  'theme.group.modernHint': 'Low-fatigue, low-noise, built for long sessions',
+  'theme.group.classic': 'Classic',
+  'theme.group.classicHint': 'Web 2.0 / Aqua / Holo look',
 
   // Appearance
   'settings.appearance.language': 'Language',
@@ -302,6 +319,10 @@ export const EN: Dictionary = {
   'settings.appearance.lightThemeLabel': 'Light theme',
   'settings.appearance.themesTitle': 'Themes',
   'settings.appearance.familyHint': 'Pick dark / light per family',
+  'settings.appearance.accent': 'Accent color',
+  'settings.appearance.accentHint':
+    'Applies to modern themes that support accents; empty uses the theme’s own color.',
+  'settings.appearance.accentDefault': 'Default',
   'settings.appearance.applyHint': 'Themes and fonts take effect after clicking "Apply".',
   'settings.appearance.customThemesTitle': 'Custom themes',
   'settings.appearance.customThemesHint':

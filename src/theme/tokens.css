@@ -589,3 +589,173 @@
 
   color-scheme: dark;
 }
+
+/* ---------------------------------------------------------------------------
+ * Modern family: Slate
+ * Anchor: VS Code "Dark Modern" / GitHub Primer. Neutral greys, hairline
+ * dividers instead of drawn borders, 6/4px radii, a single flat accent and a
+ * two-step elevation ladder. No gradients, no glass, no accent-filled rows.
+ * ------------------------------------------------------------------------- */
+[data-theme='slate-light'] {
+  --background: 210 29% 97%;
+  --background-alt: 210 17% 95%;
+  --surface: 0 0% 100%;
+  --surface-elevated: 0 0% 100%;
+  --surface-header: 210 20% 96%;
+  --surface-hover: 210 17% 93%;
+  --surface-active: 210 16% 90%;
+  --border: 210 14% 84%;
+  --border-muted: 210 18% 90%;
+  --border-strong: 210 13% 73%;
+  --foreground: 215 28% 17%;
+  --muted: 215 14% 39%;
+  --muted-foreground: 215 11% 52%;
+  --accent: 212 88% 45%;
+  --accent-strong: 212 76% 34%;
+  --accent-soft: 212 80% 55%;
+  --accent-foreground: 0 0% 100%;
+  --link: 212 76% 36%;
+  --link-hover: 212 88% 45%;
+  --success: 137 55% 33%;
+  --warning: 37 78% 38%;
+  --error: 354 62% 46%;
+  --focus-ring: 212 88% 45%;
+  --table-header: 210 20% 95%;
+  --row-hover: 210 17% 93%;
+  --row-selected: 210 16% 89%;
+  --header-foreground: 215 28% 17%;
+  --header-muted: 215 14% 39%;
+
+  --accent-rgb: 14 116 214;
+  --surface-header-bg: hsl(var(--surface-header));
+  --surface-backdrop: hsl(var(--surface-header));
+  --surface-card: hsl(var(--surface));
+  --nav-hover-bg: hsl(var(--foreground) / 0.06);
+  --nav-active-bg: hsl(var(--foreground) / 0.1);
+  --nav-active-color: hsl(var(--foreground));
+  --menu-hover-bg: hsl(var(--foreground) / 0.08);
+  --menu-hover-color: hsl(var(--foreground));
+  --menu-radius: 6px;
+  --menu-padding: 4px;
+  --button-radius: 6px;
+  --row-selected-bg: hsl(var(--accent) / 0.1);
+  --row-selected-accent-bar: 2px;
+  --hairline-color: hsl(var(--foreground) / 0.12);
+  --accent-text: hsl(var(--accent-strong));
+  --tab-height: 32px;
+  --tab-active-bg: var(--surface);
+  --tab-hidden-bg: hsl(var(--background-alt));
+  --tab-indicator: 2px;
+  --panel-header-bg: transparent;
+  --panel-header-weight: 600;
+  --panel-header-tracking: -0.01em;
+  --panel-header-transform: none;
+  --group-header-bg: transparent;
+  --elevation-1: 0 1px 2px rgba(31, 35, 40, 0.06);
+  --elevation-2: 0 8px 24px rgba(31, 35, 40, 0.14), 0 0 0 1px rgba(31, 35, 40, 0.06);
+
+  --terminal-background: 213 24% 9%;
+  --terminal-foreground: 213 20% 88%;
+  --terminal-cursor: 212 88% 65%;
+  --terminal-selection: rgba(60, 130, 230, 0.35);
+
+  --gradient-header: linear-gradient(0deg, transparent, transparent);
+  --gradient-panel-title: linear-gradient(0deg, transparent, transparent);
+  --gradient-button: linear-gradient(0deg, #f6f8fa, #f6f8fa);
+  --gradient-button-hover: linear-gradient(0deg, #eef1f4, #eef1f4);
+  --gradient-button-primary: linear-gradient(0deg, #1f6feb, #1f6feb);
+
+  --radius: 6px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  --shadow-panel: none;
+  --shadow-popup: 0 8px 24px rgba(31, 35, 40, 0.14), 0 0 0 1px rgba(31, 35, 40, 0.06);
+  --shadow-inset: none;
+  --shadow-button-pressed: inset 0 0 0 1px hsl(var(--foreground) / 0.12);
+
+  color-scheme: light;
+}
+
+[data-theme='slate-dark'] {
+  --background: 215 21% 7%;
+  --background-alt: 220 20% 10%;
+  --surface: 215 21% 11%;
+  --surface-elevated: 215 21% 14%;
+  --surface-header: 215 21% 9%;
+  --surface-hover: 215 16% 16%;
+  --surface-active: 214 15% 20%;
+  --border: 215 14% 21%;
+  --border-muted: 215 16% 16%;
+  --border-strong: 215 12% 30%;
+  --foreground: 213 28% 92%;
+  --muted: 214 12% 66%;
+  --muted-foreground: 214 10% 52%;
+  --accent: 212 92% 60%;
+  --accent-strong: 212 88% 68%;
+  --accent-soft: 212 70% 45%;
+  --accent-foreground: 0 0% 100%;
+  --link: 212 88% 64%;
+  --link-hover: 212 90% 72%;
+  --success: 137 55% 53%;
+  --warning: 40 70% 58%;
+  --error: 355 65% 65%;
+  --focus-ring: 212 92% 62%;
+  --table-header: 215 21% 12%;
+  --row-hover: 215 16% 15%;
+  --row-selected: 214 15% 20%;
+  --header-foreground: 213 28% 92%;
+  --header-muted: 214 12% 66%;
+
+  --accent-rgb: 59 148 245;
+  --surface-header-bg: hsl(var(--surface-header));
+  --surface-backdrop: hsl(var(--surface-header));
+  --surface-card: hsl(var(--surface));
+  --nav-hover-bg: hsl(var(--foreground) / 0.07);
+  --nav-active-bg: hsl(var(--foreground) / 0.11);
+  --nav-active-color: hsl(var(--foreground));
+  --menu-hover-bg: hsl(var(--foreground) / 0.09);
+  --menu-hover-color: hsl(var(--foreground));
+  --menu-radius: 6px;
+  --menu-padding: 4px;
+  --button-radius: 6px;
+  --row-selected-bg: hsl(var(--accent) / 0.14);
+  --row-selected-accent-bar: 2px;
+  --hairline-color: hsl(var(--foreground) / 0.1);
+  --accent-text: hsl(var(--accent));
+  --tab-height: 32px;
+  --tab-active-bg: var(--surface);
+  --tab-hidden-bg: hsl(var(--background-alt));
+  --tab-indicator: 2px;
+  --panel-header-bg: transparent;
+  --panel-header-weight: 600;
+  --panel-header-tracking: -0.01em;
+  --panel-header-transform: none;
+  --group-header-bg: transparent;
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --elevation-2: 0 10px 28px rgba(0, 0, 0, 0.55), 0 0 0 1px hsl(var(--foreground) / 0.08);
+
+  --terminal-background: 215 24% 6%;
+  --terminal-foreground: 213 22% 90%;
+  --terminal-cursor: 212 90% 68%;
+  --terminal-selection: rgba(70, 140, 240, 0.32);
+
+  --gradient-header: linear-gradient(0deg, transparent, transparent);
+  --gradient-panel-title: linear-gradient(0deg, transparent, transparent);
+  --gradient-button: linear-gradient(0deg, #21262d, #21262d);
+  --gradient-button-hover: linear-gradient(0deg, #2a313a, #2a313a);
+  --gradient-button-primary: linear-gradient(0deg, #2f81f7, #2f81f7);
+
+  --radius: 6px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  --shadow-panel: none;
+  --shadow-popup: 0 10px 28px rgba(0, 0, 0, 0.55), 0 0 0 1px hsl(var(--foreground) / 0.08);
+  --shadow-inset: none;
+  --shadow-button-pressed: inset 0 0 0 1px hsl(var(--foreground) / 0.1);
+
+  color-scheme: dark;
+}

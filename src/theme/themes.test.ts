@@ -4,11 +4,14 @@ import {
   DEFAULT_DARK_THEME,
   DEFAULT_LIGHT_THEME,
   LIGHT_THEMES,
+  MODERN_THEME_ACCENTS,
+  THEME_FAMILIES,
   THEMES,
   getTheme,
   isBuiltinThemeId,
   normalizeThemeId,
-  normalizeThemeMode
+  normalizeThemeMode,
+  themeFamiliesIn
 } from './themes';
 import { useCustomThemesStore } from './customThemesStore';
 import type { CustomThemeDefinition } from './customThemes';
@@ -34,6 +37,37 @@ describe('theme catalog', () => {
   it('falls back to the first light theme for unknown ids', () => {
     expect(getTheme('unknown').id).toBe(LIGHT_THEMES[0].id);
     expect(getTheme('dim').id).toBe('dim');
+  });
+
+  it('keeps every modern family paired and grouped', () => {
+    const modern = themeFamiliesIn('modern');
+    expect(modern.length).toBeGreaterThan(0);
+    for (const family of modern) {
+      expect(LIGHT_THEMES.some((theme) => theme.id === family.light)).toBe(true);
+      expect(DARK_THEMES.some((theme) => theme.id === family.dark)).toBe(true);
+    }
+    // Every built-in theme belongs to exactly one group and one family.
+    for (const theme of THEMES) {
+      const hits = THEME_FAMILIES.filter(
+        (family) => family.light === theme.id || family.dark === theme.id
+      );
+      expect(hits).toHaveLength(1);
+      expect(hits[0].group).toBe(theme.group);
+    }
+  });
+
+  it('opens on the modern Slate pair by default', () => {
+    expect(DEFAULT_LIGHT_THEME).toBe('slate-light');
+    expect(DEFAULT_DARK_THEME).toBe('slate-dark');
+    expect(normalizeThemeId(undefined, 'light')).toBe('slate-light');
+    expect(normalizeThemeId(undefined, 'dark')).toBe('slate-dark');
+  });
+
+  it('offers accent presets with readable foregrounds', () => {
+    for (const preset of [...MODERN_THEME_ACCENTS.slate, ...MODERN_THEME_ACCENTS.graphite]) {
+      expect(preset.accent).toMatch(/^#[0-9a-f]{6}$/);
+      expect(preset.foreground).toMatch(/^#[0-9a-f]{6}$/);
+    }
   });
 });
 
