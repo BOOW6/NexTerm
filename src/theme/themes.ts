@@ -14,7 +14,9 @@ export type BuiltinThemeId =
   | 'slate-light'
   | 'slate-dark'
   | 'graphite-light'
-  | 'graphite-dark';
+  | 'graphite-dark'
+  | 'tgreen-light'
+  | 'tgreen-dark';
 /**
  * Built-in ids plus user-defined theme ids from the themes folder. Custom ids
  * are `[a-z0-9-]` strings (enforced by the backend scanner); they are kept
@@ -54,6 +56,14 @@ export const LIGHT_THEMES: ThemeDefinition[] = [
     variant: 'light',
     descriptionKey: 'theme.desc.graphiteLight',
     swatches: ['#f6f7f8', '#ffffff', '#1f8a81'],
+    group: 'modern'
+  },
+  {
+    id: 'tgreen-light',
+    name: 'Terminal Green',
+    variant: 'light',
+    descriptionKey: 'theme.desc.tgreenLight',
+    swatches: ['#f2f6f3', '#ffffff', '#2a8469'],
     group: 'modern'
   },
   {
@@ -97,6 +107,14 @@ export const DARK_THEMES: ThemeDefinition[] = [
     variant: 'dark',
     descriptionKey: 'theme.desc.graphiteDark',
     swatches: ['#0b0c0e', '#14161a', '#2dd4bf'],
+    group: 'modern'
+  },
+  {
+    id: 'tgreen-dark',
+    name: 'Terminal Green',
+    variant: 'dark',
+    descriptionKey: 'theme.desc.tgreenDark',
+    swatches: ['#080f0c', '#131a16', '#48d597'],
     group: 'modern'
   },
   {
@@ -154,6 +172,14 @@ export const THEME_FAMILIES: ThemeFamily[] = [
     group: 'modern'
   },
   {
+    id: 'tgreen',
+    name: 'Terminal Green',
+    descriptionKey: 'theme.family.tgreen',
+    light: 'tgreen-light',
+    dark: 'tgreen-dark',
+    group: 'modern'
+  },
+  {
     id: 'day-dim',
     name: 'Day / Dim',
     descriptionKey: 'theme.family.dayDim',
@@ -201,7 +227,7 @@ export interface ThemeAccent {
   foreground: string;
 }
 
-export const MODERN_THEME_ACCENTS: Record<'slate' | 'graphite', ThemeAccent[]> = {
+export const MODERN_THEME_ACCENTS: Record<'slate' | 'graphite' | 'tgreen', ThemeAccent[]> = {
   slate: [
     { id: 'blue', accent: '#3b82f6', foreground: '#ffffff' },
     { id: 'violet', accent: '#8250df', foreground: '#ffffff' },
@@ -214,6 +240,11 @@ export const MODERN_THEME_ACCENTS: Record<'slate' | 'graphite', ThemeAccent[]> =
     { id: 'violet', accent: '#a78bfa', foreground: '#1b1033' },
     { id: 'amber', accent: '#fbbf24', foreground: '#261a02' },
     { id: 'blue', accent: '#60a5fa', foreground: '#06182f' }
+  ],
+  tgreen: [
+    { id: 'phosphor', accent: '#48d597', foreground: '#06231a' },
+    { id: 'amber', accent: '#e3b341', foreground: '#1f1602' },
+    { id: 'ice', accent: '#7dd3fc', foreground: '#04202e' }
   ]
 };
 

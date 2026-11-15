@@ -1,1 +1,70 @@
-/* placeholder */
+/* Terminal Green skin — carded terminal (Warp-style panels + phosphor green).
+ *
+ * Every panel, tab, dialog and popup is its own card: a hairline outline, a
+ * 6px radius and a small lift off the tinted canvas. The green identity lives
+ * in the palette and the terminal scheme; the structure is modern.
+ */
+@import './slate.css';
+
+/* The strip itself is part of the canvas; each tab is a card. */
+:root[data-theme^='tgreen'] .dockview-theme-dark .dv-tab {
+  border-right-color: transparent;
+  margin: 4px 3px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.07);
+}
+
+:root[data-theme^='tgreen'] .dockview-theme-dark .dv-tab.dv-active-tab {
+  background-color: hsl(var(--surface));
+  box-shadow:
+    inset 0 0 0 1px hsl(var(--accent) / 0.45),
+    0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* Panel headers name the card instead of being a tray. */
+:root[data-theme^='tgreen'] .app-panel-header {
+  border-bottom-color: hsl(var(--foreground) / 0.08);
+  letter-spacing: 0;
+}
+
+/* Popups are cards too: 6px radius, hairline, generous padding. */
+:root[data-theme^='tgreen'] .app-popup {
+  border-radius: 6px;
+}
+
+/* The status bar is the "prompt line": chalk green on the tinted canvas,
+ * which is the one place the family lets the accent colour the structure. */
+:root[data-theme^='tgreen'] .app-statusbar {
+  background-color: hsl(var(--background-alt));
+  color: hsl(var(--accent-text));
+  border-top-color: hsl(var(--accent) / 0.25);
+}
+
+:root[data-theme^='tgreen'] .app-statusbar .text-muted {
+  color: hsl(var(--accent-text));
+  opacity: 0.85;
+}
+
+/* Secondary buttons: surface cards with a hairline, no gradient. */
+:root[data-theme^='tgreen'] .app-button {
+  box-shadow: none;
+  background-image: none;
+}
+
+:root[data-theme^='tgreen'] .app-button[data-variant='secondary'] {
+  background-color: hsl(var(--surface));
+  border-color: hsl(var(--foreground) / 0.12);
+}
+
+:root[data-theme^='tgreen'] .app-button[data-variant='secondary']:hover {
+  background-color: hsl(var(--surface-hover));
+}
+
+:root[data-theme^='tgreen'] .app-button {
+  background-image: none;
+}
+
+:root[data-theme^='tgreen'] .app-button[data-variant='primary'] {
+  background-color: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}

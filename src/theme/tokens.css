@@ -930,3 +930,174 @@
 
   color-scheme: dark;
 }
+
+/* ---------------------------------------------------------------------------
+ * Modern family: Terminal Green
+ * Anchor: Warp's carded output + classic phosphor terminals. The identity of
+ * a green terminal (green text, dark green-tinted canvas) carried by a modern
+ * card layout: every panel, tab and popup is its own bordered card with a
+ * 6px radius and a hairline outline. The 16-colour terminal palette stays
+ * varied so `ls` / `git` output remains distinguishable.
+ * ------------------------------------------------------------------------- */
+[data-theme='tgreen-light'] {
+  --background: 150 12% 96%;
+  --background-alt: 150 10% 93%;
+  --surface: 0 0% 100%;
+  --surface-elevated: 0 0% 100%;
+  --surface-header: 150 10% 94%;
+  --surface-hover: 150 10% 91%;
+  --surface-active: 150 9% 87%;
+  --border: 150 8% 84%;
+  --border-muted: 150 9% 90%;
+  --border-strong: 150 7% 72%;
+  --foreground: 155 16% 15%;
+  --muted: 155 7% 38%;
+  --muted-foreground: 155 6% 52%;
+  --accent: 160 52% 34%;
+  --accent-strong: 160 55% 26%;
+  --accent-soft: 160 40% 58%;
+  --accent-foreground: 0 0% 100%;
+  --link: 160 52% 30%;
+  --link-hover: 160 55% 22%;
+  --success: 148 55% 33%;
+  --warning: 36 80% 38%;
+  --error: 356 62% 47%;
+  --focus-ring: 160 52% 34%;
+  --table-header: 150 10% 93%;
+  --row-hover: 150 10% 91%;
+  --row-selected: 150 9% 88%;
+  --header-foreground: 155 16% 15%;
+  --header-muted: 155 7% 38%;
+
+  --accent-rgb: 42 132 105;
+  --surface-header-bg: hsl(var(--background-alt));
+  --surface-backdrop: hsl(var(--background-alt));
+  --surface-card: hsl(var(--surface));
+  --nav-hover-bg: hsl(var(--foreground) / 0.05);
+  --nav-active-bg: hsl(var(--foreground) / 0.09);
+  --nav-active-color: hsl(var(--foreground));
+  --menu-hover-bg: hsl(var(--foreground) / 0.07);
+  --menu-hover-color: hsl(var(--foreground));
+  --menu-radius: 6px;
+  --menu-padding: 6px;
+  --button-radius: 6px;
+  --row-selected-bg: hsl(var(--accent) / 0.12);
+  --row-selected-accent-bar: 2px;
+  --hairline-color: hsl(150 8% 86%);
+  --accent-text: hsl(var(--accent-strong));
+  --tab-height: 30px;
+  --tab-active-bg: var(--surface);
+  --tab-hidden-bg: transparent;
+  --tab-indicator: 0px;
+  --panel-header-bg: transparent;
+  --panel-header-weight: 600;
+  --panel-header-tracking: 0em;
+  --panel-header-transform: none;
+  --group-header-bg: transparent;
+  --elevation-1: 0 1px 2px rgba(20, 32, 27, 0.06);
+  --elevation-2: 0 10px 26px rgba(20, 32, 27, 0.16), 0 0 0 1px rgba(20, 32, 27, 0.07);
+
+  --terminal-background: 155 14% 8%;
+  --terminal-foreground: 140 30% 86%;
+  --terminal-cursor: 145 68% 55%;
+  --terminal-selection: rgba(72, 213, 151, 0.28);
+
+  --gradient-header: linear-gradient(0deg, transparent, transparent);
+  --gradient-panel-title: linear-gradient(0deg, transparent, transparent);
+  --gradient-button: linear-gradient(0deg, #ffffff, #ffffff);
+  --gradient-button-hover: linear-gradient(0deg, #f0f5f2, #f0f5f2);
+  --gradient-button-primary: linear-gradient(0deg, #2a8469, #2a8469);
+
+  --radius: 6px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  --shadow-panel: none;
+  --shadow-popup: 0 10px 26px rgba(20, 32, 27, 0.16), 0 0 0 1px rgba(20, 32, 27, 0.07);
+  --shadow-inset: none;
+  --shadow-button-pressed: inset 0 0 0 1px hsl(var(--foreground) / 0.1);
+
+  color-scheme: light;
+}
+
+[data-theme='tgreen-dark'] {
+  --background: 156 16% 4%;
+  --background-alt: 156 14% 7%;
+  --surface: 156 13% 9%;
+  --surface-elevated: 156 13% 12%;
+  --surface-header: 156 14% 7%;
+  --surface-hover: 156 10% 14%;
+  --surface-active: 156 9% 18%;
+  --border: 156 10% 17%;
+  --border-muted: 156 12% 12%;
+  --border-strong: 156 8% 28%;
+  --foreground: 150 22% 90%;
+  --muted: 150 10% 60%;
+  --muted-foreground: 150 9% 45%;
+  --accent: 152 66% 56%;
+  --accent-strong: 152 70% 66%;
+  --accent-soft: 152 40% 40%;
+  --accent-foreground: 152 50% 8%;
+  --link: 152 68% 62%;
+  --link-hover: 152 72% 72%;
+  --success: 148 60% 55%;
+  --warning: 40 75% 60%;
+  --error: 356 68% 65%;
+  --focus-ring: 152 66% 58%;
+  --table-header: 156 14% 9%;
+  --row-hover: 156 10% 13%;
+  --row-selected: 156 9% 17%;
+  --header-foreground: 150 22% 90%;
+  --header-muted: 150 10% 60%;
+
+  --accent-rgb: 72 213 151;
+  --surface-header-bg: hsl(var(--background-alt));
+  --surface-backdrop: hsl(var(--background-alt));
+  --surface-card: hsl(var(--surface));
+  --nav-hover-bg: hsl(var(--foreground) / 0.06);
+  --nav-active-bg: hsl(var(--foreground) / 0.1);
+  --nav-active-color: hsl(var(--foreground));
+  --menu-hover-bg: hsl(var(--foreground) / 0.08);
+  --menu-hover-color: hsl(var(--foreground));
+  --menu-radius: 6px;
+  --menu-padding: 6px;
+  --button-radius: 6px;
+  --row-selected-bg: hsl(var(--accent) / 0.16);
+  --row-selected-accent-bar: 2px;
+  --hairline-color: hsl(var(--foreground) / 0.08);
+  --accent-text: hsl(var(--accent));
+  --tab-height: 30px;
+  --tab-active-bg: hsl(var(--surface));
+  --tab-hidden-bg: transparent;
+  --tab-indicator: 0px;
+  --panel-header-bg: transparent;
+  --panel-header-weight: 600;
+  --panel-header-tracking: 0em;
+  --panel-header-transform: none;
+  --group-header-bg: transparent;
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --elevation-2: 0 12px 30px rgba(0, 0, 0, 0.7), 0 0 0 1px hsl(var(--foreground) / 0.08);
+
+  --terminal-background: 156 18% 3%;
+  --terminal-foreground: 145 40% 82%;
+  --terminal-cursor: 152 70% 62%;
+  --terminal-selection: rgba(72, 213, 151, 0.24);
+  --gradient-header: linear-gradient(0deg, transparent, transparent);
+  --gradient-panel-title: linear-gradient(0deg, transparent, transparent);
+  --gradient-button: linear-gradient(0deg, #16211c, #16211c);
+  --gradient-button-hover: linear-gradient(0deg, #1c2a24, #1c2a24);
+  --gradient-button-primary: linear-gradient(0deg, #48d597, #48d597);
+
+  --radius: 6px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  --shadow-panel: none;
+  --shadow-popup: 0 12px 30px rgba(0, 0, 0, 0.7), 0 0 0 1px hsl(var(--foreground) / 0.08);
+  --shadow-inset: none;
+  --shadow-button-pressed: inset 0 0 0 1px hsl(var(--foreground) / 0.12);
+
+  color-scheme: dark;
+}

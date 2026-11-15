@@ -216,10 +216,11 @@ const THEME_GROUPS: ThemeGroup[] = ['modern', 'classic'];
 /** Swatch row for the accent override: presets of every modern family. */
 const ACCENT_SWATCHES = [
   ...MODERN_THEME_ACCENTS.slate,
-  ...MODERN_THEME_ACCENTS.graphite.filter(
-    (accent) => !MODERN_THEME_ACCENTS.slate.some((preset) => preset.accent === accent.accent)
-  )
-];
+  ...MODERN_THEME_ACCENTS.graphite,
+  ...MODERN_THEME_ACCENTS.tgreen
+].filter(
+  (accent, index, all) => all.findIndex((preset) => preset.accent === accent.accent) === index
+);
 
 function initialTab(): SettingsTab {
   const tab = new URLSearchParams(window.location.search).get('tab');
