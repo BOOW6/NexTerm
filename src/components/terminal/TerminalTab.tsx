@@ -65,6 +65,9 @@ export default function TerminalTab(props: IDockviewPanelProps) {
   const [fontSize, setFontSize] = useState(defaultFontSize);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
+  // Read by the activation handler without re-subscribing on every keystroke.
+  const searchOpenRef = useRef(searchOpen);
+  searchOpenRef.current = searchOpen;
 
   useEffect(() => {
     setIsVisible(props.api.isVisible);
@@ -72,6 +75,47 @@ export default function TerminalTab(props: IDockviewPanelProps) {
       setIsVisible(event.isVisible);
     });
     return () => disposable.dispose();
+  }, [props.api]);
+
+  // Switch back to a tab and the terminal keeps keyboard focus: xterm only
+  // blinks (and accepts keys) while its textarea is focused, so without this
+  // the cursor showed as a static outline after every tab change.
+  useEffect(() => {
+    let frame: number | null = null;
+    const focusTerminal = () => {
+      frame = null;
+      if (searchOpenRef.current) {
+        return;
+      }
+      // Never pull focus out of a control the user deliberately navigated to.
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        active !== document.body &&
+        !active.classList.contains('xterm-helper-textarea') &&
+        /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)
+      ) {
+        return;
+      }
+      terminalRef.current?.focus();
+    };
+    const disposable = props.api.onDidActiveChange((event) => {
+      if (!event.isActive) {
+        return;
+      }
+      // Dockview focuses the tab element as part of the same activation, which
+      // would overwrite a synchronous focus(); wait one frame so ours wins.
+      if (frame === null) {
+        frame = requestAnimationFrame(focusTerminal);
+      }
+    });
+    return () => {
+      disposable.dispose();
+      if (frame !== null) {
+        cancelAnimationFrame(frame);
+        frame = null;
+      }
+    };
   }, [props.api]);
 
   useEffect(() => {

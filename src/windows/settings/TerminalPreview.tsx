@@ -67,6 +67,7 @@ export default function TerminalPreview({
     let initFrame: number | null = null;
     let resizeFrame: number | null = null;
     let applyTimer: number | null = null;
+    let cleanupFocus: (() => void) | null = null;
 
     const applyConfiguredFont = async () => {
       try {
@@ -144,15 +145,46 @@ export default function TerminalPreview({
       terminalRef.current = instance;
       fitRef.current = fit;
 
+      // xterm only blinks while its textarea owns focus. The preview exists to
+      // demonstrate exactly that setting, so take focus once it is mounted.
+      // `disableStdin` keeps keystrokes inert and `tabIndex = -1` keeps Tab
+      // navigation out of a non-editable terminal.
+      const focusPreview = () => {
+        const textarea = instance.textarea;
+        if (!textarea) {
+          return;
+        }
+        textarea.tabIndex = -1;
+        textarea.focus({ preventScroll: true });
+      };
+      focusPreview();
+
       try {
         fit.fit();
       } catch {
         /* ignore transient resize errors */
       }
 
+      // Returning to the settings window after alt-tabbing should resume the
+      // blink too, but never steal focus from a form control the user chose.
+      const handleWindowFocus = () => {
+        const active = document.activeElement;
+        if (!active || active === document.body) {
+          focusPreview();
+        }
+      };
+      window.addEventListener('focus', handleWindowFocus);
+
       // Let the tab switch paint first. The actual font is preloaded by the
       // settings window, so applying it here is normally cheap.
       applyTimer = window.setTimeout(() => void applyConfiguredFont(), 250);
+      cleanupFocus = () => {
+        window.removeEventListener('focus', handleWindowFocus);
+        const textarea = instance.textarea;
+        if (textarea && document.activeElement === textarea) {
+          textarea.blur();
+        }
+      };
     };
 
     initFrame = requestAnimationFrame(initialize);
@@ -187,6 +219,7 @@ export default function TerminalPreview({
         window.clearTimeout(applyTimer);
       }
       observer.disconnect();
+      cleanupFocus?.();
       terminalRef.current = null;
       fitRef.current = null;
       fitAddon?.dispose();
