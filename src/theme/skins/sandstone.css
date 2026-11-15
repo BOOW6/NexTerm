@@ -1,1 +1,54 @@
-/* placeholder */
+/* Sandstone skin — warm, low-blue-light reading comfort.
+ *
+ * Builds on Slate's flat chrome, then softens it: paper-tinted surfaces, warm
+ * ink text, 8px radii and warm-tinted shadows. Structural differences from
+ * Slate are small on purpose — this family's job is comfort, not novelty.
+ */
+@import './slate.css';
+
+/* Warmer, softer hairlines: the foreground at a lower alpha reads as parchment
+ * shading rather than a drawn grid. */
+:root[data-theme^='sandstone'] .app-actionbar {
+  border-bottom-color: hsl(var(--foreground) / 0.07);
+}
+
+/* Group labels keep the quiet uppercase treatment but in warm muted ink. */
+:root[data-theme^='sandstone'] .app-group-header {
+  color: hsl(var(--muted));
+  letter-spacing: 0.05em;
+}
+
+/* Selected rows: a soft tint plus the accent rail, no hard outline. */
+:root[data-theme^='sandstone'] .app-list-row[data-active='true'] {
+  border-color: transparent;
+  border-radius: 6px;
+}
+
+/* Secondary buttons are warm paper cards with a hairline, never gradients. */
+:root[data-theme^='sandstone'] .app-button {
+  box-shadow: none;
+  background-image: none;
+}
+
+:root[data-theme^='sandstone'] .app-button[data-variant='secondary'] {
+  background-color: hsl(var(--surface));
+  border-color: hsl(34 20% 86%);
+}
+
+:root[data-theme^='sandstone'][data-color-scheme='dark'] .app-button[data-variant='secondary'] {
+  border-color: hsl(var(--foreground) / 0.12);
+}
+
+:root[data-theme^='sandstone'] .app-button[data-variant='secondary']:hover {
+  background-color: hsl(var(--surface-hover));
+}
+
+:root[data-theme^='sandstone'] .app-button[data-variant='primary'] {
+  background-color: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+
+/* Dialog headers sit flush on the paper surface. */
+:root[data-theme^='sandstone'] .app-dialog-header {
+  border-bottom-color: hsl(var(--foreground) / 0.08);
+}

@@ -16,7 +16,9 @@ export type BuiltinThemeId =
   | 'graphite-light'
   | 'graphite-dark'
   | 'tgreen-light'
-  | 'tgreen-dark';
+  | 'tgreen-dark'
+  | 'sandstone-light'
+  | 'sandstone-dark';
 /**
  * Built-in ids plus user-defined theme ids from the themes folder. Custom ids
  * are `[a-z0-9-]` strings (enforced by the backend scanner); they are kept
@@ -64,6 +66,14 @@ export const LIGHT_THEMES: ThemeDefinition[] = [
     variant: 'light',
     descriptionKey: 'theme.desc.tgreenLight',
     swatches: ['#f2f6f3', '#ffffff', '#2a8469'],
+    group: 'modern'
+  },
+  {
+    id: 'sandstone-light',
+    name: 'Sandstone',
+    variant: 'light',
+    descriptionKey: 'theme.desc.sandstoneLight',
+    swatches: ['#faf7f2', '#fffdf9', '#c25a2c'],
     group: 'modern'
   },
   {
@@ -115,6 +125,14 @@ export const DARK_THEMES: ThemeDefinition[] = [
     variant: 'dark',
     descriptionKey: 'theme.desc.tgreenDark',
     swatches: ['#080f0c', '#131a16', '#48d597'],
+    group: 'modern'
+  },
+  {
+    id: 'sandstone-dark',
+    name: 'Sandstone',
+    variant: 'dark',
+    descriptionKey: 'theme.desc.sandstoneDark',
+    swatches: ['#1a1613', '#251f1a', '#f5a544'],
     group: 'modern'
   },
   {
@@ -180,6 +198,14 @@ export const THEME_FAMILIES: ThemeFamily[] = [
     group: 'modern'
   },
   {
+    id: 'sandstone',
+    name: 'Sandstone',
+    descriptionKey: 'theme.family.sandstone',
+    light: 'sandstone-light',
+    dark: 'sandstone-dark',
+    group: 'modern'
+  },
+  {
     id: 'day-dim',
     name: 'Day / Dim',
     descriptionKey: 'theme.family.dayDim',
@@ -227,7 +253,10 @@ export interface ThemeAccent {
   foreground: string;
 }
 
-export const MODERN_THEME_ACCENTS: Record<'slate' | 'graphite' | 'tgreen', ThemeAccent[]> = {
+export const MODERN_THEME_ACCENTS: Record<
+  'slate' | 'graphite' | 'tgreen' | 'sandstone',
+  ThemeAccent[]
+> = {
   slate: [
     { id: 'blue', accent: '#3b82f6', foreground: '#ffffff' },
     { id: 'violet', accent: '#8250df', foreground: '#ffffff' },
@@ -245,6 +274,11 @@ export const MODERN_THEME_ACCENTS: Record<'slate' | 'graphite' | 'tgreen', Theme
     { id: 'phosphor', accent: '#48d597', foreground: '#06231a' },
     { id: 'amber', accent: '#e3b341', foreground: '#1f1602' },
     { id: 'ice', accent: '#7dd3fc', foreground: '#04202e' }
+  ],
+  sandstone: [
+    { id: 'terracotta', accent: '#c25a2c', foreground: '#ffffff' },
+    { id: 'olive', accent: '#6b7d3a', foreground: '#ffffff' },
+    { id: 'ochre', accent: '#b8860b', foreground: '#1f1602' }
   ]
 };
 

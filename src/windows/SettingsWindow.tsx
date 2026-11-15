@@ -217,7 +217,8 @@ const THEME_GROUPS: ThemeGroup[] = ['modern', 'classic'];
 const ACCENT_SWATCHES = [
   ...MODERN_THEME_ACCENTS.slate,
   ...MODERN_THEME_ACCENTS.graphite,
-  ...MODERN_THEME_ACCENTS.tgreen
+  ...MODERN_THEME_ACCENTS.tgreen,
+  ...MODERN_THEME_ACCENTS.sandstone
 ].filter(
   (accent, index, all) => all.findIndex((preset) => preset.accent === accent.accent) === index
 );

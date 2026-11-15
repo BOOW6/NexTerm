@@ -1101,3 +1101,173 @@
 
   color-scheme: dark;
 }
+
+/* ---------------------------------------------------------------------------
+ * Modern family: Sandstone
+ * Anchor: Solarized's tonal system rendered with Notion / Arc paper. Warm
+ * neutrals only (no blue-grey), ink instead of black, 8px radii, soft shadows
+ * tinted warm. Built for night reading and long log scrolls.
+ * ------------------------------------------------------------------------- */
+[data-theme='sandstone-light'] {
+  --background: 38 40% 96%;
+  --background-alt: 38 30% 93%;
+  --surface: 40 60% 99%;
+  --surface-elevated: 40 60% 99%;
+  --surface-header: 38 32% 94%;
+  --surface-hover: 36 32% 91%;
+  --surface-active: 34 26% 87%;
+  --border: 36 20% 84%;
+  --border-muted: 36 22% 89%;
+  --border-strong: 34 18% 72%;
+  --foreground: 30 14% 16%;
+  --muted: 32 9% 38%;
+  --muted-foreground: 32 8% 52%;
+  --accent: 22 78% 40%;
+  --accent-strong: 22 80% 32%;
+  --accent-soft: 22 62% 60%;
+  --accent-foreground: 0 0% 100%;
+  --link: 22 74% 36%;
+  --link-hover: 22 80% 30%;
+  --success: 142 45% 30%;
+  --warning: 34 82% 34%;
+  --error: 4 62% 44%;
+  --focus-ring: 22 78% 42%;
+  --table-header: 38 30% 93%;
+  --row-hover: 36 32% 91%;
+  --row-selected: 34 28% 88%;
+  --header-foreground: 30 14% 16%;
+  --header-muted: 32 9% 38%;
+
+  --accent-rgb: 182 79 47;
+  --surface-header-bg: hsl(var(--surface-header));
+  --surface-backdrop: hsl(var(--surface-header));
+  --surface-card: hsl(var(--surface));
+  --nav-hover-bg: hsl(var(--foreground) / 0.05);
+  --nav-active-bg: hsl(var(--foreground) / 0.09);
+  --nav-active-color: hsl(var(--foreground));
+  --menu-hover-bg: hsl(var(--foreground) / 0.07);
+  --menu-hover-color: hsl(var(--foreground));
+  --menu-radius: 8px;
+  --menu-padding: 4px;
+  --button-radius: 8px;
+  --row-selected-bg: hsl(var(--accent) / 0.11);
+  --row-selected-accent-bar: 2px;
+  --hairline-color: hsl(34 20% 86%);
+  --accent-text: hsl(var(--accent-strong));
+  --tab-height: 32px;
+  --tab-active-bg: var(--surface);
+  --tab-hidden-bg: hsl(var(--background-alt));
+  --tab-indicator: 2px;
+  --panel-header-bg: transparent;
+  --panel-header-weight: 600;
+  --panel-header-tracking: -0.005em;
+  --panel-header-transform: none;
+  --group-header-bg: transparent;
+  --elevation-1: 0 1px 2px rgba(80, 60, 30, 0.06);
+  --elevation-2: 0 10px 28px rgba(80, 60, 30, 0.14), 0 0 0 1px rgba(80, 60, 30, 0.06);
+
+  --terminal-background: 192 26% 13%;
+  --terminal-foreground: 46 22% 76%;
+  --terminal-cursor: 22 78% 62%;
+  --terminal-selection: rgba(203, 105, 57, 0.32);
+
+  --gradient-header: linear-gradient(0deg, transparent, transparent);
+  --gradient-panel-title: linear-gradient(0deg, transparent, transparent);
+  --gradient-button: linear-gradient(0deg, #fdfbf7, #fdfbf7);
+  --gradient-button-hover: linear-gradient(0deg, #f3ede3, #f3ede3);
+  --gradient-button-primary: linear-gradient(0deg, #c25a2c, #c25a2c);
+
+  --radius: 8px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+
+  --shadow-panel: none;
+  --shadow-popup: 0 10px 28px rgba(80, 60, 30, 0.14), 0 0 0 1px rgba(80, 60, 30, 0.06);
+  --shadow-inset: none;
+  --shadow-button-pressed: inset 0 0 0 1px hsl(var(--foreground) / 0.1);
+
+  color-scheme: light;
+}
+
+[data-theme='sandstone-dark'] {
+  --background: 34 14% 8%;
+  --background-alt: 34 14% 11%;
+  --surface: 34 13% 13%;
+  --surface-elevated: 34 13% 16%;
+  --surface-header: 34 14% 10%;
+  --surface-hover: 34 11% 18%;
+  --surface-active: 34 10% 22%;
+  --border: 34 10% 21%;
+  --border-muted: 34 11% 15%;
+  --border-strong: 34 9% 31%;
+  --foreground: 38 24% 90%;
+  --muted: 36 10% 66%;
+  --muted-foreground: 36 8% 51%;
+  --accent: 32 82% 58%;
+  --accent-strong: 34 86% 68%;
+  --accent-soft: 30 50% 42%;
+  --accent-foreground: 30 60% 8%;
+  --link: 34 86% 64%;
+  --link-hover: 36 88% 74%;
+  --success: 140 42% 52%;
+  --warning: 40 78% 60%;
+  --error: 6 60% 62%;
+  --focus-ring: 32 82% 60%;
+  --table-header: 34 14% 11%;
+  --row-hover: 34 11% 17%;
+  --row-selected: 34 10% 21%;
+  --header-foreground: 38 24% 90%;
+  --header-muted: 36 10% 66%;
+
+  --accent-rgb: 245 165 68;
+  --surface-header-bg: hsl(var(--surface-header));
+  --surface-backdrop: hsl(var(--surface-header));
+  --surface-card: hsl(var(--surface));
+  --nav-hover-bg: hsl(var(--foreground) / 0.06);
+  --nav-active-bg: hsl(var(--foreground) / 0.1);
+  --nav-active-color: hsl(var(--foreground));
+  --menu-hover-bg: hsl(var(--foreground) / 0.08);
+  --menu-hover-color: hsl(var(--foreground));
+  --menu-radius: 8px;
+  --menu-padding: 4px;
+  --button-radius: 8px;
+  --row-selected-bg: hsl(var(--accent) / 0.14);
+  --row-selected-accent-bar: 2px;
+  --hairline-color: hsl(var(--foreground) / 0.09);
+  --accent-text: hsl(var(--accent));
+  --tab-height: 32px;
+  --tab-active-bg: hsl(var(--surface));
+  --tab-hidden-bg: hsl(var(--background-alt));
+  --tab-indicator: 2px;
+  --panel-header-bg: transparent;
+  --panel-header-weight: 600;
+  --panel-header-tracking: -0.005em;
+  --panel-header-transform: none;
+  --group-header-bg: transparent;
+  --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --elevation-2: 0 12px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px hsl(var(--foreground) / 0.08);
+
+  --terminal-background: 192 26% 10%;
+  --terminal-foreground: 46 24% 82%;
+  --terminal-cursor: 32 82% 62%;
+  --terminal-selection: rgba(245, 165, 68, 0.28);
+
+  --gradient-header: linear-gradient(0deg, transparent, transparent);
+  --gradient-panel-title: linear-gradient(0deg, transparent, transparent);
+  --gradient-button: linear-gradient(0deg, #241f18, #241f18);
+  --gradient-button-hover: linear-gradient(0deg, #2d2720, #2d2720);
+  --gradient-button-primary: linear-gradient(0deg, #f5a544, #f5a544);
+
+  --radius: 8px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+
+  --shadow-panel: none;
+  --shadow-popup: 0 12px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px hsl(var(--foreground) / 0.08);
+  --shadow-inset: none;
+  --shadow-button-pressed: inset 0 0 0 1px hsl(var(--foreground) / 0.12);
+
+  color-scheme: dark;
+}
