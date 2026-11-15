@@ -308,7 +308,9 @@ pub async fn ssh_connect(
     port: u16,
     username: String,
     auth_method: String,
-    password: String,
+    // Optional: agent / key / certificate authentication never reads it, and
+    // requiring the field forced every non-frontend caller to send "".
+    password: Option<String>,
     private_key_path: Option<String>,
     cert_path: Option<String>,
     passphrase: Option<String>,
@@ -326,7 +328,7 @@ pub async fn ssh_connect(
             port,
             username,
             auth_method,
-            password,
+            password.unwrap_or_default(),
             private_key_path,
             cert_path,
             passphrase,

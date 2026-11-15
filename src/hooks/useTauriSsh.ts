@@ -157,7 +157,10 @@ export async function connectSsh(options: SshConnectOptions): Promise<string> {
     port: options.port,
     username: options.username,
     authMethod: options.authMethod,
-    password: options.password ?? '',
+    // Optional on the backend (`Option<String>`); agent / key / certificate
+    // auth never reads it. Kept as a null-defaulted field so the payload shape
+    // stays uniform across auth methods.
+    password: options.password ?? null,
     privateKeyPath: options.privateKeyPath ?? null,
     certPath: options.certPath ?? null,
     passphrase: options.passphrase ?? null,

@@ -938,6 +938,12 @@ async fn stop_session_forwards(
     }
 }
 
+/// Whether an auth method consumes the `password` field at all. Agent, key
+/// and certificate authentication do not, so callers may omit it.
+pub(crate) fn auth_method_uses_password(auth_method: &str) -> bool {
+    !matches!(auth_method, "agent" | "key" | "certificate")
+}
+
 /// Authenticate an established SSH transport with the given credentials.
 /// Shared by the direct and the jump-host connection path.
 async fn authenticate(
@@ -1078,6 +1084,11 @@ impl SshManager {
         // listeners before the shell starts and never lose the first prompt.
         if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
             return Err(anyhow!("invalid SSH session id"));
+        }
+        // Fail fast instead of waiting for the server to reject an empty
+        // password; agent / key / certificate auth never reads this field.
+        if auth_method_uses_password(&auth_method) && password.is_empty() {
+            return Err(anyhow!("请输入登录密码"));
         }
         if self
             .sessions
@@ -1900,10 +1911,11 @@ impl SshManager {
             .sessions
             .lock()
             .map_err(|_| anyhow!("failed to lock SSH sessions"))?;
-        sessions
-            .get(id)
-            .cloned()
-            .ok_or_else(|| anyhow!("SSH session not found"))
+        sessions.get(id).cloned().ok_or_else(|| {
+            // Surfaced by SFTP, port forwarding and remote edit alike; tell the
+            // user what to do instead of just that the lookup missed.
+            anyhow!("SSH 会话已断开或不存在，请重新连接后再试")
+        })
     }
 
     fn writer(&self, id: &str) -> anyhow::Result<Arc<ChannelWriteHalf<client::Msg>>> {
@@ -3579,6 +3591,19 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    #[test]
+    fn only_password_auth_consumes_the_password_field() {
+        // Agent / key / certificate logins must accept callers that omit the
+        // field entirely (ssh_connect takes `password: Option<String>`).
+        assert!(!auth_method_uses_password("agent"));
+        assert!(!auth_method_uses_password("key"));
+        assert!(!auth_method_uses_password("certificate"));
+        assert!(auth_method_uses_password("password"));
+        // Anything unrecognised goes down the password branch in `authenticate`.
+        assert!(auth_method_uses_password("keyboard-interactive"));
+        assert!(auth_method_uses_password(""));
+    }
+
     fn read_known_hosts(path: &std::path::Path) -> Vec<KnownHost> {
         let bytes = std::fs::read(path).expect("known_hosts file should exist");
         serde_json::from_slice(&bytes).expect("known_hosts should be valid JSON")
@@ -3805,6 +3830,22 @@ mod tests {
 
         assert_eq!(receiver.try_recv(), Ok(true));
         assert!(lock(&manager.host_keys.pending).is_empty());
+    }
+
+    #[test]
+    fn missing_session_reports_an_actionable_error() {
+        let dir = tempdir().unwrap();
+        let manager = SshManager::new(Some(dir.path().join("known_hosts.json")));
+
+        // SFTP / port forwarding / remote edit all resolve their session here;
+        // the message must tell the user to reconnect rather than just "not
+        // found".
+        let error = manager
+            .connection("gone")
+            .err()
+            .expect("unknown session must be an error")
+            .to_string();
+        assert!(error.contains("重新连接"), "unexpected message: {error}");
     }
 
     #[test]
