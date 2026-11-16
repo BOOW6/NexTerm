@@ -122,7 +122,7 @@
  * --row-selected-accent-bar get a rail in addition to the fill. */
 :root .bg-row-selected {
   background-color: var(--row-selected-mix);
-  box-shadow: inset var(--row-selected-accent-bar) 0 0 hsl(var(--accent));
+  box-shadow: inset var(--layout-row-accent-bar) 0 0 hsl(var(--accent));
 }
 
 /* ---------------------------------------------------------------------------
@@ -157,7 +157,7 @@
 }
 
 :root .app-popup {
-  padding: var(--menu-padding);
+  padding: var(--layout-menu-padding);
   box-shadow: var(--elevation-2), var(--popup-ring);
 }
 
@@ -175,8 +175,8 @@
 :root .app-panel-header,
 :root .app-dialog-header {
   background-color: var(--panel-header-bg);
-  font-weight: var(--panel-header-weight);
-  letter-spacing: var(--panel-header-tracking);
+  font-weight: var(--font-weight-emphasis);
+  letter-spacing: var(--tracking-tight);
   text-transform: var(--panel-header-transform);
 }
 
@@ -193,7 +193,7 @@
  * "raised sheet" tabs and a flat pinned-tab look. Defaults reproduce
  * dockview's pre-skin values (surface / background-alt, 28px, no underline). */
 :root .dockview-theme-dark {
-  --dv-tabs-and-actions-container-height: var(--tab-height);
+  --dv-tabs-and-actions-container-height: var(--layout-tab-height);
   --dv-activegroup-visiblepanel-tab-background-color: var(--tab-active-bg);
   --dv-inactivegroup-visiblepanel-tab-background-color: var(--tab-active-bg);
   --dv-activegroup-hiddenpanel-tab-background-color: var(--tab-hidden-bg);

@@ -24,8 +24,6 @@
 /* The sidebar and workspace are cards on the canvas: a hairline outline and a
  * 10px radius, no filled trays. */
 :root[data-theme^='graphite'] .app-panel-header {
-  font-size: 11px;
-  text-transform: none;
 }
 
 /* Focus rings are part of the identity here: keep them crisp and thin. */

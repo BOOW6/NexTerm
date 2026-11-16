@@ -37,7 +37,7 @@ export default function StatusBar() {
   ).length;
 
   return (
-    <footer className="app-statusbar flex h-6 shrink-0 items-center justify-between border-t border-border bg-surface-header px-2 text-[11px] text-muted">
+    <footer className="app-statusbar flex h-6 shrink-0 items-center justify-between border-t border-border bg-surface-header px-2 text-meta text-muted">
       <div className="flex min-w-0 items-center gap-1.5">
         {session ? (
           <>

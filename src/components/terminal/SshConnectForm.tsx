@@ -117,7 +117,7 @@ export default function SshConnectForm({ session }: { session: Session }) {
         onSubmit={handleSubmit}
         className="w-full max-w-sm overflow-hidden rounded-sm border border-border-strong bg-surface-elevated shadow-panel"
       >
-        <div className="app-dialog-header border-b border-border bg-panel-title px-3 py-2 text-xs font-semibold text-foreground">
+        <div className="app-dialog-header border-b border-border bg-panel-title px-3 py-2 text-xs font-emphasis text-foreground">
           <span className="app-dialog-title">
             {authMethod === 'password'
               ? t('ssh.login')
@@ -130,7 +130,7 @@ export default function SshConnectForm({ session }: { session: Session }) {
         </div>
 
         <div className="space-y-2.5 p-4">
-          <div className="rounded-sm border border-border bg-background-alt px-2 py-1 text-[11px] text-muted">
+          <div className="rounded-sm border border-border bg-background-alt px-2 py-1 text-meta text-muted">
             <p className="font-medium text-foreground">{session.title}</p>
             <p className="font-mono">{sessionSubtitle(session, t)}</p>
           </div>
@@ -149,7 +149,7 @@ export default function SshConnectForm({ session }: { session: Session }) {
               />
             </div>
           ) : authMethod === 'agent' ? (
-            <div className="rounded-sm border border-border bg-background px-2 py-6 text-center text-[11px] text-muted">
+            <div className="rounded-sm border border-border bg-background px-2 py-6 text-center text-meta text-muted">
               {t('ssh.agentHint')}
               <br />
               {t('ssh.agentHint2')}
@@ -181,13 +181,13 @@ export default function SshConnectForm({ session }: { session: Session }) {
             </>
           )}
 
-          {error ? <p className="text-[11px] text-error">{error}</p> : null}
+          {error ? <p className="text-meta text-error">{error}</p> : null}
 
           {rememberEnabled ? (
             vaultStatus.initialized && !vaultStatus.unlocked ? (
               <div className="flex items-center gap-2 rounded-sm border border-border bg-background-alt px-2 py-1.5">
                 <LockKeyhole className="h-3.5 w-3.5 shrink-0 text-muted" />
-                <p className="flex-1 text-[10px] text-muted-foreground">{t('ssh.vaultLocked')}</p>
+                <p className="flex-1 text-tiny text-muted-foreground">{t('ssh.vaultLocked')}</p>
                 <Button
                   size="xs"
                   variant="secondary"
@@ -199,12 +199,12 @@ export default function SshConnectForm({ session }: { session: Session }) {
                 </Button>
               </div>
             ) : vaultStatus.initialized && vaultStatus.unlocked ? (
-              <p className="text-[10px] text-muted-foreground">{t('ssh.vaultUnlocked')}</p>
+              <p className="text-tiny text-muted-foreground">{t('ssh.vaultUnlocked')}</p>
             ) : (
-              <p className="text-[10px] text-muted-foreground">{t('ssh.vaultSetup')}</p>
+              <p className="text-tiny text-muted-foreground">{t('ssh.vaultSetup')}</p>
             )
           ) : (
-            <p className="text-[10px] text-muted-foreground">
+            <p className="text-tiny text-muted-foreground">
               {authMethod === 'agent' ? t('ssh.agentManaged') : t('ssh.memoryOnly')}
             </p>
           )}

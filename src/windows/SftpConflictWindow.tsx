@@ -59,11 +59,11 @@ export default function SftpConflictWindow() {
     <div className="app-dialog-window flex h-full flex-col bg-background text-foreground">
       <div className="flex-1 px-5 py-4">
         <p className="text-sm font-medium">{t('conflict.existsToast')}</p>
-        <p className="mt-1 truncate text-[11px] text-muted" title={payload?.name}>
+        <p className="mt-1 truncate text-meta text-muted" title={payload?.name}>
           {payload?.name ?? '-'}
         </p>
 
-        <div className="mt-3 rounded-sm border border-border text-[11px]">
+        <div className="mt-3 rounded-sm border border-border text-meta">
           <div className="flex border-b border-border bg-background-alt">
             <span className="w-24 shrink-0 px-2 py-1.5" />
             <span className="flex-1 px-2 py-1.5 text-muted">{t('conflict.header.size')}</span>
@@ -89,7 +89,7 @@ export default function SftpConflictWindow() {
           </div>
         </div>
 
-        <label className="mt-3 flex cursor-pointer items-center gap-2 text-[11px] text-muted">
+        <label className="mt-3 flex cursor-pointer items-center gap-2 text-meta text-muted">
           <input
             type="checkbox"
             className="h-3.5 w-3.5"

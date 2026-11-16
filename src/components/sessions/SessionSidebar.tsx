@@ -61,7 +61,7 @@ function GroupSection({
         type="button"
         onClick={onToggle}
         style={{ paddingLeft: 6 + depth * 10 }}
-        className="app-group-header flex w-full items-center gap-1 py-1 pr-1.5 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
+        className="app-group-header flex w-full items-center gap-1 py-1 pr-1.5 text-meta font-emphasis text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
       >
         {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
         {Icon ? <Icon className="h-3 w-3" /> : null}
@@ -320,7 +320,7 @@ export default function SessionSidebar() {
       className="relative flex shrink-0 flex-col border-r border-border bg-surface"
     >
       <div className="app-panel-header flex h-7 shrink-0 items-center justify-between border-b border-border bg-panel-title px-2">
-        <span className="text-xs font-semibold text-foreground">{t('sidebar.title')}</span>
+        <span className="text-xs font-emphasis text-foreground">{t('sidebar.title')}</span>
         <div className="flex items-center gap-0.5">
           <DropdownMenu
             label={t('sidebar.importMenu')}
@@ -399,14 +399,14 @@ export default function SessionSidebar() {
         {sessions.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-3 py-10 text-center">
             <TerminalSquare className="h-7 w-7 text-muted-foreground" />
-            <p className="text-[11px] text-muted">{t('sidebar.empty')}</p>
+            <p className="text-meta text-muted">{t('sidebar.empty')}</p>
             <Button size="sm" variant="primary" onClick={() => openQuickConnect()}>
               <Plus className="h-3 w-3" />
               {t('sidebar.newSession')}
             </Button>
           </div>
         ) : filtered.length === 0 ? (
-          <p className="px-2 py-6 text-center text-[11px] text-muted">{t('sidebar.noMatch')}</p>
+          <p className="px-2 py-6 text-center text-meta text-muted">{t('sidebar.noMatch')}</p>
         ) : (
           <>
             {favorites.length > 0 ? (
@@ -436,7 +436,7 @@ export default function SessionSidebar() {
         )}
       </div>
 
-      <div className="border-t border-border bg-background-alt px-2 py-1 text-[11px] text-muted">
+      <div className="border-t border-border bg-background-alt px-2 py-1 text-meta text-muted">
         {t('sidebar.total', { count: sessions.length })}
       </div>
 

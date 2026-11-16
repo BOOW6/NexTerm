@@ -5,8 +5,8 @@ type InputSize = 'md' | 'compact' | 'sm';
 
 const inputSizes: Record<InputSize, string> = {
   md: 'h-7 text-xs',
-  compact: 'h-7 text-[11px]',
-  sm: 'h-5 text-[11px]'
+  compact: 'h-7 text-meta',
+  sm: 'h-5 text-meta'
 };
 
 export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> {
@@ -41,7 +41,7 @@ export const Label = forwardRef<HTMLLabelElement, LabelHTMLAttributes<HTMLLabelE
   ({ className, ...props }, ref) => (
     <label
       ref={ref}
-      className={cn('mb-1 block text-[11px] font-medium text-muted', className)}
+      className={cn('mb-1 block text-meta font-medium text-muted', className)}
       {...props}
     />
   )

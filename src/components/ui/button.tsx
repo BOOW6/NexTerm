@@ -17,8 +17,8 @@ const variants: Record<Variant, string> = {
 };
 
 const sizes: Record<Size, string> = {
-  xs: 'h-5 px-1.5 text-[10px]',
-  sm: 'h-6 px-2 text-[11px]',
+  xs: 'h-5 px-1.5 text-tiny',
+  sm: 'h-6 px-2 text-meta',
   md: 'h-7 px-2.5 text-xs',
   icon: 'h-7 w-7 p-0',
   'icon-sm': 'h-5 w-5 p-0',

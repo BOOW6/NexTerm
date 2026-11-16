@@ -65,14 +65,21 @@ const STRUCTURE_PX_KEYS: &[&str] = &[
     "radiusMd",
     "radiusLg",
     "menuRadius",
-    "menuPadding",
     "buttonRadius",
+];
+
+/// Removed from the theme file format: font weight and letter spacing are
+/// layout, owned by `src/theme/layout-tokens.css`, and a theme that could set
+/// them would change text metrics under every panel that lays itself out
+/// against them. Kept as a named constant so the rejection message can say so.
+const STRUCTURE_LAYOUT_KEYS: &[&str] = &[
+    "panelWeight",
+    "letterSpacing",
     "tabHeight",
     "tabIndicator",
     "rowSelectedAccentBar",
+    "menuPadding",
 ];
-
-const STRUCTURE_FLOAT_KEYS: &[&str] = &["panelWeight", "letterSpacing"];
 
 /// Semantic color keys accepted in a theme file's `colors` section. The
 /// frontend maps them onto the CSS custom properties from tokens.css
@@ -532,27 +539,15 @@ fn validate_structure(
                 return Err(format!("structure.{key} must be between 0 and 64"));
             }
             resolved.insert(key, format!("{number}px"));
-        } else if STRUCTURE_FLOAT_KEYS.contains(&key.as_str()) {
-            let number = value
-                .as_f64()
-                .ok_or_else(|| format!("structure.{key} must be a number"))?;
-            // `letterSpacing` is em and may be negative (tightening); the other
-            // float key is a font weight.
-            let (min, max) = if key == "letterSpacing" {
-                (-0.5, 0.5)
-            } else {
-                (100.0, 900.0)
-            };
-            if !(min..=max).contains(&number) {
-                return Err(format!("structure.{key} is out of range"));
-            }
-            let unit = if key == "letterSpacing" { "em" } else { "" };
-            resolved.insert(key, format!("{number}{unit}"));
         } else if STRUCTURE_COLOR_KEYS.contains(&key.as_str()) {
             let text = value
                 .as_str()
                 .ok_or_else(|| format!("structure.{key} must be a hex color"))?;
             resolved.insert(key, normalize_hex(text)?);
+        } else if STRUCTURE_LAYOUT_KEYS.contains(&key.as_str()) {
+            return Err(format!(
+                "structure.{key} is layout, not theme: sizes, spacing and font metrics are defined in src/theme/layout-tokens.css and cannot be overridden by a theme"
+            ));
         } else {
             return Err(format!(
                 "unknown structure key '{key}' (see theme.schema.json)"
@@ -1251,10 +1246,7 @@ mod tests {
                 "extends": "slate-dark",
                 "structure": {
                     "radiusSm": 4,
-                    "tabHeight": 32,
-                    "tabIndicator": 2,
-                    "panelWeight": 600,
-                    "letterSpacing": -0.01,
+                    "radiusLg": 10,
                     "hairlineColor": "#2d333b"
                 }
             }"##,
@@ -1266,16 +1258,8 @@ mod tests {
             Some("4px")
         );
         assert_eq!(
-            theme.structure.get("tabHeight").map(String::as_str),
-            Some("32px")
-        );
-        assert_eq!(
-            theme.structure.get("panelWeight").map(String::as_str),
-            Some("600")
-        );
-        assert_eq!(
-            theme.structure.get("letterSpacing").map(String::as_str),
-            Some("-0.01em")
+            theme.structure.get("radiusLg").map(String::as_str),
+            Some("10px")
         );
         assert_eq!(
             theme.structure.get("hairlineColor").map(String::as_str),
@@ -1329,6 +1313,20 @@ mod tests {
     }
 
     #[test]
+    fn structure_section_rejects_layout_keys() {
+        for key in ["tabHeight", "panelWeight", "letterSpacing", "menuPadding"] {
+            let json = format!(
+                r#"{{ "name": "Layout", "variant": "dark", "structure": {{ "{key}": 4 }} }}"#
+            );
+            let error = load_theme_json("layout", &json).expect_err("layout keys must be rejected");
+            assert!(
+                error.contains("is layout, not theme"),
+                "{key} produced: {error}"
+            );
+        }
+    }
+
+    #[test]
     fn schema_extends_enum_matches_the_builtin_table() {
         let schema: serde_json::Value =
             serde_json::from_str(SCHEMA_JSON).expect("schema.json must be valid JSON");
@@ -1347,11 +1345,7 @@ mod tests {
         let documented = schema["properties"]["structure"]["properties"]
             .as_object()
             .expect("structure properties");
-        for key in STRUCTURE_PX_KEYS
-            .iter()
-            .chain(STRUCTURE_FLOAT_KEYS)
-            .chain(STRUCTURE_COLOR_KEYS)
-        {
+        for key in STRUCTURE_PX_KEYS.iter().chain(STRUCTURE_COLOR_KEYS) {
             assert!(documented.contains_key(*key), "schema is missing '{key}'");
         }
     }

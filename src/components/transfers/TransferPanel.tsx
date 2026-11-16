@@ -107,7 +107,7 @@ export default function TransferPanel() {
   return (
     <div className="flex h-full flex-col bg-surface">
       <div className="flex h-7 shrink-0 items-center justify-between border-b border-border px-1">
-        <span className="px-1 text-[11px] text-muted">
+        <span className="px-1 text-meta text-muted">
           {activeCount > 0 ? t('transfer.summary.activePart', { count: activeCount }) : ''}
           {t('transfer.summary.total', { count: transfers.length })}
         </span>
@@ -121,7 +121,7 @@ export default function TransferPanel() {
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {transfers.length === 0 ? (
-          <p className="px-2 py-8 text-center text-[11px] text-muted">{t('transfer.empty')}</p>
+          <p className="px-2 py-8 text-center text-meta text-muted">{t('transfer.empty')}</p>
         ) : (
           <div className="space-y-1.5">
             {transfers.map((item) => {
@@ -160,7 +160,7 @@ export default function TransferPanel() {
                       )}
                     />
                     <span
-                      className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground"
+                      className="min-w-0 flex-1 truncate text-meta font-medium text-foreground"
                       title={item.name}
                     >
                       {item.name}
@@ -248,7 +248,7 @@ export default function TransferPanel() {
                     />
                   </div>
 
-                  <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-muted">
+                  <div className="mt-1 flex items-center justify-between gap-2 text-tiny text-muted">
                     <span className="tabular-nums">
                       {formatBytes(item.transferred)} / {item.total ? formatBytes(item.total) : '-'}
                       {item.filesTotal > 1
@@ -267,7 +267,7 @@ export default function TransferPanel() {
                   </div>
 
                   {item.error ? (
-                    <p className="mt-1 truncate text-[10px] text-error" title={item.error}>
+                    <p className="mt-1 truncate text-tiny text-error" title={item.error}>
                       {item.error === INTERRUPTED_MESSAGE_KEY
                         ? t('transfer.interruptedReason')
                         : item.error}

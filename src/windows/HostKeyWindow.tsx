@@ -12,7 +12,7 @@ type HostKeyPayload =
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start gap-2 text-[11px]">
+    <div className="flex items-start gap-2 text-meta">
       <span className="w-16 shrink-0 text-muted">{label}</span>
       <span className="selectable min-w-0 break-all font-mono text-foreground">{value}</span>
     </div>
@@ -76,24 +76,22 @@ export default function HostKeyWindow() {
         <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
           <div className="flex items-center gap-2 rounded-sm border border-error/40 bg-error/10 px-2.5 py-2">
             <ShieldAlert className="h-4 w-4 shrink-0 text-error" />
-            <span className="text-[11px] text-error">{t('hostKey.mismatch.warning')}</span>
+            <span className="text-meta text-error">{t('hostKey.mismatch.warning')}</span>
           </div>
           <Field label={t('hostKey.field.host')} value={payload.mismatch.host} />
           <div className="rounded-sm border border-border bg-background-alt p-2">
-            <p className="mb-1 text-[10px] text-muted">{t('hostKey.mismatch.savedFingerprint')}</p>
-            <p className="selectable break-all font-mono text-[11px] text-foreground">
+            <p className="mb-1 text-tiny text-muted">{t('hostKey.mismatch.savedFingerprint')}</p>
+            <p className="selectable break-all font-mono text-meta text-foreground">
               {payload.mismatch.expected}
             </p>
           </div>
           <div className="rounded-sm border border-border bg-background-alt p-2">
-            <p className="mb-1 text-[10px] text-muted">
-              {t('hostKey.mismatch.currentFingerprint')}
-            </p>
-            <p className="selectable break-all font-mono text-[11px] text-foreground">
+            <p className="mb-1 text-tiny text-muted">{t('hostKey.mismatch.currentFingerprint')}</p>
+            <p className="selectable break-all font-mono text-meta text-foreground">
               {payload.mismatch.actual}
             </p>
           </div>
-          <p className="text-[10px] text-muted-foreground">{t('hostKey.mismatch.hint')}</p>
+          <p className="text-tiny text-muted-foreground">{t('hostKey.mismatch.hint')}</p>
         </div>
         <div className="app-dialog-footer flex justify-end border-t border-border bg-background-alt px-5 py-3">
           <Button variant="secondary" onClick={() => void cancelModal()}>
@@ -109,7 +107,7 @@ export default function HostKeyWindow() {
       <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
         <div className="flex items-center gap-2 rounded-sm border border-border bg-background-alt px-2.5 py-2">
           <ShieldQuestion className="h-4 w-4 shrink-0 text-warning" />
-          <span className="text-[11px] text-muted">{t('hostKey.prompt.verifyHint')}</span>
+          <span className="text-meta text-muted">{t('hostKey.prompt.verifyHint')}</span>
         </div>
         <Field
           label={t('hostKey.field.host')}
@@ -117,12 +115,12 @@ export default function HostKeyWindow() {
         />
         <Field label={t('hostKey.field.algorithm')} value={payload.prompt.algorithm} />
         <div className="rounded-sm border border-border bg-background-alt p-2">
-          <p className="mb-1 text-[10px] text-muted">{t('hostKey.prompt.fingerprintLabel')}</p>
-          <p className="selectable break-all font-mono text-[11px] text-foreground">
+          <p className="mb-1 text-tiny text-muted">{t('hostKey.prompt.fingerprintLabel')}</p>
+          <p className="selectable break-all font-mono text-meta text-foreground">
             {payload.prompt.fingerprint}
           </p>
         </div>
-        <p className="text-[10px] text-muted-foreground">{t('hostKey.prompt.trustHint')}</p>
+        <p className="text-tiny text-muted-foreground">{t('hostKey.prompt.trustHint')}</p>
       </div>
       <div className="app-dialog-footer flex items-center justify-end gap-2 border-t border-border bg-background-alt px-5 py-3">
         <Button variant="ghost" onClick={() => void submitModal(false)}>

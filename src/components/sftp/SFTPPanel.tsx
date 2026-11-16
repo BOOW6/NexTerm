@@ -686,7 +686,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
           <option value="newer">{t('sftp.conflict.newer')}</option>
         </Select>
         <span
-          className="selectable min-w-0 flex-1 truncate font-mono text-[11px] text-muted"
+          className="selectable min-w-0 flex-1 truncate font-mono text-meta text-muted"
           title={path}
         >
           {canBrowse ? path : '-'}
@@ -736,7 +736,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         </Tooltip>
       </div>
 
-      <div className="app-table-header grid shrink-0 grid-cols-[1fr_62px_104px_42px] border-b border-border bg-table-header px-2 py-1 text-[11px] font-semibold text-foreground">
+      <div className="app-table-header grid shrink-0 grid-cols-[1fr_62px_104px_42px] border-b border-border bg-table-header px-2 py-1 text-meta font-emphasis text-foreground">
         <span>{t('sftp.header.name')}</span>
         <span className="text-right">{t('sftp.header.size')}</span>
         <span className="text-right">{t('sftp.header.mtime')}</span>
@@ -745,25 +745,25 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {!session ? (
-          <p className="px-3 py-6 text-center text-[11px] text-muted">
+          <p className="px-3 py-6 text-center text-meta text-muted">
             {t('sftp.state.pickSession')}
           </p>
         ) : session.kind === 'local' ? (
-          <p className="px-3 py-6 text-center text-[11px] text-muted">
+          <p className="px-3 py-6 text-center text-meta text-muted">
             {t('sftp.state.localNoSftp')}
           </p>
         ) : !sshId ? (
-          <p className="px-3 py-6 text-center text-[11px] text-muted">
+          <p className="px-3 py-6 text-center text-meta text-muted">
             {connection?.status === 'connecting'
               ? t('sftp.state.connecting')
               : t('sftp.state.notConnected')}
           </p>
         ) : loading ? (
-          <p className="px-3 py-6 text-center text-[11px] text-muted">{t('sftp.state.loading')}</p>
+          <p className="px-3 py-6 text-center text-meta text-muted">{t('sftp.state.loading')}</p>
         ) : error ? (
-          <p className="px-3 py-6 text-center text-[11px] text-error">{error}</p>
+          <p className="px-3 py-6 text-center text-meta text-error">{error}</p>
         ) : entries.length === 0 ? (
-          <p className="px-3 py-6 text-center text-[11px] text-muted">{t('sftp.state.empty')}</p>
+          <p className="px-3 py-6 text-center text-meta text-muted">{t('sftp.state.empty')}</p>
         ) : (
           entries.map((entry) => (
             <div
@@ -818,7 +818,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
               }}
               title={entry.is_dir ? t('sftp.row.dirHint') : t('sftp.row.fileHint')}
               className={cn(
-                'grid h-7 grid-cols-[1fr_62px_104px_42px] items-center border-b border-border-muted/60 px-2 text-[11px]',
+                'grid h-7 grid-cols-[1fr_62px_104px_42px] items-center border-b border-border-muted/60 px-2 text-meta',
                 'hover:bg-row-hover',
                 entry.is_dir && 'cursor-pointer',
                 dragOverDir === entry.path && 'bg-accent/15 ring-1 ring-inset ring-accent'
@@ -850,7 +850,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         </div>
       ) : null}
 
-      <div className="flex items-center justify-between border-t border-border bg-background-alt px-2 py-1 text-[10px] text-muted">
+      <div className="flex items-center justify-between border-t border-border bg-background-alt px-2 py-1 text-tiny text-muted">
         <span>
           {canBrowse
             ? t('sftp.footer.count', { count: entries.length })

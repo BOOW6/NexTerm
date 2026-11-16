@@ -50,13 +50,7 @@ export const STRUCTURE_VARS: Record<string, string> = {
   radiusMd: '--radius-md',
   radiusLg: '--radius-lg',
   menuRadius: '--menu-radius',
-  menuPadding: '--menu-padding',
   buttonRadius: '--button-radius',
-  tabHeight: '--tab-height',
-  tabIndicator: '--tab-indicator',
-  rowSelectedAccentBar: '--row-selected-accent-bar',
-  panelWeight: '--panel-header-weight',
-  letterSpacing: '--panel-header-tracking',
   hairlineColor: '--hairline-color',
   panelHeaderBg: '--panel-header-bg',
   surfaceBackdrop: '--surface-backdrop',
@@ -67,7 +61,6 @@ export const STRUCTURE_VARS: Record<string, string> = {
   tabActiveBg: '--tab-active-bg',
   tabHiddenBg: '--tab-hidden-bg'
 };
-
 /** Structure keys whose values reach the theme as hex colors. */
 const STRUCTURE_COLOR_KEYS = new Set([
   'hairlineColor',

@@ -46,42 +46,53 @@
     "structure": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Optional structure overrides (radii, elevation-adjacent geometry, chrome). Numbers are pixels except panelWeight (font weight) and letterSpacing (em).",
+      "description": "Optional structure overrides (radii and chrome colours). Sizes, spacing, font weight and letter spacing are layout, not theme: they live in src/theme/layout-tokens.css and cannot be overridden.",
       "properties": {
-        "radius": { "$ref": "#/definitions/px" },
-        "radiusSm": { "$ref": "#/definitions/px" },
-        "radiusMd": { "$ref": "#/definitions/px" },
-        "radiusLg": { "$ref": "#/definitions/px" },
-        "menuRadius": { "$ref": "#/definitions/px" },
-        "menuPadding": { "$ref": "#/definitions/px" },
-        "buttonRadius": { "$ref": "#/definitions/px" },
-        "tabHeight": { "$ref": "#/definitions/px" },
-        "tabIndicator": {
-          "$ref": "#/definitions/px",
-          "description": "Thickness of the active-tab underline; 0 disables it."
+        "radius": {
+          "$ref": "#/definitions/px"
         },
-        "rowSelectedAccentBar": { "$ref": "#/definitions/px" },
-        "panelWeight": {
-          "type": "number",
-          "minimum": 100,
-          "maximum": 900,
-          "description": "Font weight of panel and dialog headers."
+        "radiusSm": {
+          "$ref": "#/definitions/px"
         },
-        "letterSpacing": {
-          "type": "number",
-          "minimum": -0.1,
-          "maximum": 0.5,
-          "description": "Header letter spacing, in em."
+        "radiusMd": {
+          "$ref": "#/definitions/px"
         },
-        "hairlineColor": { "$ref": "#/definitions/hex" },
-        "panelHeaderBg": { "$ref": "#/definitions/hex" },
-        "surfaceBackdrop": { "$ref": "#/definitions/hex" },
-        "rowSelectedBg": { "$ref": "#/definitions/hex" },
-        "groupHeaderBg": { "$ref": "#/definitions/hex" },
-        "menuHoverBg": { "$ref": "#/definitions/hex" },
-        "navHoverBg": { "$ref": "#/definitions/hex" },
-        "tabActiveBg": { "$ref": "#/definitions/hex" },
-        "tabHiddenBg": { "$ref": "#/definitions/hex" }
+        "radiusLg": {
+          "$ref": "#/definitions/px"
+        },
+        "menuRadius": {
+          "$ref": "#/definitions/px"
+        },
+        "buttonRadius": {
+          "$ref": "#/definitions/px"
+        },
+        "hairlineColor": {
+          "$ref": "#/definitions/hex"
+        },
+        "panelHeaderBg": {
+          "$ref": "#/definitions/hex"
+        },
+        "surfaceBackdrop": {
+          "$ref": "#/definitions/hex"
+        },
+        "rowSelectedBg": {
+          "$ref": "#/definitions/hex"
+        },
+        "groupHeaderBg": {
+          "$ref": "#/definitions/hex"
+        },
+        "menuHoverBg": {
+          "$ref": "#/definitions/hex"
+        },
+        "navHoverBg": {
+          "$ref": "#/definitions/hex"
+        },
+        "tabActiveBg": {
+          "$ref": "#/definitions/hex"
+        },
+        "tabHiddenBg": {
+          "$ref": "#/definitions/hex"
+        }
       }
     },
     "colors": {
@@ -89,37 +100,99 @@
       "additionalProperties": false,
       "description": "Hex overrides for the UI palette.",
       "properties": {
-        "background": { "$ref": "#/definitions/hex" },
-        "backgroundAlt": { "$ref": "#/definitions/hex" },
-        "surface": { "$ref": "#/definitions/hex" },
-        "surfaceElevated": { "$ref": "#/definitions/hex" },
-        "surfaceHeader": { "$ref": "#/definitions/hex" },
-        "surfaceHover": { "$ref": "#/definitions/hex" },
-        "surfaceActive": { "$ref": "#/definitions/hex" },
-        "border": { "$ref": "#/definitions/hex" },
-        "borderMuted": { "$ref": "#/definitions/hex" },
-        "borderStrong": { "$ref": "#/definitions/hex" },
-        "foreground": { "$ref": "#/definitions/hex" },
-        "muted": { "$ref": "#/definitions/hex" },
-        "mutedForeground": { "$ref": "#/definitions/hex" },
-        "accent": { "$ref": "#/definitions/hex" },
-        "accentStrong": { "$ref": "#/definitions/hex" },
-        "accentSoft": { "$ref": "#/definitions/hex" },
-        "accentForeground": { "$ref": "#/definitions/hex" },
-        "link": { "$ref": "#/definitions/hex" },
-        "linkHover": { "$ref": "#/definitions/hex" },
-        "success": { "$ref": "#/definitions/hex" },
-        "warning": { "$ref": "#/definitions/hex" },
-        "error": { "$ref": "#/definitions/hex" },
-        "focusRing": { "$ref": "#/definitions/hex" },
-        "tableHeader": { "$ref": "#/definitions/hex" },
-        "rowHover": { "$ref": "#/definitions/hex" },
-        "rowSelected": { "$ref": "#/definitions/hex" },
-        "headerForeground": { "$ref": "#/definitions/hex" },
-        "headerMuted": { "$ref": "#/definitions/hex" },
-        "terminalBackground": { "$ref": "#/definitions/hex" },
-        "terminalForeground": { "$ref": "#/definitions/hex" },
-        "terminalCursor": { "$ref": "#/definitions/hex" },
+        "background": {
+          "$ref": "#/definitions/hex"
+        },
+        "backgroundAlt": {
+          "$ref": "#/definitions/hex"
+        },
+        "surface": {
+          "$ref": "#/definitions/hex"
+        },
+        "surfaceElevated": {
+          "$ref": "#/definitions/hex"
+        },
+        "surfaceHeader": {
+          "$ref": "#/definitions/hex"
+        },
+        "surfaceHover": {
+          "$ref": "#/definitions/hex"
+        },
+        "surfaceActive": {
+          "$ref": "#/definitions/hex"
+        },
+        "border": {
+          "$ref": "#/definitions/hex"
+        },
+        "borderMuted": {
+          "$ref": "#/definitions/hex"
+        },
+        "borderStrong": {
+          "$ref": "#/definitions/hex"
+        },
+        "foreground": {
+          "$ref": "#/definitions/hex"
+        },
+        "muted": {
+          "$ref": "#/definitions/hex"
+        },
+        "mutedForeground": {
+          "$ref": "#/definitions/hex"
+        },
+        "accent": {
+          "$ref": "#/definitions/hex"
+        },
+        "accentStrong": {
+          "$ref": "#/definitions/hex"
+        },
+        "accentSoft": {
+          "$ref": "#/definitions/hex"
+        },
+        "accentForeground": {
+          "$ref": "#/definitions/hex"
+        },
+        "link": {
+          "$ref": "#/definitions/hex"
+        },
+        "linkHover": {
+          "$ref": "#/definitions/hex"
+        },
+        "success": {
+          "$ref": "#/definitions/hex"
+        },
+        "warning": {
+          "$ref": "#/definitions/hex"
+        },
+        "error": {
+          "$ref": "#/definitions/hex"
+        },
+        "focusRing": {
+          "$ref": "#/definitions/hex"
+        },
+        "tableHeader": {
+          "$ref": "#/definitions/hex"
+        },
+        "rowHover": {
+          "$ref": "#/definitions/hex"
+        },
+        "rowSelected": {
+          "$ref": "#/definitions/hex"
+        },
+        "headerForeground": {
+          "$ref": "#/definitions/hex"
+        },
+        "headerMuted": {
+          "$ref": "#/definitions/hex"
+        },
+        "terminalBackground": {
+          "$ref": "#/definitions/hex"
+        },
+        "terminalForeground": {
+          "$ref": "#/definitions/hex"
+        },
+        "terminalCursor": {
+          "$ref": "#/definitions/hex"
+        },
         "terminalSelection": {
           "$ref": "#/definitions/hex",
           "description": "Selection highlight; #rrggbbaa controls opacity."
@@ -131,15 +204,25 @@
       "additionalProperties": false,
       "description": "Terminal color scheme. Appears as a selectable scheme in Settings > Terminal; the palette should list all 16 colors.",
       "properties": {
-        "background": { "$ref": "#/definitions/hex" },
-        "foreground": { "$ref": "#/definitions/hex" },
-        "cursor": { "$ref": "#/definitions/hex" },
-        "selectionBackground": { "$ref": "#/definitions/hex" },
+        "background": {
+          "$ref": "#/definitions/hex"
+        },
+        "foreground": {
+          "$ref": "#/definitions/hex"
+        },
+        "cursor": {
+          "$ref": "#/definitions/hex"
+        },
+        "selectionBackground": {
+          "$ref": "#/definitions/hex"
+        },
         "palette": {
           "type": "array",
           "minItems": 16,
           "maxItems": 16,
-          "items": { "$ref": "#/definitions/hex" },
+          "items": {
+            "$ref": "#/definitions/hex"
+          },
           "description": "black, red, green, yellow, blue, magenta, cyan, white, brightBlack, brightRed, brightGreen, brightYellow, brightBlue, brightMagenta, brightCyan, brightWhite."
         }
       }

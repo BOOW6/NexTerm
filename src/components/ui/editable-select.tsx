@@ -228,10 +228,10 @@ export function EditableSelect({
                       : 'text-foreground hover:bg-surface-hover'
                   )}
                 >
-                  <span className="text-[11px] font-medium">{option.label}</span>
+                  <span className="text-meta font-medium">{option.label}</span>
                   <span
                     className={cn(
-                      'w-full truncate text-[10px]',
+                      'w-full truncate text-tiny',
                       index === activeIndex ? 'opacity-75' : 'text-muted-foreground'
                     )}
                   >

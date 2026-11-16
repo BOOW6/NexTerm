@@ -190,7 +190,7 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
             </option>
           ))}
         </Select>
-        <span className="min-w-0 flex-1 truncate text-[11px] text-muted">
+        <span className="min-w-0 flex-1 truncate text-meta text-muted">
           {sshId
             ? t('forward.status.ready', { count: visibleForwards.length })
             : session
@@ -285,15 +285,15 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
           </div>
         </div>
 
-        <p className="mt-1.5 text-[10px] text-muted">{t(KIND_HINT[kind])}</p>
+        <p className="mt-1.5 text-tiny text-muted">{t(KIND_HINT[kind])}</p>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {visibleForwards.length === 0 ? (
           <div className="flex flex-col items-center gap-1 px-3 py-8 text-center">
             <Network className="h-5 w-5 text-muted" />
-            <p className="text-[11px] text-muted">{t('forward.empty.title')}</p>
-            <p className="text-[10px] text-muted-foreground">{t('forward.empty.hint')}</p>
+            <p className="text-meta text-muted">{t('forward.empty.title')}</p>
+            <p className="text-tiny text-muted-foreground">{t('forward.empty.hint')}</p>
           </div>
         ) : (
           visibleForwards.map((forward) => (
@@ -301,10 +301,10 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
               key={forward.id}
               className="flex items-center gap-2 border-b border-border-muted/60 px-2 py-1.5"
             >
-              <span className="w-16 shrink-0 rounded-sm border border-border bg-background-alt px-1 py-0.5 text-center text-[10px] text-muted">
+              <span className="w-16 shrink-0 rounded-sm border border-border bg-background-alt px-1 py-0.5 text-center text-tiny text-muted">
                 {t(KIND_LABEL[forward.kind])}
               </span>
-              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">
+              <span className="min-w-0 flex-1 truncate font-mono text-meta text-foreground">
                 {forward.bind_host}:{forward.bind_port}
                 <span className="mx-1 text-muted">→</span>
                 {forward.kind === 'dynamic'

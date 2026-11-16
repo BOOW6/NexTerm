@@ -1,0 +1,53 @@
+/* Layout tokens — the single source for everything that changes geometry.
+ *
+ * Nothing in this file may be overridden by a theme, a built-in family, an
+ * accent preset or a custom theme file: sizes, weights, letter spacing and
+ * spacing describe how dense the interface is, not what it looks like. A
+ * theme that could resize the tab strip or grow the menu padding would break
+ * hit targets and horizontal budgets that every panel is laid out against.
+ *
+ * Consumers:
+ * - Tailwind (tailwind.config.js) maps these onto named utilities, so
+ *   components use `text-meta`, `font-emphasis`, `gap-md` … instead of
+ *   `text-[11px]`, `font-semibold`, `gap-2`;
+ * - tokens.css / skin-tokens.css read the geometry ones (tab height, menu
+ *   padding, header weight) for chrome that is styled outside Tailwind.
+ *
+ * The values reproduce the sizes the components were hand-tuned with, so
+ * adopting them is a no-op visually. Change density here, in one place.
+ */
+:root {
+  /* Font stacks. A UI font choice is a density/readability decision, not a
+   * theme: swapping it from a theme would change every label's width. */
+  --font-ui:
+    'Microsoft YaHei', '微软雅黑', Tahoma, Arial, 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+  --font-mono: 'Consolas', 'Courier New', 'Sarasa Mono SC', monospace;
+
+  /* Type scale. Named by role rather than size so a component says what the
+   * text is, not how big it is. */
+  --text-micro: 9px;
+  --text-tiny: 10px;
+  --text-meta: 11px;
+  --text-body: 12px;
+  --text-body-lg: 13px;
+
+  /* Line heights paired with the scale. */
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+
+  /* Font weights. */
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-emphasis: 600;
+
+  /* Letter spacing for chrome labels (headers, group titles). */
+  --tracking-tight: -0.01em;
+  --tracking-wide: 0.06em;
+
+  /* Component geometry driven by spacing decisions, not colour. */
+  --layout-tab-height: 28px;
+  --layout-menu-padding: 2px;
+  --layout-row-accent-bar: 2px;
+  /* Thickness of the active-tab underline; 0 disables it. */
+  --layout-tab-indicator: 2px;
+}

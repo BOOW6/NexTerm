@@ -429,7 +429,7 @@ export default function CommandPalette() {
   return (
     <CommandWindow onClose={closeCommandPalette}>
       <div className="app-dialog-header flex items-center justify-between border-b border-border bg-panel-title px-2 py-1">
-        <span className="app-dialog-title text-xs font-semibold text-foreground">
+        <span className="app-dialog-title text-xs font-emphasis text-foreground">
           {t('palette.title')}
         </span>
         <button
@@ -473,7 +473,7 @@ export default function CommandPalette() {
 
       <div className="max-h-80 overflow-y-auto p-1">
         {filtered.length === 0 ? (
-          <p className="px-2 py-6 text-center text-[11px] text-muted">{t('palette.noResults')}</p>
+          <p className="px-2 py-6 text-center text-meta text-muted">{t('palette.noResults')}</p>
         ) : (
           filtered.map((item, index) => {
             const Icon = item.icon;
@@ -481,7 +481,7 @@ export default function CommandPalette() {
             return (
               <div key={item.id}>
                 {showGroup ? (
-                  <div className="px-2 pb-0.5 pt-1 text-[10px] font-semibold text-muted-foreground">
+                  <div className="px-2 pb-0.5 pt-1 text-tiny font-emphasis text-muted-foreground">
                     {t(GROUP_LABEL_KEY[item.group])}
                   </div>
                 ) : null}
@@ -501,7 +501,7 @@ export default function CommandPalette() {
                   {item.hint ? (
                     <span
                       className={cn(
-                        'shrink-0 text-[10px]',
+                        'shrink-0 text-tiny',
                         index === selected ? 'opacity-80' : 'text-muted'
                       )}
                     >
@@ -515,7 +515,7 @@ export default function CommandPalette() {
         )}
       </div>
 
-      <div className="app-dialog-footer flex items-center justify-end gap-2 border-t border-border bg-background-alt px-2 py-1 text-[10px] text-muted">
+      <div className="app-dialog-footer flex items-center justify-end gap-2 border-t border-border bg-background-alt px-2 py-1 text-tiny text-muted">
         <span className="inline-flex items-center gap-1">
           <CornerDownLeft className="h-3 w-3" /> {t('palette.run')}
         </span>

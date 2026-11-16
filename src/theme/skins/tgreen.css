@@ -24,7 +24,7 @@
 /* Panel headers name the card instead of being a tray. */
 :root[data-theme^='tgreen'] .app-panel-header {
   border-bottom-color: hsl(var(--foreground) / 0.08);
-  letter-spacing: 0;
+  letter-spacing: normal;
 }
 
 /* Popups are cards too: 6px radius, hairline, generous padding. */

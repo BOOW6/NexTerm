@@ -358,7 +358,7 @@ export default function QuickConnectWindow() {
                   )}
                   <option value="custom">{t('quickConnect.shellCustom')}</option>
                 </Select>
-                <p className="mt-1 text-[11px] text-muted">{t('quickConnect.shellHint')}</p>
+                <p className="mt-1 text-meta text-muted">{t('quickConnect.shellHint')}</p>
               </div>
               {form.shellPreset === 'custom' ? (
                 <>
@@ -501,7 +501,7 @@ export default function QuickConnectWindow() {
                   </div>
 
                   {form.authMethod === 'agent' ? (
-                    <div className="rounded-sm border border-border bg-background-alt px-2 py-2 text-[11px] text-muted">
+                    <div className="rounded-sm border border-border bg-background-alt px-2 py-2 text-meta text-muted">
                       {t('quickConnect.agentHint')}
                     </div>
                   ) : form.authMethod === 'password' ? (
@@ -573,9 +573,7 @@ export default function QuickConnectWindow() {
                               <FolderOpen className="h-3.5 w-3.5" />
                             </Button>
                           </div>
-                          <p className="mt-1 text-[11px] text-muted">
-                            {t('quickConnect.certHint')}
-                          </p>
+                          <p className="mt-1 text-meta text-muted">{t('quickConnect.certHint')}</p>
                         </div>
                       ) : null}
 
@@ -596,7 +594,7 @@ export default function QuickConnectWindow() {
                   )}
                 </>
               ) : (
-                <p className="rounded-sm border border-border bg-background-alt px-2 py-2 text-[11px] text-muted">
+                <p className="rounded-sm border border-border bg-background-alt px-2 py-2 text-meta text-muted">
                   {t('quickConnect.telnetHint')}
                 </p>
               )}
@@ -618,7 +616,7 @@ export default function QuickConnectWindow() {
                   </option>
                 ))}
               </Select>
-              <p className="mt-1 text-[11px] text-muted">{t('quickConnect.jumpHint')}</p>
+              <p className="mt-1 text-meta text-muted">{t('quickConnect.jumpHint')}</p>
             </div>
           ) : null}
 

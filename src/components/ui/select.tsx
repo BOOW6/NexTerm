@@ -6,7 +6,7 @@ type SelectSize = 'md' | 'sm';
 
 const selectSizes: Record<SelectSize, string> = {
   md: 'h-7 text-xs',
-  sm: 'h-5 text-[11px]'
+  sm: 'h-5 text-meta'
 };
 
 export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size'> {

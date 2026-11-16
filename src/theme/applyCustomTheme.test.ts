@@ -104,19 +104,33 @@ describe('resolveCustomThemeVars', () => {
       customTheme({
         structure: {
           radiusSm: '4px',
-          tabHeight: '32px',
-          panelWeight: '600',
-          letterSpacing: '-0.01em',
+          radiusLg: '10px',
           hairlineColor: '#c9d1d9'
         }
       })
     );
     expect(vars['--radius-sm']).toBe('4px');
-    expect(vars['--tab-height']).toBe('32px');
-    expect(vars['--panel-header-weight']).toBe('600');
-    expect(vars['--panel-header-tracking']).toBe('-0.01em');
+    expect(vars['--radius-lg']).toBe('10px');
     // Color keys arrive as hex and are converted to the tokens.css triplet.
     expect(vars['--hairline-color']).toBe(hexToHslTriplet('#c9d1d9'));
+  });
+
+  it('never lets a theme file touch layout tokens', () => {
+    // Layout keys were removed from the format; a stale file must not be able
+    // to resize tabs, menu padding or header metrics through `structure`.
+    const vars = resolveCustomThemeVars(
+      customTheme({
+        structure: {
+          tabHeight: '40px',
+          tabIndicator: '4px',
+          menuPadding: '12px',
+          panelWeight: '700',
+          letterSpacing: '0.2em',
+          rowSelectedAccentBar: '6px'
+        }
+      })
+    );
+    expect(vars).toEqual({});
   });
 
   it('ignores unknown structure keys', () => {

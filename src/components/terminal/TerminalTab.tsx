@@ -357,7 +357,7 @@ export default function TerminalTab(props: IDockviewPanelProps) {
             <ZoomOut className="h-3 w-3" />
           </Button>
         </Tooltip>
-        <span className="w-7 text-center text-[10px] tabular-nums text-muted">{fontSize}px</span>
+        <span className="w-7 text-center text-tiny tabular-nums text-muted">{fontSize}px</span>
         <Tooltip label={t('terminal.fontUp')}>
           <Button
             size="icon-sm"

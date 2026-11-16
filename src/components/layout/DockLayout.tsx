@@ -63,15 +63,15 @@ function EmptyWorkspace() {
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background p-6">
       <div className="pointer-events-auto w-full max-w-sm overflow-hidden rounded-sm border border-border-strong bg-surface-elevated shadow-panel">
-        <div className="app-dialog-header border-b border-border bg-panel-title px-3 py-2 text-xs font-semibold text-foreground">
+        <div className="app-dialog-header border-b border-border bg-panel-title px-3 py-2 text-xs font-emphasis text-foreground">
           <span className="app-dialog-title">{t('app.workspaceTitle')}</span>
         </div>
         <div className="flex flex-col items-center px-4 py-5 text-center">
           <div className="flex h-10 w-10 items-center justify-center rounded-sm border border-border bg-background-alt">
             <Plus className="h-5 w-5 text-muted" />
           </div>
-          <h2 className="mt-3 text-xs font-semibold text-foreground">{t('app.workspaceTitle')}</h2>
-          <p className="mt-1 text-[11px] text-muted">{t('app.workspaceHint')}</p>
+          <h2 className="mt-3 text-xs font-emphasis text-foreground">{t('app.workspaceTitle')}</h2>
+          <p className="mt-1 text-meta text-muted">{t('app.workspaceHint')}</p>
           <Button
             size="sm"
             variant="primary"

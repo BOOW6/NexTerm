@@ -995,13 +995,13 @@ export default function SettingsWindow() {
               <option value="zh-CN">{t('settings.appearance.language.zh')}</option>
               <option value="en-US">English</option>
             </Select>
-            <p className="mt-1 text-[10px] text-muted-foreground">
+            <p className="mt-1 text-tiny text-muted-foreground">
               {t('settings.appearance.language.partialNote')}
             </p>
           </div>
 
           <div>
-            <label className="flex items-center gap-2 text-[11px] text-muted">
+            <label className="flex items-center gap-2 text-meta text-muted">
               <input
                 type="checkbox"
                 className="app-checkbox h-3.5 w-3.5 accent-accent"
@@ -1010,7 +1010,7 @@ export default function SettingsWindow() {
               />
               {t('settings.appearance.closeToTray')}
             </label>
-            <p className="mt-1 text-[10px] text-muted-foreground">
+            <p className="mt-1 text-tiny text-muted-foreground">
               {t('settings.appearance.closeToTrayHint')}
             </p>
           </div>
@@ -1024,7 +1024,7 @@ export default function SettingsWindow() {
               placeholder="Ctrl+Shift+Space"
               autoComplete="off"
             />
-            <p className="mt-1 text-[10px] text-muted-foreground">
+            <p className="mt-1 text-tiny text-muted-foreground">
               {t('settings.appearance.globalShowHotkeyHint')}
             </p>
           </div>
@@ -1045,32 +1045,32 @@ export default function SettingsWindow() {
                   </option>
                 ))}
               </Select>
-              <p className="mt-1 text-[10px] text-muted-foreground">
+              <p className="mt-1 text-tiny text-muted-foreground">
                 {activeMode ? t(activeMode.descriptionKey) : undefined}
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-sm border border-border bg-background-alt p-2">
-                <div className="flex items-center gap-1.5 text-[10px] text-muted">
+                <div className="flex items-center gap-1.5 text-tiny text-muted">
                   <Moon className="h-3 w-3" />
                   {t('settings.appearance.darkThemeLabel')}
                 </div>
                 <div className="mt-1.5 flex items-center gap-2">
                   <ThemeSpecimen theme={activeDarkTheme} className="h-10 w-16" />
-                  <span className="min-w-0 truncate text-xs font-semibold text-foreground">
+                  <span className="min-w-0 truncate text-xs font-emphasis text-foreground">
                     {activeDarkTheme.name}
                   </span>
                 </div>
               </div>
               <div className="rounded-sm border border-border bg-background-alt p-2">
-                <div className="flex items-center gap-1.5 text-[10px] text-muted">
+                <div className="flex items-center gap-1.5 text-tiny text-muted">
                   <Sun className="h-3 w-3" />
                   {t('settings.appearance.lightThemeLabel')}
                 </div>
                 <div className="mt-1.5 flex items-center gap-2">
                   <ThemeSpecimen theme={activeLightTheme} className="h-10 w-16" />
-                  <span className="min-w-0 truncate text-xs font-semibold text-foreground">
+                  <span className="min-w-0 truncate text-xs font-emphasis text-foreground">
                     {activeLightTheme.name}
                   </span>
                 </div>
@@ -1081,10 +1081,10 @@ export default function SettingsWindow() {
 
         <div>
           <div className="mb-2 flex items-center justify-between gap-2">
-            <h3 className="text-xs font-semibold text-foreground">
+            <h3 className="text-xs font-emphasis text-foreground">
               {t('settings.appearance.themesTitle')}
             </h3>
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-tiny text-muted-foreground">
               {t('settings.appearance.familyHint')}
             </span>
           </div>
@@ -1097,10 +1097,10 @@ export default function SettingsWindow() {
               return (
                 <div key={group} className="space-y-2">
                   <div className="flex items-baseline gap-2 pt-1">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                    <span className="text-tiny font-emphasis uppercase tracking-wide text-muted">
                       {t(`theme.group.${group}`)}
                     </span>
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-tiny text-muted-foreground">
                       {group === 'modern'
                         ? t('theme.group.modernHint')
                         : t('theme.group.classicHint')}
@@ -1127,9 +1127,9 @@ export default function SettingsWindow() {
                           <ThemeSpecimen theme={lightTheme} className="h-14 w-20" />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="text-xs font-semibold text-foreground">{family.name}</div>
-                          <div className="text-[10px] text-muted">{t(family.descriptionKey)}</div>
-                          <div className="mt-1 text-[10px] text-muted-foreground">
+                          <div className="text-xs font-emphasis text-foreground">{family.name}</div>
+                          <div className="text-tiny text-muted">{t(family.descriptionKey)}</div>
+                          <div className="mt-1 text-tiny text-muted-foreground">
                             {darkTheme.name} / {lightTheme.name}
                           </div>
                         </div>
@@ -1160,10 +1160,10 @@ export default function SettingsWindow() {
             <div className="rounded-sm border border-border bg-surface p-2">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <div className="text-xs font-semibold text-foreground">
+                  <div className="text-xs font-emphasis text-foreground">
                     {t('settings.appearance.accent')}
                   </div>
-                  <div className="text-[10px] text-muted-foreground">
+                  <div className="text-tiny text-muted-foreground">
                     {t('settings.appearance.accentHint')}
                   </div>
                 </div>
@@ -1171,7 +1171,7 @@ export default function SettingsWindow() {
                   type="button"
                   onClick={() => update('themeAccent', '')}
                   className={cn(
-                    'rounded-sm border px-2 py-0.5 text-[10px] transition-colors',
+                    'rounded-sm border px-2 py-0.5 text-tiny transition-colors',
                     draft.themeAccent
                       ? 'border-border text-muted hover:bg-surface-hover hover:text-foreground'
                       : 'border-accent/60 bg-accent/10 text-foreground'
@@ -1205,16 +1205,16 @@ export default function SettingsWindow() {
                   );
                 })}
               </div>
-              <p className="mt-1.5 text-[10px] text-muted-foreground">
+              <p className="mt-1.5 text-tiny text-muted-foreground">
                 {t('settings.appearance.accentNeutralHint')}
               </p>
             </div>
             <div className="flex items-center justify-between gap-2 pt-2">
               <div>
-                <h3 className="text-xs font-semibold text-foreground">
+                <h3 className="text-xs font-emphasis text-foreground">
                   {t('settings.appearance.customThemesTitle')}
                 </h3>
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-tiny text-muted-foreground">
                   {t('settings.appearance.customThemesHint')}
                 </span>
               </div>
@@ -1251,11 +1251,11 @@ export default function SettingsWindow() {
                     <ThemeSpecimen theme={theme} className="h-14 w-20" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-xs font-semibold text-foreground">{theme.name}</div>
+                    <div className="text-xs font-emphasis text-foreground">{theme.name}</div>
                     {theme.description && (
-                      <div className="text-[10px] text-muted">{theme.description}</div>
+                      <div className="text-tiny text-muted">{theme.description}</div>
                     )}
-                    <div className="mt-1 text-[10px] text-muted-foreground">{theme.id}</div>
+                    <div className="mt-1 text-tiny text-muted-foreground">{theme.id}</div>
                   </div>
                   <div className="flex shrink-0 gap-1">
                     <Button
@@ -1277,18 +1277,18 @@ export default function SettingsWindow() {
               );
             })}
             {customThemes.length === 0 && customThemeErrors.length === 0 && (
-              <div className="rounded-sm border border-border bg-surface p-3 text-[10px] text-muted-foreground">
+              <div className="rounded-sm border border-border bg-surface p-3 text-tiny text-muted-foreground">
                 {t('settings.appearance.customThemesEmpty')}
               </div>
             )}
             {customThemeErrors.length > 0 && (
               <div className="rounded-sm border border-error/40 bg-surface p-2">
-                <div className="text-[10px] font-semibold text-error">
+                <div className="text-tiny font-emphasis text-error">
                   {t('settings.appearance.customThemeLoadFailed')}
                 </div>
                 <ul className="mt-1 space-y-0.5">
                   {customThemeErrors.map((error) => (
-                    <li key={error.file} className="selectable text-[10px] text-muted-foreground">
+                    <li key={error.file} className="selectable text-tiny text-muted-foreground">
                       {error.file} — {error.message}
                     </li>
                   ))}
@@ -1299,7 +1299,7 @@ export default function SettingsWindow() {
         </div>
 
         <div className="rounded-sm border border-border bg-surface p-3">
-          <h3 className="mb-2 text-xs font-semibold text-foreground">
+          <h3 className="mb-2 text-xs font-emphasis text-foreground">
             {t('settings.fonts.uiTitle')}
           </h3>
           <div className="grid items-end gap-3 md:grid-cols-[1fr_auto]">
@@ -1312,7 +1312,7 @@ export default function SettingsWindow() {
                 onChange={(value) => update('uiFontFamily', value)}
                 ariaLabel={t('settings.fonts.uiTitle')}
               />
-              <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
+              <div className="mt-1 flex items-center gap-2 text-tiny text-muted-foreground">
                 <span className="truncate">
                   {systemFontsLoading
                     ? t('settings.fonts.loading')
@@ -1330,7 +1330,7 @@ export default function SettingsWindow() {
                 </button>
               </div>
             </div>
-            <label className="flex items-center gap-2 pb-1 text-[11px] text-muted">
+            <label className="flex items-center gap-2 pb-1 text-meta text-muted">
               <input
                 type="checkbox"
                 className="app-checkbox h-3.5 w-3.5 accent-accent"
@@ -1340,7 +1340,7 @@ export default function SettingsWindow() {
               Font Ligatures
             </label>
           </div>
-          <p className="mt-1 text-[10px] text-muted-foreground">
+          <p className="mt-1 text-tiny text-muted-foreground">
             {t('settings.fonts.ligaturesHint')}
           </p>
           <div className="mt-2">
@@ -1351,16 +1351,16 @@ export default function SettingsWindow() {
               onChange={(event) => update('uiFontFeatureSettings', event.target.value)}
               placeholder={'"liga" 1, "calt" 1'}
             />
-            <p className="mt-1 text-[10px] text-muted-foreground">
+            <p className="mt-1 text-tiny text-muted-foreground">
               {t('settings.fonts.featuresHint')}
             </p>
           </div>
           <div className="mt-2 flex min-w-0 items-center gap-1.5">
-            <span className="shrink-0 text-[10px] text-muted-foreground">
+            <span className="shrink-0 text-tiny text-muted-foreground">
               {t('settings.fonts.ligatureSample')}
             </span>
             <span
-              className="selectable truncate text-[11px] text-foreground"
+              className="selectable truncate text-meta text-foreground"
               style={{
                 fontFamily: draft.uiFontFamily,
                 fontVariantLigatures: draft.uiFontLigatures ? 'normal' : 'none',
@@ -1374,7 +1374,7 @@ export default function SettingsWindow() {
           </div>
         </div>
 
-        <p className="text-[10px] text-muted-foreground">{t('settings.appearance.applyHint')}</p>
+        <p className="text-tiny text-muted-foreground">{t('settings.appearance.applyHint')}</p>
       </section>
     );
   };
@@ -1391,7 +1391,7 @@ export default function SettingsWindow() {
             onChange={(value) => update('terminalFontFamily', value)}
             ariaLabel={t('settings.fonts.terminalAria')}
           />
-          <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
+          <div className="mt-1 flex items-center gap-2 text-tiny text-muted-foreground">
             <span className="truncate">
               {systemFontsLoading
                 ? t('settings.fonts.loading')
@@ -1513,7 +1513,7 @@ export default function SettingsWindow() {
       </div>
 
       <div className="flex flex-wrap items-center gap-4">
-        <label className="flex items-center gap-2 text-[11px] text-muted">
+        <label className="flex items-center gap-2 text-meta text-muted">
           <input
             type="checkbox"
             className="app-checkbox h-3.5 w-3.5 accent-accent"
@@ -1522,7 +1522,7 @@ export default function SettingsWindow() {
           />
           {t('settings.terminal.cursorBlink')}
         </label>
-        <label className="flex items-center gap-2 text-[11px] text-muted">
+        <label className="flex items-center gap-2 text-meta text-muted">
           <input
             type="checkbox"
             className="app-checkbox h-3.5 w-3.5 accent-accent"
@@ -1531,7 +1531,7 @@ export default function SettingsWindow() {
           />
           Font Ligatures
         </label>
-        <label className="flex items-center gap-2 text-[11px] text-muted">
+        <label className="flex items-center gap-2 text-meta text-muted">
           <input
             type="checkbox"
             className="app-checkbox h-3.5 w-3.5 accent-accent"
@@ -1540,7 +1540,7 @@ export default function SettingsWindow() {
           />
           {t('settings.terminal.copyOnSelect')}
         </label>
-        <label className="flex items-center gap-2 text-[11px] text-muted">
+        <label className="flex items-center gap-2 text-meta text-muted">
           <input
             type="checkbox"
             className="app-checkbox h-3.5 w-3.5 accent-accent"
@@ -1550,12 +1550,12 @@ export default function SettingsWindow() {
           {t('settings.terminal.restoreScrollback')}
         </label>
       </div>
-      <p className="-mt-1 text-[10px] text-muted-foreground">
+      <p className="-mt-1 text-tiny text-muted-foreground">
         {t('settings.terminal.ligaturesNote')}
       </p>
 
       <div className="space-y-2 rounded-sm border border-border bg-surface p-3">
-        <label className="flex items-center gap-2 text-[11px] text-muted">
+        <label className="flex items-center gap-2 text-meta text-muted">
           <input
             type="checkbox"
             className="app-checkbox h-3.5 w-3.5 accent-accent"
@@ -1582,7 +1582,7 @@ export default function SettingsWindow() {
             <FolderOpen className="h-3.5 w-3.5" />
           </Button>
         </div>
-        <p className="text-[10px] text-muted-foreground">{t('settings.terminal.logNote')}</p>
+        <p className="text-tiny text-muted-foreground">{t('settings.terminal.logNote')}</p>
       </div>
 
       <div>
@@ -1593,16 +1593,16 @@ export default function SettingsWindow() {
           onChange={(event) => update('terminalFontFeatureSettings', event.target.value)}
           placeholder={'"calt" on'}
         />
-        <p className="mt-1 text-[10px] text-muted-foreground">
+        <p className="mt-1 text-tiny text-muted-foreground">
           {t('settings.terminal.featuresHint')}
         </p>
       </div>
 
       <div>
-        <p className="mb-1 text-[10px] text-muted">{t('settings.terminal.preview')}</p>
+        <p className="mb-1 text-tiny text-muted">{t('settings.terminal.preview')}</p>
         <Suspense
           fallback={
-            <div className="flex h-40 items-center justify-center rounded-sm border border-border bg-background-alt text-[11px] text-muted">
+            <div className="flex h-40 items-center justify-center rounded-sm border border-border bg-background-alt text-meta text-muted">
               {t('settings.terminal.previewLoading')}
             </div>
           }
@@ -1660,7 +1660,7 @@ export default function SettingsWindow() {
         />
       </div>
       <div className="col-span-2 space-y-2 rounded-sm border border-border bg-background-alt px-2 py-2">
-        <label className="flex items-center gap-2 text-[11px] text-muted">
+        <label className="flex items-center gap-2 text-meta text-muted">
           <input
             type="checkbox"
             className="app-checkbox h-3.5 w-3.5 accent-accent"
@@ -1669,7 +1669,7 @@ export default function SettingsWindow() {
           />
           {t('settings.ssh.autoReconnect')}
         </label>
-        <p className="text-[10px] text-muted-foreground">{t('settings.ssh.keepaliveNote')}</p>
+        <p className="text-tiny text-muted-foreground">{t('settings.ssh.keepaliveNote')}</p>
       </div>
     </section>
   );
@@ -1679,7 +1679,7 @@ export default function SettingsWindow() {
       <div className="space-y-2">
         {(Object.keys(SHORTCUT_LABEL_KEYS) as ShortcutAction[]).map((action) => (
           <div key={action} className="flex items-center justify-between gap-3">
-            <span className="text-[11px] text-muted">{t(SHORTCUT_LABEL_KEYS[action])}</span>
+            <span className="text-meta text-muted">{t(SHORTCUT_LABEL_KEYS[action])}</span>
             <ShortcutInput
               value={draft.shortcuts[action]}
               onChange={(value) => updateShortcut(action, value)}
@@ -1687,7 +1687,7 @@ export default function SettingsWindow() {
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[10px] text-muted-foreground">{t('settings.shortcuts.hint')}</p>
+      <p className="mt-2 text-tiny text-muted-foreground">{t('settings.shortcuts.hint')}</p>
     </section>
   );
 
@@ -1698,12 +1698,12 @@ export default function SettingsWindow() {
       <section className="space-y-5">
         <div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-xs font-semibold text-foreground">
+            <h3 className="text-xs font-emphasis text-foreground">
               {t('settings.security.vault.title')}
             </h3>
             <span
               className={cn(
-                'rounded-sm border px-1.5 py-0.5 text-[10px]',
+                'rounded-sm border px-1.5 py-0.5 text-tiny',
                 vaultUnlocked
                   ? 'border-success/40 text-success'
                   : vaultInitialized
@@ -1718,7 +1718,7 @@ export default function SettingsWindow() {
                 : t('settings.security.vault.missing')}
             </span>
           </div>
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-tiny text-muted-foreground">
             {t('settings.security.vault.description')}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -1779,14 +1779,14 @@ export default function SettingsWindow() {
               </Button>
             ) : null}
             {vaultUnlocked ? (
-              <span className="text-[10px] text-muted">
+              <span className="text-tiny text-muted">
                 {t('settings.security.vault.entryCount', {
                   count: vaultStatus?.entry_count ?? 0
                 })}
               </span>
             ) : null}
           </div>
-          <label className="mt-3 flex items-center gap-2 text-[11px] text-muted">
+          <label className="mt-3 flex items-center gap-2 text-meta text-muted">
             <input
               type="checkbox"
               className="app-checkbox h-3.5 w-3.5 accent-accent"
@@ -1799,11 +1799,11 @@ export default function SettingsWindow() {
 
         <div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-xs font-semibold text-foreground">
+            <h3 className="text-xs font-emphasis text-foreground">
               {t('settings.security.knownHosts.title')}
             </h3>
             <div className="flex items-center gap-1.5">
-              <label className="flex items-center gap-1 text-[10px] text-muted">
+              <label className="flex items-center gap-1 text-tiny text-muted">
                 <input
                   type="checkbox"
                   checked={hashHosts}
@@ -1820,11 +1820,11 @@ export default function SettingsWindow() {
             </div>
           </div>
           {loadingHosts ? (
-            <p className="text-[11px] text-muted">{t('settings.security.knownHosts.loading')}</p>
+            <p className="text-meta text-muted">{t('settings.security.knownHosts.loading')}</p>
           ) : hostsError ? (
-            <p className="selectable text-[11px] text-error">{hostsError}</p>
+            <p className="selectable text-meta text-error">{hostsError}</p>
           ) : visibleHosts.length === 0 ? (
-            <p className="text-[11px] text-muted">{t('settings.security.knownHosts.empty')}</p>
+            <p className="text-meta text-muted">{t('settings.security.knownHosts.empty')}</p>
           ) : (
             <div className="max-h-72 overflow-y-auto rounded-sm border border-border">
               {visibleHosts.map((entry) => (
@@ -1833,11 +1833,11 @@ export default function SettingsWindow() {
                   className="flex items-center gap-2 border-b border-border-muted/60 px-2 py-1.5 last:border-b-0"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="selectable truncate font-mono text-[11px] text-foreground">
+                    <p className="selectable truncate font-mono text-meta text-foreground">
                       {entry.host}
                     </p>
                     <p
-                      className="selectable truncate text-[10px] text-muted"
+                      className="selectable truncate text-tiny text-muted"
                       title={entry.fingerprint}
                     >
                       {entry.algorithm} · {entry.fingerprint}
@@ -1857,11 +1857,11 @@ export default function SettingsWindow() {
             </div>
           )}
           {removedHosts.length > 0 ? (
-            <p className="mt-2 text-[10px] text-warning">
+            <p className="mt-2 text-tiny text-warning">
               {t('settings.security.knownHosts.pendingRemoval', { count: removedHosts.length })}
             </p>
           ) : null}
-          <p className="mt-2 text-[10px] text-muted-foreground">
+          <p className="mt-2 text-tiny text-muted-foreground">
             {t('settings.security.knownHosts.removeHint')}
           </p>
         </div>
@@ -1872,9 +1872,9 @@ export default function SettingsWindow() {
   const renderAbout = () => (
     <section className="space-y-3">
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold text-foreground">NexTerm 0.1.0</h3>
-        <p className="text-[11px] text-muted">Tauri 2 + React 18 + Rust</p>
-        <p className="text-[11px] text-muted">
+        <h3 className="text-sm font-emphasis text-foreground">NexTerm 0.1.0</h3>
+        <p className="text-meta text-muted">Tauri 2 + React 18 + Rust</p>
+        <p className="text-meta text-muted">
           {t('settings.about.shortcuts', {
             palette: DEFAULT_SETTINGS.shortcuts.commandPalette,
             settings: DEFAULT_SETTINGS.shortcuts.openSettings
@@ -1884,7 +1884,7 @@ export default function SettingsWindow() {
 
       <div className="space-y-2 rounded-sm border border-border bg-surface p-3">
         <div className="flex items-center gap-2">
-          <p className="flex-1 text-[11px] text-muted">{t('settings.about.updateHint')}</p>
+          <p className="flex-1 text-meta text-muted">{t('settings.about.updateHint')}</p>
           <Button
             size="sm"
             variant="secondary"
@@ -1897,11 +1897,11 @@ export default function SettingsWindow() {
           </Button>
         </div>
         {updateState === 'latest' ? (
-          <p className="text-[10px] text-muted-foreground">{t('settings.about.upToDate')}</p>
+          <p className="text-tiny text-muted-foreground">{t('settings.about.upToDate')}</p>
         ) : null}
         {updateState === 'available' ? (
           <div className="flex items-center gap-2">
-            <p className="flex-1 text-[10px] text-muted-foreground">
+            <p className="flex-1 text-tiny text-muted-foreground">
               {t('settings.about.newVersionFound', { version: updateVersion ?? '' })}
             </p>
             <Button
@@ -1918,7 +1918,7 @@ export default function SettingsWindow() {
           </div>
         ) : null}
         {updateError ? (
-          <p className="text-[10px] text-error">
+          <p className="text-tiny text-error">
             {t('settings.about.updateFailed', { error: updateError })}
           </p>
         ) : null}
@@ -1928,7 +1928,7 @@ export default function SettingsWindow() {
 
   const renderSnippets = () => (
     <section className="space-y-3">
-      <p className="text-[11px] text-muted">
+      <p className="text-meta text-muted">
         {t('settings.snippets.hint', { palette: DEFAULT_SETTINGS.shortcuts.commandPalette })}
       </p>
 
@@ -1947,7 +1947,7 @@ export default function SettingsWindow() {
             aria-label={t('settings.snippets.commandAria')}
             className="font-mono"
           />
-          <label className="flex items-center gap-2 text-[11px] text-muted">
+          <label className="flex items-center gap-2 text-meta text-muted">
             <input
               type="checkbox"
               className="app-checkbox h-3.5 w-3.5 accent-accent"
@@ -1970,9 +1970,7 @@ export default function SettingsWindow() {
       </div>
 
       {snippets.length === 0 ? (
-        <p className="px-2 py-6 text-center text-[11px] text-muted">
-          {t('settings.snippets.empty')}
-        </p>
+        <p className="px-2 py-6 text-center text-meta text-muted">{t('settings.snippets.empty')}</p>
       ) : (
         <ul className="space-y-1">
           {snippets.map((snippet) => (
@@ -1982,7 +1980,7 @@ export default function SettingsWindow() {
             >
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-medium text-foreground">{snippet.name}</p>
-                <p className="truncate font-mono text-[10px] text-muted">{snippet.command}</p>
+                <p className="truncate font-mono text-tiny text-muted">{snippet.command}</p>
               </div>
               <Button
                 size="icon-sm"
@@ -2008,14 +2006,12 @@ export default function SettingsWindow() {
       )}
 
       <div className="mt-4 border-t border-border pt-3">
-        <h3 className="text-xs font-semibold text-foreground">{t('settings.macros.title')}</h3>
-        <p className="mt-1 text-[10px] text-muted">
+        <h3 className="text-xs font-emphasis text-foreground">{t('settings.macros.title')}</h3>
+        <p className="mt-1 text-tiny text-muted">
           {t('settings.macros.hint', { palette: DEFAULT_SETTINGS.shortcuts.commandPalette })}
         </p>
         {macros.length === 0 ? (
-          <p className="px-2 py-4 text-center text-[11px] text-muted">
-            {t('settings.macros.empty')}
-          </p>
+          <p className="px-2 py-4 text-center text-meta text-muted">{t('settings.macros.empty')}</p>
         ) : (
           <ul className="mt-2 space-y-1">
             {macros.map((macro) => (
@@ -2025,7 +2021,7 @@ export default function SettingsWindow() {
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-medium text-foreground">{macro.name}</p>
-                  <p className="text-[10px] text-muted">
+                  <p className="text-tiny text-muted">
                     {t('settings.macros.count', { count: macro.steps.length })}
                   </p>
                 </div>
@@ -2068,9 +2064,9 @@ export default function SettingsWindow() {
               data-active={tab === item.id}
               onClick={() => selectTab(item.id)}
               className={cn(
-                'flex h-9 items-center gap-1.5 rounded-t-sm border border-b-0 px-3 text-[11px] transition-colors',
+                'flex h-9 items-center gap-1.5 rounded-t-sm border border-b-0 px-3 text-meta transition-colors',
                 tab === item.id
-                  ? 'border-border bg-surface font-semibold text-foreground'
+                  ? 'border-border bg-surface font-emphasis text-foreground'
                   : 'border-transparent text-muted hover:bg-surface-hover hover:text-foreground'
               )}
             >
@@ -2092,7 +2088,7 @@ export default function SettingsWindow() {
         <Button variant="ghost" className="mr-auto" onClick={() => void resetDefaults()}>
           {t('settings.footer.resetDefaults')}
         </Button>
-        <span className="mr-1 text-[10px] text-muted">
+        <span className="mr-1 text-tiny text-muted">
           {savedAt ? t('settings.footer.saved') : t('settings.footer.unsavedHint')}
         </span>
         <Button variant="ghost" onClick={() => void requestClose()}>

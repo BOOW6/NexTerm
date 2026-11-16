@@ -15,7 +15,7 @@
 /* Group labels keep the quiet uppercase treatment but in warm muted ink. */
 :root[data-theme^='sandstone'] .app-group-header {
   color: hsl(var(--muted));
-  letter-spacing: 0.05em;
+  letter-spacing: var(--tracking-tight);
 }
 
 /* Selected rows: a soft tint plus the accent rail, no hard outline. */

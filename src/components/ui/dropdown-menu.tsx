@@ -106,7 +106,7 @@ export function DropdownMenu({ items, align = 'end', className, label }: Dropdow
                   {Icon ? <Icon className="h-3.5 w-3.5" /> : null}
                   <span className="flex-1">{item.label}</span>
                   {item.shortcut ? (
-                    <span className="text-[10px] opacity-60">{item.shortcut}</span>
+                    <span className="text-tiny opacity-60">{item.shortcut}</span>
                   ) : null}
                 </button>
               </div>

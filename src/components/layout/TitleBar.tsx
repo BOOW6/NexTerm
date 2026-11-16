@@ -67,7 +67,7 @@ function MenuRow({
         {checked ? <Check className="h-3.5 w-3.5" /> : null}
       </span>
       <span className="flex-1 whitespace-nowrap">{label}</span>
-      {shortcut ? <span className="ml-6 shrink-0 text-[10px] opacity-65">{shortcut}</span> : null}
+      {shortcut ? <span className="ml-6 shrink-0 text-tiny opacity-65">{shortcut}</span> : null}
     </button>
   );
 }

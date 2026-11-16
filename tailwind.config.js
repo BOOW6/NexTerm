@@ -69,6 +69,27 @@ export default {
         sans: ['var(--font-ui)'],
         mono: ['var(--font-mono)']
       },
+      // Typography and spacing are layout, not theme: every value below points
+      // at layout-tokens.css, which no theme may override. Components should
+      // use the named utilities (`text-meta`, `font-emphasis`, `gap-md`)
+      // instead of arbitrary values like `text-[11px]` so density changes stay
+      // in one place.
+      fontSize: {
+        micro: ['var(--text-micro)', { lineHeight: 'var(--leading-tight)' }],
+        tiny: ['var(--text-tiny)', { lineHeight: 'var(--leading-tight)' }],
+        meta: ['var(--text-meta)', { lineHeight: 'var(--leading-normal)' }],
+        body: ['var(--text-body)', { lineHeight: 'var(--leading-normal)' }],
+        'body-lg': ['var(--text-body-lg)', { lineHeight: 'var(--leading-normal)' }]
+      },
+      fontWeight: {
+        normal: 'var(--font-weight-normal)',
+        medium: 'var(--font-weight-medium)',
+        emphasis: 'var(--font-weight-emphasis)'
+      },
+      letterSpacing: {
+        tight: 'var(--tracking-tight)',
+        wide: 'var(--tracking-wide)'
+      },
       keyframes: {
         'fade-in': {
           from: { opacity: '0' },

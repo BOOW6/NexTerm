@@ -74,8 +74,8 @@ export default function SessionRow({
       <KindIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[11px] font-medium text-foreground">{session.title}</p>
-        <p className="truncate text-[10px] text-muted">{sessionSubtitle(session, t)}</p>
+        <p className="truncate text-meta font-medium text-foreground">{session.title}</p>
+        <p className="truncate text-tiny text-muted">{sessionSubtitle(session, t)}</p>
       </div>
 
       <button

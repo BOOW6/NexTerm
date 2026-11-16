@@ -15,8 +15,7 @@
 
 /* Session groups read as quiet uppercase labels rather than bars. */
 :root[data-theme^='slate'] .app-group-header {
-  font-size: 10px;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   color: hsl(var(--muted-foreground));
 }
@@ -54,7 +53,7 @@
 :root[data-theme^='slate'] .app-button {
   box-shadow: none;
   border-radius: var(--button-radius);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 :root[data-theme^='slate'] .app-button[data-variant='primary'] {
