@@ -1751,11 +1751,14 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             }, RESIZE_PARSE_FALLBACK_MS);
           };
 
-          // Once the parser has consumed everything issued, park the cursor
-          // on the blank row below its wrapped group so xterm's reflow —
-          // which skips the cursor's own group and would truncate it —
-          // processes that group like any other, then wait for the park to
-          // parse before the reflow.
+          // Once the parser has consumed everything issued, ask for a park
+          // plan. The plan is only produced when the cursor's own row would be
+          // truncated by the shrink: xterm's reflow skips the group holding
+          // the cursor, and a shell that repaints its prompt on SIGWINCH would
+          // otherwise have its output land one row below the text. A short
+          // prompt (Git Bash `$ `, PowerShell `PS C:\>`) needs no park and
+          // gets none, so the caret stays with the prompt. Then wait for the
+          // park to parse before the reflow.
           const prepare = () => {
             if (settled || disposed || !terminal) {
               return;

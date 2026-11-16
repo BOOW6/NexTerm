@@ -147,4 +147,15 @@ describe('buildCursorGroupResizePlan', () => {
 
     expect(buildCursorGroupResizePlan(terminal.buffer.active, 12, terminal.rows)).toBeNull();
   });
+
+  it('still parks an indented output row whose content would be truncated', async () => {
+    // Guards the prompt-tail exception: an indented line that is *not* the
+    // tail of a wrapped run is ordinary content and must keep its park, or a
+    // shrink would silently truncate it in the scrollback.
+    const terminal = makeTerminal(40);
+    await write(terminal, '    drwxr-xr-x  4 root root  4096 .conf');
+    expect(lineText(terminal, 0)).toBe('    drwxr-xr-x  4 root root  4096 .conf');
+
+    expect(buildCursorGroupResizePlan(terminal.buffer.active, 12, terminal.rows)).not.toBeNull();
+  });
 });

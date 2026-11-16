@@ -105,6 +105,54 @@ export function buildCursorGroupResizePlan(
     endY++;
   }
 
+  // Parking is only needed when shrinking would destroy text on the cursor's
+  // own row. xterm's reflow processes rows *above* the cursor but deliberately
+  // skips the group containing it ("the program will handle fixing up this
+  // line"), and `Terminal.resize()` then truncates what is left. Rows that sit
+  // under a wrapped run are reflowed as part of that group, so a short tail row
+  // there loses nothing.
+  //
+  // Not parking matters as much as parking. A parked cursor sits one row below
+  // the text, and a shell that repaints its prompt on SIGWINCH — Git Bash,
+  // PowerShell 5, pwsh — then draws that prompt on the new line, which is the
+  // reported "cursor jumps down / an extra prompt appears".
+  const cursorRow = buffer.getLine(cursorAbsY);
+  if (!cursorRow) {
+    return null;
+  }
+
+  // Measure the row's real content: the first and last columns holding a
+  // non-blank cell. Padding to the terminal width is not content.
+  let firstGlyph = -1;
+  let lastGlyph = 0;
+  for (let x = 0; x < cursorRow.length; x++) {
+    const cell = cursorRow.getCell(x);
+    if (cell && cell.getWidth() > 0 && cell.getChars().trim() !== '') {
+      if (firstGlyph < 0) {
+        firstGlyph = x;
+      }
+      lastGlyph = x + cell.getWidth();
+    }
+  }
+
+  // Growing never truncates, and the park is what lets xterm rejoin the runs
+  // above the cursor, so the guards below only apply when shrinking.
+  const growing = targetCols >= cursorRow.length;
+  if (!growing) {
+    // Nothing on the row, or it already fits: the shrink cannot lose anything.
+    if (firstGlyph < 0 || lastGlyph <= targetCols) {
+      return null;
+    }
+    // Prompt tail: the cursor row sits under a wrapped run and its own content
+    // starts past that run's last column — Git Bash prints `path` and then
+    // `$ ` on the next row. The parked cursor would land below the prompt, so
+    // leave it to xterm, which reflows the whole run as one group.
+    const rowAboveWrapped = cursorAbsY > 0 && (buffer.getLine(cursorAbsY - 1)?.isWrapped ?? false);
+    if (rowAboveWrapped && lastGlyph - firstGlyph <= targetCols) {
+      return null;
+    }
+  }
+
   // The restore CUP targets the viewport, and the park row must be on screen.
   const top = startY - buffer.baseY;
   const bottom = endY - buffer.baseY;
