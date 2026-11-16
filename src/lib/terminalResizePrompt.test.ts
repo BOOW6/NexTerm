@@ -154,4 +154,64 @@ describe('horizontal resize with prompts that redraw on SIGWINCH', () => {
     // The caret parks after the last command character, never on a blank row.
     expect(after.cursorLine.trim()).not.toBe('');
   });
+
+  it('does not park when widening, so the caret stays with the prompt', async () => {
+    // Widening is the direction the report named: nothing can be truncated, so
+    // parking only moved the caret off the prompt row.
+    const terminal = makeTerminal(30);
+    await write(terminal, GIT_BASH_PROMPT);
+
+    const after = await resizeColumns(terminal, 60);
+
+    expect(after.parked).toBe(false);
+    expect(after.cursorLine).toBe('$ ');
+    expect(after.cursorX).toBe(2);
+    // The wrapped path rejoined into one row and the prompt sits under it.
+    expect(lineText(terminal, 0)).toBe('user@host MINGW64 /c/Users/someone/very/long/project/path');
+    expect(lineText(terminal, 1)).toBe('$ ');
+    expect(lineText(terminal, 2)).toBe('');
+  });
+
+  it('does not park a short prompt when widening either', async () => {
+    const terminal = makeTerminal(22);
+    await write(terminal, 'PS C:\\Users\\someone> ');
+
+    const after = await resizeColumns(terminal, 60);
+
+    expect(after.parked).toBe(false);
+    expect(after.cursorY).toBe(0);
+    expect(after.cursorX).toBe(21);
+  });
+
+  it('still parks a wrapped group on widen so xterm can rejoin it', async () => {
+    // A typed command that wrapped at 18 columns: the cursor is inside a
+    // multi-row group, which xterm's reflow skips. Without the park the rows
+    // would stay split after widening.
+    const terminal = makeTerminal(18);
+    const command = 'PS C:\\> ls -la --color=auto /usr/share';
+    await write(terminal, command);
+    expect(isWrapped(terminal, 1)).toBe(true);
+
+    const after = await resizeColumns(terminal, 50);
+
+    expect(after.parked).toBe(true);
+    expect(lineText(terminal, 0)).toBe(command);
+    expect(lineText(terminal, 1)).toBe('');
+    expect(after.cursorY).toBe(0);
+    expect(after.cursorX).toBe(command.length);
+  });
+
+  it('does not truncate rows above the cursor when shrinking a group', async () => {
+    // The cursor sits on the short last row of a wrapped command, so its own
+    // content fits the new width — but the rows above belong to the same
+    // group, which xterm would truncate if the group were not parked.
+    const terminal = makeTerminal(18);
+    const command = 'PS C:\\> ls -la --color=auto /usr/share';
+    await write(terminal, command);
+
+    await resizeColumns(terminal, 12);
+
+    const rows = [0, 1, 2, 3, 4].map((y) => lineText(terminal, y)).join('');
+    expect(rows.replace(/\s+$/, '')).toBe(command.replace(/\s+$/, ''));
+  });
 });
