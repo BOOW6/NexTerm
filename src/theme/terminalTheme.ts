@@ -230,6 +230,50 @@ export function getFamilyTerminalTheme(themeId: string): ITheme | undefined {
  *
  * `themeId` is the resolved UI theme id (see `useTheme().themeId`).
  */
+/**
+ * The ANSI slots an accent override re-hues (`--terminal-ansi-<n>`, written by
+ * accent.ts). Classic families have no family palette, so they also read the
+ * same slots here: an accent must not leave a blue terminal under a green UI.
+ */
+function applyAccentPalette(theme: ITheme): ITheme {
+  const styles = getComputedStyle(document.documentElement);
+  const next = { ...theme } as Record<string, string>;
+  for (let index = 0; index < 16; index += 1) {
+    const value = styles.getPropertyValue(`--terminal-ansi-${index}`).trim();
+    if (value) {
+      next[ANSI_KEYS[index]] = value;
+    }
+  }
+  const cursor = styles.getPropertyValue('--terminal-cursor').trim();
+  if (cursor && parsedTriplet(cursor)) {
+    next.cursor = `hsl(${cursor.replace(/\s+/g, ', ')})`;
+  }
+  return next as ITheme;
+}
+
+const ANSI_KEYS = [
+  'black',
+  'red',
+  'green',
+  'yellow',
+  'blue',
+  'magenta',
+  'cyan',
+  'white',
+  'brightBlack',
+  'brightRed',
+  'brightGreen',
+  'brightYellow',
+  'brightBlue',
+  'brightMagenta',
+  'brightCyan',
+  'brightWhite'
+] as const;
+
+function parsedTriplet(value: string): boolean {
+  return /^\d+(\.\d+)?\s+\d+(\.\d+)?%\s+\d+(\.\d+)?%$/.test(value.trim());
+}
+
 export function getTerminalTheme(colorSchemeId = 'theme', themeId = ''): ITheme {
   const scheme = getTerminalColorScheme(colorSchemeId);
   if (scheme) {
@@ -245,18 +289,18 @@ export function getTerminalTheme(colorSchemeId = 'theme', themeId = ''): ITheme 
 
   const family = getFamilyTerminalTheme(themeId);
   if (family) {
-    return { ...family };
+    return applyAccentPalette(family);
   }
 
   const styles = getComputedStyle(document.documentElement);
 
-  return {
+  return applyAccentPalette({
+    ...FALLBACK_TERMINAL_COLORS,
     background: readHsl(styles, '--terminal-background', FALLBACK_TERMINAL_BACKGROUND),
     foreground: readHsl(styles, '--terminal-foreground', FALLBACK_TERMINAL_FOREGROUND),
     cursor: readHsl(styles, '--terminal-cursor', '#5b9bd5'),
     cursorAccent: readHsl(styles, '--terminal-background', FALLBACK_TERMINAL_BACKGROUND),
     selectionBackground:
-      styles.getPropertyValue('--terminal-selection').trim() || 'rgba(91,155,213,0.35)',
-    ...FALLBACK_TERMINAL_COLORS
-  };
+      styles.getPropertyValue('--terminal-selection').trim() || 'rgba(91,155,213,0.35)'
+  });
 }

@@ -11,10 +11,11 @@ import { useI18n } from '../i18n';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCustomThemesStore } from './customThemesStore';
 import { applyCustomThemeVars } from './applyCustomTheme';
-import { accentVars, applyAccentVars } from './accent';
+import { accentVars, applyAccentVars, readBaseThemeColors } from './accent';
 import {
   DEFAULT_DARK_THEME,
   DEFAULT_LIGHT_THEME,
+  findAccentPreset,
   getTheme,
   isBuiltinThemeId,
   type ThemeId,
@@ -103,10 +104,22 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           : DEFAULT_DARK_THEME;
     }
     // Accent override is layered on top of whichever base won above, so a
-    // custom theme that extends a modern family keeps the chosen accent.
+    // custom theme that extends a modern family keeps the chosen accent. The
+    // base colours are read *after* applying the base theme (and any custom
+    // overrides) and *before* the accent: the override re-hues states and
+    // neutrals against what the family actually renders.
+    const accentPreset = themeAccent ? findAccentPreset(themeAccent) : undefined;
     applyAccentVars(
       root,
-      themeAccent ? accentVars({ accent: themeAccent, variant: resolved }) : null
+      themeAccent
+        ? accentVars({
+            accent: themeAccent,
+            foreground: accentPreset?.foreground,
+            neutral: accentPreset?.neutral,
+            variant: resolved,
+            base: readBaseThemeColors()
+          })
+        : null
     );
     root.dataset.colorScheme = resolved;
   }, [themeId, resolved, customThemes, themeAccent]);

@@ -57,7 +57,12 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 
 - 主题目录 7 族 14 款，分为「现代」与「复古」两组（`THEME_FAMILIES` 的 `group` 字段，设置面板分组渲染）：现代化 Slate / Graphite / Terminal Green / Sandstone，复古为 Day-Dim / Aqua / Holo。默认明暗为 `slate-light` / `slate-dark`（DEFAULT_*_THEME；持久化选择不受影响）。
 - **Token + 皮肤分层**（P5-1）：`tokens.css` 的每个 `[data-theme]` 块同时定义颜色与「结构 token」（操作栏/状态栏底色、交互覆盖色、细线、圆角、标签几何、面板标题字重等）——必须逐主题声明，因为自定义属性在声明处替换 `var()`，写在 `:root` 会冻结首个主题的调色板。`skin-tokens.css` 把结构 token 落成交互与骨架规则（选择器多一级 `:root`，靠特异性而非顺序赢过 Tailwind 工具类，因为 `@import` 必须排在 `@tailwind` 之前）；`theme/skins/<族>.css` 只放无法用 token 表达的结构差异，Graphite/Terminal Green/Sandstone 先 `@import './slate.css'` 再叠加。
-- **强调色自定义**：设置 `themeAccent`（hex，空=主题自带）→ `theme/accent.ts` 由单色派生 `--accent(-strong/-soft/-rgb/-foreground/-text)`、focus-ring、链接与 hover/选中混合色；在基底主题之后应用，自定义主题延伸现代族时同样生效。预设见 `MODERN_THEME_ACCENTS`。
+- **强调色自定义（全局色调）**：设置 `themeAccent`（hex，空=主题自带）→ `theme/accent.ts` 由单色派生整套色调，而不是只换按钮色：
+  - 强调色梯度：`--accent(-strong/-soft/-rgb/-foreground/-text)`、focus-ring、链接、hover/选中混合色、`--terminal-selection`；
+  - 语义色跟随：success / warning / error / 终端光标按「相对主题原强调色的偏移比例」移动色相（越靠近原强调色移动越接近满额，最远不低于 60%），光度不变，所以状态仍可辨、且不会再出现半个界面没跟上的割裂；
+  - 终端配色跟随：`--terminal-ansi-2/3/4/5/6` 及亮色槽由族自带 16 色板重染，黑/白槽不动；经典族同样读取这些槽；
+  - 中性化：低饱和 / 中性黑 / 中性白预设（`NEUTRAL_ACCENT_PRESETS`）额外把底色、边框、文字改为该预设的色相与饱和度、保留原亮度，纯灰预设得到纯灰界面。
+    基底色在写入基底主题之后、应用强调色之前由 `readBaseThemeColors()` 读取，因此自定义主题延伸现代族时同样生效；`BaseThemeColors.accent`（主题原强调色）是色相偏移的参考原点，缺了它偏移会算成 0。预设见 `MODERN_THEME_ACCENTS` / `allAccentPresets`。
 - **终端跟随**：`terminalTheme.ts` 的 `FAMILY_TERMINAL_THEMES` 为 8 款现代主题各带一份 xterm 16 色板；终端配色为「跟随界面主题」时优先使用，复古族保持从 CSS token 派生。显式配色始终优先。
 - Web 2.0 视觉（复古族）：CSS Variables + Tailwind 语义 token，支持明亮 / 暗黑 / 跟随系统。
 - **自定义主题（插件化）**：把主题文件放入主题文件夹（`app_config_dir/themes/`）即生效——NexTerm JSON（`name`+`variant`，可选 `extends` 内置基底 / `colors` 语义色（hex）/ `terminal` 16 色板 / `structure` 结构覆盖：圆角、标签几何、强调条、面板标题字重与字距、chrome 颜色），并按内容识别导入 Windows Terminal scheme 与 iTerm2 `.itermcolors`；后端 `src-tauri/src/themes/` 扫描校验（`themes_list` / `themes_open_folder`，坏文件逐个报错不拖垮扫描），notify watcher 节流发 `themes-changed`，前端注册表 `customThemesStore` 两窗口共享、`ThemeProvider` 用内联 CSS 变量在 `extends` 基底上叠加（hex→HSL 三元组换算与 `STRUCTURE_VARS` 映射见 `applyCustomTheme.ts`）；`theme.schema.json`（`src-tauri/src/themes/schema.json`）随扫描写出到主题文件夹供编辑器 `$schema` 自动补全，其 `extends` 枚举与 `structure` 键由单元测试钉死。

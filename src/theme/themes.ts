@@ -251,7 +251,24 @@ export interface ThemeAccent {
   accent: string;
   /** Text/icon color placed on top of the accent (buttons, chips). */
   foreground: string;
+  /**
+   * Neutral re-tint for low-saturation / black / white presets: the preset's
+   * hue and saturation are applied to every surface, border and text
+   * lightness, so a grey or black accent does not sit on a blue-tinted canvas.
+   */
+  neutral?: string;
 }
+
+/**
+ * Neutral presets, identical for every family: an accent is a taste, a neutral
+ * is a mood. `black` and `white` carry no hue at all; their "strong" shade
+ * flips by variant in accent.ts, so one hex covers light and dark.
+ */
+export const NEUTRAL_ACCENT_PRESETS: ThemeAccent[] = [
+  { id: 'slate-muted', accent: '#64748b', foreground: '#ffffff', neutral: '#94a3b8' },
+  { id: 'black', accent: '#1f2937', foreground: '#ffffff', neutral: '#6b7280' },
+  { id: 'white', accent: '#e5e7eb', foreground: '#111827', neutral: '#d1d5db' }
+];
 
 export const MODERN_THEME_ACCENTS: Record<
   'slate' | 'graphite' | 'tgreen' | 'sandstone',
@@ -262,26 +279,49 @@ export const MODERN_THEME_ACCENTS: Record<
     { id: 'violet', accent: '#8250df', foreground: '#ffffff' },
     { id: 'green', accent: '#1a7f37', foreground: '#ffffff' },
     { id: 'amber', accent: '#bf8700', foreground: '#ffffff' },
-    { id: 'rose', accent: '#bf3989', foreground: '#ffffff' }
+    { id: 'rose', accent: '#bf3989', foreground: '#ffffff' },
+    ...NEUTRAL_ACCENT_PRESETS
   ],
   graphite: [
     { id: 'teal', accent: '#2dd4bf', foreground: '#06231f' },
     { id: 'violet', accent: '#a78bfa', foreground: '#1b1033' },
     { id: 'amber', accent: '#fbbf24', foreground: '#261a02' },
-    { id: 'blue', accent: '#60a5fa', foreground: '#06182f' }
+    { id: 'blue', accent: '#60a5fa', foreground: '#06182f' },
+    ...NEUTRAL_ACCENT_PRESETS
   ],
   tgreen: [
     { id: 'phosphor', accent: '#48d597', foreground: '#06231a' },
     { id: 'amber', accent: '#e3b341', foreground: '#1f1602' },
-    { id: 'ice', accent: '#7dd3fc', foreground: '#04202e' }
+    { id: 'ice', accent: '#7dd3fc', foreground: '#04202e' },
+    ...NEUTRAL_ACCENT_PRESETS
   ],
   sandstone: [
     { id: 'terracotta', accent: '#c25a2c', foreground: '#ffffff' },
     { id: 'olive', accent: '#6b7d3a', foreground: '#ffffff' },
-    { id: 'ochre', accent: '#b8860b', foreground: '#1f1602' }
+    { id: 'ochre', accent: '#b8860b', foreground: '#ffffff' },
+    ...NEUTRAL_ACCENT_PRESETS
   ]
 };
 
+/** Every preset across families, de-duplicated by accent hex. */
+export function allAccentPresets(): ThemeAccent[] {
+  const seen = new Set<string>();
+  return Object.values(MODERN_THEME_ACCENTS)
+    .flat()
+    .filter((preset) => {
+      if (seen.has(preset.accent)) {
+        return false;
+      }
+      seen.add(preset.accent);
+      return true;
+    });
+}
+
+/** The preset behind a stored accent hex (carries its neutral / foreground). */
+export function findAccentPreset(accent: string): ThemeAccent | undefined {
+  const target = accent.toLowerCase();
+  return allAccentPresets().find((preset) => preset.accent.toLowerCase() === target);
+}
 export function isBuiltinThemeId(id: string): boolean {
   return THEMES.some((theme) => theme.id === id);
 }

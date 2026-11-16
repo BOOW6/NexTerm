@@ -40,7 +40,7 @@ import {
   type TerminalCursorStyle
 } from '../stores/settingsStore';
 import {
-  MODERN_THEME_ACCENTS,
+  allAccentPresets,
   themeFamiliesIn,
   getTheme,
   type ThemeDefinition,
@@ -214,14 +214,7 @@ const TerminalPreview = lazy(() => import('./settings/TerminalPreview'));
 const THEME_GROUPS: ThemeGroup[] = ['modern', 'classic'];
 
 /** Swatch row for the accent override: presets of every modern family. */
-const ACCENT_SWATCHES = [
-  ...MODERN_THEME_ACCENTS.slate,
-  ...MODERN_THEME_ACCENTS.graphite,
-  ...MODERN_THEME_ACCENTS.tgreen,
-  ...MODERN_THEME_ACCENTS.sandstone
-].filter(
-  (accent, index, all) => all.findIndex((preset) => preset.accent === accent.accent) === index
-);
+const ACCENT_SWATCHES = allAccentPresets();
 
 function initialTab(): SettingsTab {
   const tab = new URLSearchParams(window.location.search).get('tab');
@@ -1190,12 +1183,16 @@ export default function SettingsWindow() {
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {ACCENT_SWATCHES.map((swatch) => {
                   const active = draft.themeAccent.toLowerCase() === swatch.accent;
+                  // Neutral presets (low saturation / black / white) are
+                  // labelled: their swatch alone does not say that they also
+                  // re-tint the neutrals.
+                  const isNeutral = Boolean(swatch.neutral);
                   return (
                     <button
                       key={swatch.id}
                       type="button"
-                      aria-label={swatch.accent}
-                      title={swatch.accent}
+                      aria-label={swatch.id}
+                      title={t(`settings.appearance.accentPreset.${swatch.id}`)}
                       aria-pressed={active}
                       onClick={() => update('themeAccent', swatch.accent)}
                       className={cn(
@@ -1203,10 +1200,14 @@ export default function SettingsWindow() {
                         active ? 'border-foreground' : 'border-transparent'
                       )}
                       style={{ backgroundColor: swatch.accent }}
+                      data-neutral={isNeutral || undefined}
                     />
                   );
                 })}
               </div>
+              <p className="mt-1.5 text-[10px] text-muted-foreground">
+                {t('settings.appearance.accentNeutralHint')}
+              </p>
             </div>
             <div className="flex items-center justify-between gap-2 pt-2">
               <div>
