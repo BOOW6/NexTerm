@@ -753,6 +753,10 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
           <p className="px-3 py-6 text-center text-meta text-muted">
             {t('sftp.state.localNoSftp')}
           </p>
+        ) : session.kind === 'telnet' || session.kind === 'serial' ? (
+          <p className="px-3 py-6 text-center text-meta text-muted">
+            {t('sftp.state.noSftpSupport')}
+          </p>
         ) : !sshId ? (
           <p className="px-3 py-6 text-center text-meta text-muted">
             {connection?.status === 'connecting'
