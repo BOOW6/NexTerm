@@ -97,8 +97,12 @@ row0  dietpi@NanoPC-T4:~$ he
 row1  lp                        <- 正确
 ```
 
-这与用户报告的 Linux 现象逐字对应。PowerShell / pwsh 的 PSReadLine、Git Bash、WSL bash、
-zsh、fish 都属于“resize 后自己重画”的一类，park 同样会造成重复或吞行。
+这与用户报告的 Linux 现象逐字对应。Git Bash / WSL bash、zsh、fish 都属于“resize 后自己
+重画”的一类，park 同样会造成重复或吞行。
+
+PowerShell 5 / pwsh 是另一种情况：实测 resize 时**不输出**，在下一次按键时发 `DSR 6n`
+（CPR），拿到光标位置后只重画输入行，不重画提示符。因此它们需要和 cmd 一样本地重排
+光标行；若交给 stock 行为，提示符前缀会被截断且不会被补回。
 
 ### 3.3 xterm.js 版本能力
 
@@ -130,7 +134,7 @@ type CursorLineResizeMode = 'local-reflow' | 'shell-repaint';
 | 会话                                                     | 模式                         | 理由                                                                          |
 | -------------------------------------------------------- | ---------------------------- | ----------------------------------------------------------------------------- |
 | 本地 Windows `cmd.exe`，或未指定命令的默认 Windows shell | `local-reflow`               | cmd/conhost 不重画提示符，只补光标行尾部                                      |
-| 本地 PowerShell 5 / pwsh                                 | `shell-repaint`              | PSReadLine 在 SIGWINCH 后重画                                                 |
+| 本地 PowerShell 5 / pwsh                                 | `local-reflow`               | resize 时不输出；下次按键 DSR 后只重画输入行，提示符需本地重排                |
 | 本地 Git Bash / WSL / *nix bash / zsh / fish             | `shell-repaint`              | readline / zle / fish 自己重画                                                |
 | SSH                                                      | `shell-repaint`              | 远端通常是 readline/zle/fish；远端 Windows cmd 作为已知边界，后续加会话级覆盖 |
 | Telnet                                                   | `shell-repaint`              | 后端 resize 是 no-op，绝不能本地移动光标行                                    |
@@ -139,8 +143,8 @@ type CursorLineResizeMode = 'local-reflow' | 'shell-repaint';
 
 判定建议放在纯函数里（便于测试），输入：`transport`、`shellCommand`、`args`：
 
-- 取 `basename(shellCommand)` 小写；`cmd.exe` / 空且 Windows → `local-reflow`；
-- `powershell.exe` / `pwsh.exe` / `bash` / `wsl.exe` / `zsh` / `fish` / 其他 → `shell-repaint`；
+- 取 `basename(shellCommand)` 小写；`cmd.exe` / `powershell.exe` / `pwsh.exe` / 空且 Windows → `local-reflow`；
+- `bash` / `wsl.exe` / `zsh` / `fish` / 其他 → `shell-repaint`；
 - SSH / telnet / serial 一律 `shell-repaint`（不看远端命令）。
 
 ### 4.2 P0：先止血（不升级依赖也能做）
@@ -276,8 +280,9 @@ type CursorLineResizeMode = 'local-reflow' | 'shell-repaint';
 
 ## 8. 关键结论（一句话）
 
-**“是否由终端本地重排光标行”必须由对端 shell 是否会在 SIGWINCH 后自己重画决定；
-cmd/conhost 需要本地重排，readline/PSReadLine 绝不能本地重排。** 现有实现按“这一行会不会
+**“是否由终端本地重排光标行”必须由对端 shell 是否会在 SIGWINCH 后自己重画提示符决定；
+cmd/conhost 与 PowerShell/PSReadLine 都需要本地重排（后者只重画输入行），readline/zle/fish
+这类会重画提示符的绝不能本地重排。** 现有实现按“这一行会不会
 被截断”判断，方向本身就是错的；xterm 6 的 `reflowCursorLine` 提供了正确的原语，但还要
 补上 ConPTY 行尾补空格在最后一行触发滚动的裁剪，才能覆盖底部提示符。
 
@@ -286,8 +291,8 @@ cmd/conhost 需要本地重排，readline/PSReadLine 绝不能本地重排。** 
 最终实现（不再使用 cursor parking）：
 
 - **策略分流**：`src/lib/terminalResizePolicy.ts` 把会话解析为 `local-reflow` /
-  `shell-repaint`。仅本地 cmd（或 ConPTY 默认 shell）本地重排；SSH / Telnet / Serial /
-  PowerShell / bash / zsh / fish / WSL / Git Bash / 自定义 shell 交给对端重画。
+  `shell-repaint`。本地 cmd / PowerShell / pwsh（或 ConPTY 默认 shell）本地重排；
+  SSH / Telnet / Serial / bash / zsh / fish / WSL / Git Bash / 自定义 shell 交给对端重画。
   `XtermCanvas` 用该值设置 `reflowCursorLine`，SSH 等会话保持 xterm 的 stock
   “跳过光标组 + 截断”行为。
 - **删除 park**：`terminalCursorReflow.ts`、`terminalResizePrompt.test.ts`、

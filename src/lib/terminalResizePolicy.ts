@@ -41,7 +41,17 @@ export function resolveCursorLineResizeMode(input: CursorLineResizeInput): Curso
   }
 
   const command = commandBasename(input.shellCommand);
-  if (command === 'cmd' || command === 'cmd.exe') {
+  // PowerShell / PSReadLine emits nothing on SIGWINCH; on the next key it asks
+  // for the cursor position (DSR 6n) and redraws only the input line. The
+  // prompt must therefore be reflowed locally, or the truncated page survives.
+  if (
+    command === 'cmd' ||
+    command === 'cmd.exe' ||
+    command === 'powershell' ||
+    command === 'powershell.exe' ||
+    command === 'pwsh' ||
+    command === 'pwsh.exe'
+  ) {
     return 'local-reflow';
   }
   if (command) {

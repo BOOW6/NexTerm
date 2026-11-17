@@ -38,7 +38,11 @@ describe('resolveCursorLineResizeMode', () => {
     );
   });
 
-  it.each(['powershell.exe', 'pwsh.exe', 'wsl.exe', 'bash', 'zsh', 'fish'])(
+  it.each(['cmd.exe', 'powershell.exe', 'pwsh.exe'])('lets %s reflow locally', (shellCommand) => {
+    expect(resolveCursorLineResizeMode({ transport: 'local', shellCommand })).toBe('local-reflow');
+  });
+
+  it.each(['wsl.exe', 'bash', 'zsh', 'fish'])(
     'leaves %s to repaint its own prompt',
     (shellCommand) => {
       expect(resolveCursorLineResizeMode({ transport: 'local', shellCommand })).toBe(

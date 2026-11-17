@@ -191,11 +191,11 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
   - **无变化不发送**：请求的 cols/rows 与当前网格一致时不得调用 `resize()`，避免无意义的 SIGWINCH 风暴。
   - **防抖窗口内的视觉裁剪**：终端宿主容器必须 `overflow-hidden`，防抖生效前旧尺寸画布被裁剪而不是溢出到相邻面板。
   - **解析等待回退是卡死检测而非超时硬切**：resize 等待已发出写入解析完成时，回退定时器在解析器仍有进展（有 write 回调完成）时必须重臂；只有整整一个窗口无任何进展才允许在未解析状态下 reflow。
-  - **光标行重排按 shell 能力分流（cursor-line policy）**：xterm.js 的 reflow 默认跳过包含光标的折行组。cmd.exe / conhost 在 SIGWINCH 后**不重画**提示符，因此本地 cmd 会话必须启用 xterm 6 的 `reflowCursorLine: true`，由终端自己拆分/回并光标组；bash / zsh / fish / Git Bash / WSL / PowerShell / pwsh 使用 readline、zle、fish 或 PSReadLine，会在 SIGWINCH 后从“它认为的当前光标行”重画提示符，**绝不能** park 或本地重排光标行，否则会重复提示符或吞掉上一行。会话类型与 `shellCommand` 经 `src/lib/terminalResizePolicy.ts` 解析为 `local-reflow` / `shell-repaint`，SSH / Telnet / Serial 一律 `shell-repaint`；自定义 shell 默认 `shell-repaint`。禁止再按“这一行会不会被截断”判断是否 park。
+  - **光标行重排按 shell 能力分流（cursor-line policy）**：xterm.js 的 reflow 默认跳过包含光标的折行组。cmd.exe / conhost 在 SIGWINCH 后**不重画**提示符；PowerShell / pwsh 的 PSReadLine 也**不重画**，而是在下一次按键时发 `DSR 6n`、拿到光标位置后只重画输入行。因此本地 cmd / PowerShell / pwsh 会话必须启用 xterm 6 的 `reflowCursorLine: true`，由终端自己拆分/回并光标组；bash / zsh / fish / Git Bash / WSL 使用 readline、zle、fish，会在 SIGWINCH 后从“它认为的当前光标行”重画提示符，**绝不能** park 或本地重排光标行，否则会重复提示符或吞掉上一行。会话类型与 `shellCommand` 经 `src/lib/terminalResizePolicy.ts` 解析为 `local-reflow` / `shell-repaint`，SSH / Telnet / Serial 一律 `shell-repaint`；自定义 shell 默认 `shell-repaint`。禁止再按“这一行会不会被截断”判断是否 park。
   - **ConPTY 重绘的行尾补空格必须裁剪**：随包 ConPTY 在 resize 时只重绘光标行尾部（`CUP`、`Erase`、`CUP`、文本+补空格、`CUP`），不是静默；当光标行位于视口最后一行时，补空格会触发自动折行、滚动视口，使后续 CUP 落到空行。`local-reflow` 会话在 resize 后（水平缩放必开，纵向也一并防御）通过 `ResizeWrapGuard` 临时关闭 DECAWM（保存应用原状态，首个输出批次解析后或 150ms 超时恢复），裁掉补空格；备用缓冲不启用。回归用例见 `src/lib/terminalResizePolicy.test.ts`、`src/lib/terminalResizeReplay.test.ts`、`src/lib/terminalResizeWrapGuard.test.ts`。
 - **ConPTY 与缓冲区安全 (ConPTY Buffer Safety)**：
   - Windows 端随包加载 Microsoft ConPTY 1.25（`conpty-assets`），确保 `PSEUDOCONSOLE_RESIZE_QUIRK` 生效，避免系统 ConPTY 在 resize 时重印整屏；许可证与哈希见 `src-tauri/THIRD_PARTY_NOTICES.md`。
-  - 创建 Terminal 时注入真实的 `windowsPty: { backend, buildNumber }`，启用 xterm 针对 ConPTY 的行增长与 reflow 策略；本地 cmd 另开 xterm 6 的 `reflowCursorLine`。
+  - 创建 Terminal 时注入真实的 `windowsPty: { backend, buildNumber }`，启用 xterm 针对 ConPTY 的行增长与 reflow 策略；本地 cmd / PowerShell / pwsh 另开 xterm 6 的 `reflowCursorLine`。
   - resize 前同步空 `alt` buffer 的 `lines.maxLength` 到目标行数，规避 xtermjs/xterm.js#6163 在垂直 grow 时把幻影行拉回视口造成的重影。
   - 针对 Windows ConPTY 在 resize 时发送的重绘与清屏控制符（如 `\x1b[2J` / 光标定位符），前端在 resize 期间**严禁主动清空或截断 `xterm.js` 的 `write` 缓存队列**；通知类直写（断线/重连提示等）在冻结期必须等待解冻后再写，保持 FIFO。
   - 数据流接收必须保证**FIFO（先进先出）严格顺序**，防止 resize 事件与 PTY 吐出的重绘数据发生乱序交织。
