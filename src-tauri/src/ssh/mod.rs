@@ -652,8 +652,11 @@ struct SftpConflictPayload {
 /// the queue UI renders ZMODEM transfers natively).
 struct ZmodemFile {
     file: Option<tokio::fs::File>,
-    #[allow(dead_code)]
-    path: PathBuf,
+    /// `<final>.part` while the transfer runs. Only renamed onto `final_path`
+    /// once every byte arrived, so a cancelled or dropped transfer never
+    /// leaves a truncated file under the real name.
+    part_path: PathBuf,
+    final_path: PathBuf,
     name: String,
     size: u64,
     transferred: u64,
@@ -717,7 +720,8 @@ impl ZmodemFile {
             final_path = dir.join(format!("{} ({}){}", file_stem, n, ext));
             n += 1;
         }
-        let file = tokio::fs::File::create(&final_path).await?;
+        let part_path = PathBuf::from(format!("{}.part", final_path.display()));
+        let file = tokio::fs::File::create(&part_path).await?;
         let transfer_id = Self::transfer_id(event_id);
         emit_progress(
             app,
@@ -733,7 +737,8 @@ impl ZmodemFile {
         );
         Ok(Self {
             file: Some(file),
-            path: final_path,
+            part_path,
+            final_path,
             name: safe,
             size: size.unwrap_or(0),
             transferred: 0,
@@ -770,7 +775,7 @@ impl ZmodemFile {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn finish(
+    async fn finish(
         &mut self,
         app: &AppHandle,
         success: bool,
@@ -779,6 +784,20 @@ impl ZmodemFile {
         error: Option<String>,
     ) {
         self.file.take(); // close
+
+        let mut success = success;
+        let mut error = error;
+        if success {
+            if let Err(err) = tokio::fs::rename(&self.part_path, &self.final_path).await {
+                success = false;
+                error = Some(format!("failed to finalize download: {err}"));
+            }
+        } else {
+            // No resume for ZMODEM: a partial .part is noise, and the final
+            // name must never hold truncated content.
+            let _ = tokio::fs::remove_file(&self.part_path).await;
+        }
+
         emit_done(
             app,
             &SftpTransferDonePayload {
@@ -791,7 +810,7 @@ impl ZmodemFile {
                 error,
                 transferred: self.transferred,
                 total: self.size,
-                files_done: 1,
+                files_done: usize::from(success),
                 files_total: 1,
             },
         );
@@ -802,6 +821,7 @@ async fn handle_zmodem_action(
     app: &AppHandle,
     event_id: &str,
     action: ZmodemAction,
+    cancelled_by_user: bool,
     state: &mut Option<ZmodemFile>,
 ) {
     match action {
@@ -814,7 +834,7 @@ async fn handle_zmodem_action(
         ZmodemAction::FileStart { name, size } => {
             // A previous file that never saw its ZEOF still needs closing.
             if let Some(prev) = state.as_mut() {
-                prev.finish(app, false, false, false, None);
+                prev.finish(app, false, false, false, None).await;
             }
             *state = None;
             match ZmodemFile::start(app, event_id, name.clone(), size).await {
@@ -845,7 +865,13 @@ async fn handle_zmodem_action(
         } => {
             if let Some(file) = state.as_mut() {
                 file.transferred = bytes;
-                file.finish(app, success, !success, false, None);
+                let cancelled = !success && cancelled_by_user;
+                let error = if success || cancelled {
+                    None
+                } else {
+                    Some("ZMODEM 传输中断".to_string())
+                };
+                file.finish(app, success, cancelled, false, error).await;
             }
             *state = None;
         }
@@ -1318,11 +1344,11 @@ impl SshManager {
             while let Some(message) = read_half.wait().await {
                 match message {
                     ChannelMsg::Data { data } => {
-                        let (passthrough, actions) = {
+                        let (passthrough, actions, cancelled_by_user) = {
                             let mut machine =
                                 zmachine.lock().unwrap_or_else(|poison| poison.into_inner());
                             let feed = machine.feed(&data);
-                            (feed.passthrough, feed.actions)
+                            (feed.passthrough, feed.actions, feed.cancelled)
                         };
                         if !passthrough.is_empty() {
                             let decoded = output_decoder.feed(&passthrough);
@@ -1334,7 +1360,14 @@ impl SshManager {
                             let _ = app_handle.emit(&format!("ssh-output-{}", event_id), payload);
                         }
                         for action in actions {
-                            handle_zmodem_action(&app_handle, &event_id, action, &mut zfile).await;
+                            handle_zmodem_action(
+                                &app_handle,
+                                &event_id,
+                                action,
+                                cancelled_by_user,
+                                &mut zfile,
+                            )
+                            .await;
                         }
                     }
                     ChannelMsg::ExtendedData { data, .. } => {
@@ -1369,7 +1402,7 @@ impl SshManager {
             // A transfer cut short by the connection dropping still needs its
             // queue entry closed.
             if let Some(state) = zfile.as_mut() {
-                state.finish(&app_handle, false, false, true, None);
+                state.finish(&app_handle, false, false, true, None).await;
             }
 
             let _ = app_handle.emit(

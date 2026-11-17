@@ -362,3 +362,24 @@ fn sentinel_prefix_len_matches_only_real_prefixes() {
     // `*` after a non-matching byte is the only held suffix.
     assert_eq!(s(b"***"), 2);
 }
+
+#[test]
+fn cancel_keeps_the_same_chunk_as_terminal_output() {
+    let mut z = ZmodemReceiver::new();
+    // Establish a session first (cancel needs a machine to tear down).
+    let hello = hex_frame(ZRQINIT, [0; 4]);
+    let feed = z.feed(&hello);
+    assert!(!feed.aborted);
+
+    assert_eq!(z.cancel(), CANCEL_SEQUENCE);
+    // The read that carries the abort usually also carries the shell prompt
+    // that follows; it must still be rendered instead of being swallowed.
+    let feed = z.feed(b"prompt$ ");
+    assert!(feed.aborted);
+    assert!(feed.cancelled);
+    assert_eq!(feed.passthrough, b"prompt$ ");
+    assert!(feed.actions.iter().any(|action| matches!(
+        action,
+        Action::WriteToRemote { data } if data == &CANCEL_SEQUENCE.to_vec()
+    )));
+}

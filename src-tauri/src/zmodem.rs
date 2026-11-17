@@ -111,6 +111,8 @@ pub struct Feed {
     pub done: bool,
     /// The session was aborted (cancel received or requested).
     pub aborted: bool,
+    /// The abort came from `cancel()` (the user), not from the remote peer.
+    pub cancelled: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -225,8 +227,12 @@ impl ZmodemReceiver {
         let mut out = Feed::default();
         if self.cancel_requested {
             self.cancel_requested = false;
+            out.cancelled = true;
             self.abort(&mut out);
-            return out;
+            // Keep processing this chunk: it usually carries the shell output
+            // that follows the cancel (a prompt or the next command's echo),
+            // which must not be swallowed just because the cancel landed in
+            // the same read.
         }
         let mut rest = input;
         if self.state == State::Scan {
