@@ -4,8 +4,11 @@
 //! The system ConPTY on Windows 11 ignores `PSEUDOCONSOLE_RESIZE_QUIRK` and
 //! reprints the whole screen on every resize. xterm.js already reflows its own
 //! buffer, so that reprint is what causes duplicated/ghosted rows. The newer
-//! Microsoft ConPTY honors the quirk (no output on resize), matching VS Code's
-//! "ship conpty.dll" approach (microsoft/vscode#224488).
+//! Microsoft ConPTY honors the quirk: it emits only a cursor-line repaint
+//! (CUP, erase, CUP, text plus padding, CUP), matching VS Code's "ship
+//! conpty.dll" approach (microsoft/vscode#224488). The terminal must still
+//! reflow the cursor line locally; the padding is clipped with autowrap off so
+//! it cannot scroll the viewport when the prompt is on the last row.
 
 #[cfg(all(windows, target_arch = "x86_64"))]
 mod imp {

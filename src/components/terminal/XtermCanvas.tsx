@@ -63,11 +63,7 @@ import {
   writeTerminalSnapshot
 } from '../../lib/terminalSnapshot';
 import { registerTerminalReconnect } from '../../lib/terminalReconnect';
-import {
-  buildCursorGroupResizePlan,
-  buildCursorRestore,
-  type CursorGroupResizePlan
-} from '../../lib/terminalCursorReflow';
+import { ResizeWrapGuard } from '../../lib/terminalResizeWrapGuard';
 import {
   resolveCursorLineResizeMode,
   type CursorLineResizeMode
@@ -412,6 +408,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       let parseWaiters: Array<() => void> = [];
       let writeFrozen = false;
       let unfreezeWaiters: Array<() => void> = [];
+      let wrapGuard: ResizeWrapGuard | null = null;
 
       let latestDimensions: { cols: number; rows: number; id: number } | null = null;
       let desiredDimensions: { cols: number; rows: number; id: number } | null = null;
@@ -492,6 +489,13 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         });
       };
 
+      const armResizeWrapGuard = (instance: Terminal): void => {
+        if (!wrapGuard) {
+          wrapGuard = new ResizeWrapGuard(issueWrite);
+        }
+        wrapGuard.arm(instance.modes.wraparoundMode);
+      };
+
       const takeQueuedData = () => {
         if (writeQueue.length === 0) {
           return '';
@@ -510,7 +514,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         if (disposed || !terminal || writeFrozen) {
           return;
         }
-        issueWrite(takeQueuedData());
+        const data = takeQueuedData();
+        if (data) {
+          issueWrite(data);
+          wrapGuard?.release();
+        }
       };
 
       const flushWrites = () => {
@@ -533,6 +541,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         const data = writeQueue.splice(0, count).join('');
         pendingChars -= size;
         issueWrite(data);
+        // The first post-resize batch is ConPTY's cursor-line repaint: it is
+        // parsed with autowrap off, then the application's mode is restored.
+        wrapGuard?.release();
         if (writeQueue.length > 0) {
           scheduleFlush();
         }
@@ -683,6 +694,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         if (disposed) {
           return;
         }
+        // A direct write sequence must never run with the resize guard's
+        // autowrap state still applied.
+        wrapGuard?.release();
         flushPendingWrites();
         // Hold the queue for the whole sequence and block new resizes: the
         // notice spans several asynchronous writes and interleaved output or
@@ -1461,6 +1475,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
               fontSize: fontSizeRef.current,
               lineHeight: settings.terminalLineHeight,
               scrollback: settings.terminalScrollback,
+              // cmd under ConPTY never repaints the prompt rows, so xterm
+              // must reflow the cursor group itself. readline-family shells
+              // repaint from the cursor row they believe is current; touching
+              // it there duplicates the prompt or overwrites the line above.
+              reflowCursorLine: cursorLineResizeMode === 'local-reflow',
               // ConPTY has different resize semantics than a Unix PTY. Without
               // this, xterm removes rows from the scrollback when the viewport
               // grows (maximize/restore), which is what made `help` output lose
@@ -1717,7 +1736,6 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
           let settled = false;
           let fallbackTimer: number | null = null;
-          let cursorPlan: CursorGroupResizePlan | null = null;
           const finish = () => {
             if (settled) {
               return;
@@ -1742,23 +1760,20 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
                     : 1000;
                 syncEmptyBufferCapacity(instance, next.rows, scrollback);
                 instance.resize(next.cols, next.rows);
-                // Put the parked cursor where ConPTY's rewrap implies it: the
-                // parked row now sits directly below the reflowed group.
-                if (cursorPlan) {
-                  const restore = buildCursorRestore(
-                    instance.buffer.active,
-                    cursorPlan,
-                    instance.rows
-                  );
-                  if (restore) {
-                    issueWrite(restore);
-                  }
+                // cmd is the only client that does not repaint its prompt.
+                // ConPTY follows with a cursor-line repaint whose trailing
+                // padding would wrap on the last row and scroll the viewport;
+                // clip that batch instead of letting it move the cursor.
+                if (
+                  cursorLineResizeMode === 'local-reflow' &&
+                  instance.buffer.active.type === 'normal'
+                ) {
+                  armResizeWrapGuard(instance);
                 }
               } catch (error) {
                 console.warn('[terminal] resize failed', error);
               }
             }
-            cursorPlan = null;
 
             writeFrozen = false;
             applyInProgress = false;
@@ -1791,31 +1806,13 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             }, RESIZE_PARSE_FALLBACK_MS);
           };
 
-          // Once the parser has consumed everything issued, ask for a park
-          // plan. The plan is only produced when the cursor's own row would be
-          // truncated by the shrink: xterm's reflow skips the group holding
-          // the cursor, and a shell that repaints its prompt on SIGWINCH would
-          // otherwise have its output land one row below the text. A short
-          // prompt (Git Bash `$ `, PowerShell `PS C:\>`) needs no park and
-          // gets none, so the caret stays with the prompt. Then wait for the
-          // park to parse before the reflow.
+          // Once every issued write is parsed, xterm can reflow. cmd sessions
+          // enable reflowCursorLine so the cursor group itself is rewrapped;
+          // shells that repaint keep xterm's stock skip/truncate behavior.
           const prepare = () => {
-            if (settled || disposed || !terminal) {
-              return;
+            if (!settled && !disposed && terminal) {
+              finish();
             }
-            if (next.cols !== terminal.cols && cursorLineResizeMode === 'local-reflow') {
-              cursorPlan = buildCursorGroupResizePlan(
-                terminal.buffer.active,
-                next.cols,
-                terminal.rows
-              );
-              if (cursorPlan) {
-                issueWrite(cursorPlan.before);
-                whenWritesParsed(finish);
-                return;
-              }
-            }
-            finish();
           };
 
           armFallback();
@@ -2088,6 +2085,8 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         }
         parseWaiters = [];
         writeQueue.length = 0;
+        wrapGuard?.dispose();
+        wrapGuard = null;
 
         unlistenOutput?.();
         unlistenClosed?.();
