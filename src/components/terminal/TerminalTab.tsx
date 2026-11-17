@@ -181,9 +181,14 @@ export default function TerminalTab(props: IDockviewPanelProps) {
 
   const isLocal = session.kind === 'local';
   const isSerial = session.kind === 'serial';
+  const isTelnet = session.kind === 'telnet';
   const authMethod = session.authMethod ?? 'password';
   const keyPath = session.keyPath ?? '';
-  const needsAuth = !isLocal && !isSerial && (authMethod === 'password' ? !password : !authorized);
+  // Telnet logs in inside the terminal and never stores credentials, so the
+  // SSH password form must not gate it (entering a password there would even
+  // persist a bogus credential in the vault).
+  const needsAuth =
+    !isLocal && !isSerial && !isTelnet && (authMethod === 'password' ? !password : !authorized);
 
   if (needsAuth) {
     return <SshConnectForm session={session} />;

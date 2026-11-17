@@ -1379,6 +1379,8 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             void connectSshTransport(instance);
           } else if (transport === 'telnet') {
             void connectTelnetTransport(instance);
+          } else if (transport === 'serial') {
+            void connectSerialTransport(instance);
           } else {
             void connectLocalTransport(instance);
           }
@@ -2060,6 +2062,10 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             void disconnectSsh(backendId);
           } else if (transport === 'telnet') {
             void disconnectTelnet(backendId);
+          } else if (transport === 'serial') {
+            // Serial has its own manager: closePtySession would report
+            // "session not found" and leave the COM port open forever.
+            void disconnectSerial(backendId);
           } else {
             void closePtySession(backendId);
           }
