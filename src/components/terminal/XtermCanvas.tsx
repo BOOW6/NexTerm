@@ -1409,7 +1409,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
         void (async () => {
           try {
-            const platform = isSsh ? null : await getPtyPlatformInfo();
+            // Only a local PTY is backed by ConPTY. SSH/telnet/serial keep
+            // xterm's default buffer semantics: injecting `windowsPty` would
+            // make xterm stop pulling scrollback rows back into the viewport
+            // on grow, which only makes sense when the backend repaints.
+            const platform = transport === 'local' ? await getPtyPlatformInfo() : null;
             if (disposed || !visibleRef.current) {
               return;
             }
