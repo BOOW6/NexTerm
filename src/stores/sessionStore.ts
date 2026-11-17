@@ -85,7 +85,10 @@ export const useSessionStore = create<SessionState>()(
                 patch.title !== undefined
                   ? patch.title.trim() || tStatic(SESSION_KIND_LABEL_KEY[nextKind])
                   : session.title,
-              host: nextKind === 'local' ? undefined : patch.host?.trim() || session.host,
+              // A serial session is local-like: it keeps no host/port/auth
+              // fields, so switching an SSH session to serial must clear the
+              // old host as well.
+              host: nextLocalLike ? undefined : patch.host?.trim() || session.host,
               // An explicitly cleared username (empty string) must stick; the
               // old value is only kept when the patch omits the field.
               username: nextLocalLike

@@ -23,6 +23,12 @@ export function toSessionDraft(session: Session): SessionDraft {
     keyPath: session.keyPath,
     certPath: session.certPath,
     jumpSessionId: session.jumpSessionId,
+    // Kind-specific configuration: a duplicate of a local session with a
+    // custom shell or of a serial session must keep its command/port.
+    shellCommand: session.shellCommand,
+    shellArgs: session.shellArgs,
+    serialPort: session.serialPort,
+    serialBaud: session.serialBaud,
     group: session.group,
     favorite: session.favorite
   };

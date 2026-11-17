@@ -48,7 +48,9 @@ export default function SessionTab({ api, params, containerApi }: IDockviewPanel
         }
       );
 
-      if (session && session.kind !== 'local') {
+      // Port forwarding needs an SSH transport; serial/telnet sessions have
+      // none, so the entry would only ever open an idle panel.
+      if (session && (session.kind === 'ssh' || session.kind === 'sftp')) {
         actions.push({
           label: t('tab.portForward'),
           run: () => openPortForwardPanel(containerApi, sessionId)
@@ -60,7 +62,9 @@ export default function SessionTab({ api, params, containerApi }: IDockviewPanel
         run: () => reconnectSessionPanels(containerApi, sessionId)
       });
 
-      if (session) {
+      // Broadcast input has no serial writer; offering the toggle would
+      // silently do nothing for a serial member.
+      if (session && session.kind !== 'serial') {
         const joined = useBroadcastStore.getState().ids.includes(sessionId);
         actions.push({
           label: joined ? t('tab.broadcastLeave') : t('tab.broadcastJoin'),

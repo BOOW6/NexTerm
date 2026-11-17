@@ -1042,7 +1042,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             backendId = '';
             backendIdRef.current = '';
             resizeTarget = null;
-            useSessionStore.getState().setStatus(sessionId, 'idle');
+            // Another split pane of this session may still hold its own PTY;
+            // only the last one going away marks the session idle.
+            if (useConnectionStore.getState().connections[sessionId] === undefined) {
+              useSessionStore.getState().setStatus(sessionId, 'idle');
+            }
             void writeScrollbackNotice(
               instance,
               `\x1b[33m[${t('terminal.localShellExited')}]\x1b[0m`,
@@ -1168,7 +1172,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             backendId = '';
             backendIdRef.current = '';
             resizeTarget = null;
-            useSessionStore.getState().setStatus(sessionId, 'idle');
+            // Same rule as the local path: keep the status when a sibling
+            // split pane still has a live Telnet transport.
+            if (useConnectionStore.getState().connections[sessionId] === undefined) {
+              useSessionStore.getState().setStatus(sessionId, 'idle');
+            }
             void writeScrollbackNotice(
               instance,
               `\x1b[33m[${t('terminal.telnetDisconnected')}]\x1b[0m`,

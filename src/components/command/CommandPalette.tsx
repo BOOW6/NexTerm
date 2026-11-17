@@ -100,6 +100,7 @@ export default function CommandPalette() {
   } = useWorkspace();
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(0);
 
@@ -334,6 +335,15 @@ export default function CommandPalette() {
           run: () => getApi()?.activePanel?.api.close()
         }
       );
+
+      // Broadcast input has no serial writer, so the toggle would silently do
+      // nothing for a serial session.
+      if (activeSession.kind === 'serial') {
+        const broadcastIndex = commandItems.findIndex((item) => item.id === 'broadcast');
+        if (broadcastIndex !== -1) {
+          commandItems.splice(broadcastIndex, 1);
+        }
+      }
     }
 
     const snippetItems: CommandItem[] = snippets.map((snippet) => ({
@@ -417,6 +427,15 @@ export default function CommandPalette() {
     setSelected(0);
   }, [query]);
 
+  // Keyboard navigation must keep the highlighted row on screen; the list is
+  // taller than its max-h container.
+  useEffect(() => {
+    if (filtered.length === 0) {
+      return;
+    }
+    itemRefs.current[selected]?.scrollIntoView({ block: 'nearest' });
+  }, [selected, filtered]);
+
   if (!open) {
     return null;
   }
@@ -451,7 +470,9 @@ export default function CommandPalette() {
           onKeyDown={(event) => {
             if (event.key === 'ArrowDown') {
               event.preventDefault();
-              setSelected((current) => Math.min(filtered.length - 1, current + 1));
+              if (filtered.length > 0) {
+                setSelected((current) => Math.min(filtered.length - 1, current + 1));
+              }
             } else if (event.key === 'ArrowUp') {
               event.preventDefault();
               setSelected((current) => Math.max(0, current - 1));
@@ -486,6 +507,9 @@ export default function CommandPalette() {
                   </div>
                 ) : null}
                 <button
+                  ref={(element) => {
+                    itemRefs.current[index] = element;
+                  }}
                   type="button"
                   onMouseEnter={() => setSelected(index)}
                   onClick={() => execute(item)}

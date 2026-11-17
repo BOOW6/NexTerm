@@ -16,7 +16,7 @@ const statusLabelKeys: Record<SessionStatus, string> = {
 };
 
 export default function StatusBar() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const activeSessionId = useWorkspaceStore((state) => state.activeSessionId);
   const broadcastIds = useBroadcastStore((state) => state.ids);
   const macroRecording = useMacroRecorderStore((state) => state.recording);
@@ -73,7 +73,7 @@ export default function StatusBar() {
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="tabular-nums">{clock.toLocaleTimeString('zh-CN', { hour12: false })}</span>
+        <span className="tabular-nums">{clock.toLocaleTimeString(locale, { hour12: false })}</span>
       </div>
     </footer>
   );

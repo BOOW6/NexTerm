@@ -42,11 +42,35 @@ describe('toSessionDraft', () => {
       'keyPath',
       'certPath',
       'jumpSessionId',
+      'shellCommand',
+      'shellArgs',
+      'serialPort',
+      'serialBaud',
       'group',
       'favorite'
     ] as const;
     for (const field of draftFields) {
       expect(draft, `SessionDraft.${field} must be mapped from Session`).toHaveProperty(field);
     }
+  });
+
+  it('keeps the kind-specific shell and serial configuration', () => {
+    const draft = toSessionDraft({
+      ...SESSION,
+      kind: 'serial',
+      serialPort: 'COM3',
+      serialBaud: 115200
+    });
+    expect(draft.serialPort).toBe('COM3');
+    expect(draft.serialBaud).toBe(115200);
+
+    const local = toSessionDraft({
+      ...SESSION,
+      kind: 'local',
+      shellCommand: 'C:\\Program Files\\Git\\bin\\bash.exe',
+      shellArgs: ['-l']
+    });
+    expect(local.shellCommand).toContain('bash.exe');
+    expect(local.shellArgs).toEqual(['-l']);
   });
 });

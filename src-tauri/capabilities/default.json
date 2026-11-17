@@ -2,10 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default desktop capability for the main and settings windows",
-  "windows": [
-    "main",
-    "settings"
-  ],
+  "windows": ["main", "settings"],
   "permissions": [
     "core:default",
     "dialog:default",
@@ -22,6 +19,8 @@
     "core:window:allow-destroy",
     "core:window:allow-set-size",
     "core:window:allow-set-position",
+    "core:window:allow-available-monitors",
+    "core:window:allow-primary-monitor",
     "core:window:allow-set-title",
     "core:window:allow-set-focus",
     "core:window:allow-start-dragging"

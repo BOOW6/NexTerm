@@ -40,11 +40,11 @@ import { formatBytes } from '../../lib/format';
 import { confirmAction, openModalWindow, showNativeContextMenu } from '../../lib/appWindows';
 import type { PromptPayload } from '../../windows/PromptWindow';
 
-function formatTime(mtime: number): string {
+function formatTime(mtime: number, locale: string): string {
   if (!mtime) {
     return '-';
   }
-  return new Date(mtime * 1000).toLocaleString('zh-CN', { hour12: false });
+  return new Date(mtime * 1000).toLocaleString(locale, { hour12: false });
 }
 
 function formatPermissions(permissions: number | null): string {
@@ -83,7 +83,7 @@ function readConflict(): SftpConflictPolicy {
 }
 
 export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const activeSessionId = useWorkspaceStore((state) => state.activeSessionId);
   const sessions = useSessionStore((state) => state.sessions);
   const initialSessionId =
@@ -101,7 +101,8 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
 
   const sshId = currentSshId(connection);
   const sessionTitle = session?.title;
-  const remoteSessions = sessions.filter((item) => item.kind !== 'local');
+  // SFTP rides an SSH subsystem: only SSH/SFTP sessions can ever provide one.
+  const remoteSessions = sessions.filter((item) => item.kind === 'ssh' || item.kind === 'sftp');
 
   const [path, setPath] = useState('/');
   const [entries, setEntries] = useState<SftpEntry[]>([]);
@@ -835,7 +836,9 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
               <span className="text-right tabular-nums text-muted">
                 {entry.is_dir ? '-' : formatBytes(entry.size)}
               </span>
-              <span className="text-right tabular-nums text-muted">{formatTime(entry.mtime)}</span>
+              <span className="text-right tabular-nums text-muted">
+                {formatTime(entry.mtime, locale)}
+              </span>
               <span className="text-right font-mono text-muted">
                 {formatPermissions(entry.permissions)}
               </span>
