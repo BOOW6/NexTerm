@@ -191,11 +191,11 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
   - **无变化不发送**：请求的 cols/rows 与当前网格一致时不得调用 `resize()`，避免无意义的 SIGWINCH 风暴。
   - **防抖窗口内的视觉裁剪**：终端宿主容器必须 `overflow-hidden`，防抖生效前旧尺寸画布被裁剪而不是溢出到相邻面板。
   - **解析等待回退是卡死检测而非超时硬切**：resize 等待已发出写入解析完成时，回退定时器在解析器仍有进展（有 write 回调完成）时必须重臂；只有整整一个窗口无任何进展才允许在未解析状态下 reflow。
-  - **resize 前寄存光标（cursor parking）**：xterm.js 的 reflow 会跳过包含光标的折行组并在收缩时把溢出内容截断（ConPTY quirk 模式无重印、cmd 不重画，截断即永久丢失，如提示符 `C:\Users\46838>` 变 `C:\Users\46`）。列数变化时经 `buildCursorGroupResizePlan` 取计划：有谓词成立时把光标 CUP 到组下方空行，让 xterm 自身 reflow 正常拆分/回并该组，resize 完成后再用 `buildCursorRestore` 把光标恢复到 ConPTY rewrap 对应的位置；计划不可用（备用缓冲、组不在视口内、组下方非空行）时回退到原行为。
-  - **寄存只在“真会丢内容”时启用（否则光标跳行 + 多出一个提示符）**：bash / PowerShell 5 / pwsh 在 SIGWINCH 后会重绘自己的提示符。若光标行没有内容会超出新宽度就不许寄存——光标停在空行会让这些 shell 把提示符重绘到新行，正是「横向缩放后光标跳行、自动新增一行提示符」。判定只看**缩小**（`targetCols < 当前列数`）：光标行**首个非空白列到最后一个非空白列**的内容已能容纳于新宽度即不寄存；光标行下方无内容而上方是折行组（Git Bash 的 `path` + `$ `、PS5 的 `PS C:\>`）同样不寄存，交给 xterm 整组 reflow。行内容确实超宽（`C:\Users\46838>` 缩到 10 列、用户已输入的长命令）仍必须寄存，否则滚动缓冲被永久截断。回归用例见 `src/lib/terminalCursorReflow.test.ts` 与 `src/lib/terminalResizePrompt.test.ts`。
+  - **光标行重排按 shell 能力分流（cursor-line policy）**：xterm.js 的 reflow 默认跳过包含光标的折行组。cmd.exe / conhost 在 SIGWINCH 后**不重画**提示符，因此本地 cmd 会话必须启用 xterm 6 的 `reflowCursorLine: true`，由终端自己拆分/回并光标组；bash / zsh / fish / Git Bash / WSL / PowerShell / pwsh 使用 readline、zle、fish 或 PSReadLine，会在 SIGWINCH 后从“它认为的当前光标行”重画提示符，**绝不能** park 或本地重排光标行，否则会重复提示符或吞掉上一行。会话类型与 `shellCommand` 经 `src/lib/terminalResizePolicy.ts` 解析为 `local-reflow` / `shell-repaint`，SSH / Telnet / Serial 一律 `shell-repaint`；自定义 shell 默认 `shell-repaint`。禁止再按“这一行会不会被截断”判断是否 park。
+  - **ConPTY 重绘的行尾补空格必须裁剪**：随包 ConPTY 在 resize 时只重绘光标行尾部（`CUP`、`Erase`、`CUP`、文本+补空格、`CUP`），不是静默；当光标行位于视口最后一行时，补空格会触发自动折行、滚动视口，使后续 CUP 落到空行。`local-reflow` 会话在 resize 后（水平缩放必开，纵向也一并防御）通过 `ResizeWrapGuard` 临时关闭 DECAWM（保存应用原状态，首个输出批次解析后或 150ms 超时恢复），裁掉补空格；备用缓冲不启用。回归用例见 `src/lib/terminalResizePolicy.test.ts`、`src/lib/terminalResizeReplay.test.ts`、`src/lib/terminalResizeWrapGuard.test.ts`。
 - **ConPTY 与缓冲区安全 (ConPTY Buffer Safety)**：
   - Windows 端随包加载 Microsoft ConPTY 1.25（`conpty-assets`），确保 `PSEUDOCONSOLE_RESIZE_QUIRK` 生效，避免系统 ConPTY 在 resize 时重印整屏；许可证与哈希见 `src-tauri/THIRD_PARTY_NOTICES.md`。
-  - 创建 Terminal 时注入真实的 `windowsPty: { backend, buildNumber }`，启用 xterm 针对 ConPTY 的行增长与 reflow 策略。
+  - 创建 Terminal 时注入真实的 `windowsPty: { backend, buildNumber }`，启用 xterm 针对 ConPTY 的行增长与 reflow 策略；本地 cmd 另开 xterm 6 的 `reflowCursorLine`。
   - resize 前同步空 `alt` buffer 的 `lines.maxLength` 到目标行数，规避 xtermjs/xterm.js#6163 在垂直 grow 时把幻影行拉回视口造成的重影。
   - 针对 Windows ConPTY 在 resize 时发送的重绘与清屏控制符（如 `\x1b[2J` / 光标定位符），前端在 resize 期间**严禁主动清空或截断 `xterm.js` 的 `write` 缓存队列**；通知类直写（断线/重连提示等）在冻结期必须等待解冻后再写，保持 FIFO。
   - 数据流接收必须保证**FIFO（先进先出）严格顺序**，防止 resize 事件与 PTY 吐出的重绘数据发生乱序交织。
