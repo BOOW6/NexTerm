@@ -438,6 +438,7 @@ export default function TerminalTab(props: IDockviewPanelProps) {
                   : 'ssh'
           }
           logTitle={session.title}
+          localShellCommand={isLocal ? session.shellCommand : undefined}
           ssh={
             isLocal || isSerial
               ? undefined

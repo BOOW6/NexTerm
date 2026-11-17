@@ -69,6 +69,10 @@ import {
   type CursorGroupResizePlan
 } from '../../lib/terminalCursorReflow';
 import {
+  resolveCursorLineResizeMode,
+  type CursorLineResizeMode
+} from '../../lib/terminalResizePolicy';
+import {
   NOTICE_RESET_PLACE_AT_BOTTOM,
   buildNoticeScrollSequence,
   buildNoticeWriteSequence,
@@ -112,6 +116,8 @@ interface XtermCanvasProps {
   visible?: boolean;
   /** Session title used for the session-log file name. */
   logTitle?: string;
+  /** Local PTY shell executable; selects the cursor-line resize policy. */
+  localShellCommand?: string;
 }
 
 const WRITE_BATCH_INTERVAL_MS = 16;
@@ -187,7 +193,18 @@ function errorMessage(error: unknown): string {
 }
 
 const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
-  ({ sessionId, fontSize = 13, transport = 'local', ssh, visible = true, logTitle = '' }, ref) => {
+  (
+    {
+      sessionId,
+      fontSize = 13,
+      transport = 'local',
+      ssh,
+      visible = true,
+      logTitle = '',
+      localShellCommand
+    },
+    ref
+  ) => {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const terminalRef = useRef<Terminal | null>(null);
     const backendIdRef = useRef('');
@@ -302,6 +319,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       let resizeDisposable: IDisposable | undefined;
 
       let terminal: Terminal | null = null;
+      // Decided after the first platform probe: cmd must reflow its own
+      // cursor line, every readline-family shell must be left alone.
+      let cursorLineResizeMode: CursorLineResizeMode = 'shell-repaint';
       let fitAddon: FitAddon | null = null;
       let searchAddon: SearchAddon | null = null;
       let ligaturesAddon: NativeLigaturesAddon | null = null;
@@ -1426,6 +1446,12 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
               return;
             }
 
+            cursorLineResizeMode = resolveCursorLineResizeMode({
+              transport,
+              shellCommand: localShellCommand,
+              backend: platform?.backend ?? null
+            });
+
             const settings = useSettingsStore.getState();
             const instance = new Terminal({
               allowProposedApi: true,
@@ -1777,7 +1803,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             if (settled || disposed || !terminal) {
               return;
             }
-            if (next.cols !== terminal.cols) {
+            if (next.cols !== terminal.cols && cursorLineResizeMode === 'local-reflow') {
               cursorPlan = buildCursorGroupResizePlan(
                 terminal.buffer.active,
                 next.cols,
@@ -2135,7 +2161,8 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       jumpKeyPath,
       jumpCertPath,
       jumpPassword,
-      jumpPassphrase
+      jumpPassphrase,
+      localShellCommand
     ]);
 
     useEffect(() => {
