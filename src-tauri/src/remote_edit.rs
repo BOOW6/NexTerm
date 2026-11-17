@@ -50,6 +50,25 @@ impl RemoteEditManager {
             cancel.store(true, Ordering::SeqCst);
         }
     }
+
+    /// Stop a watcher only when `cancel` is the token currently registered for
+    /// `key`. A watcher that is finishing must not tear down its replacement:
+    /// re-opening the same file stops the old watcher and installs a new one,
+    /// and the old task notices its cancel flag up to one poll interval later.
+    fn stop_if_current(&self, key: &str, cancel: &Arc<AtomicBool>) {
+        let mut watchers = self
+            .watchers
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        let is_current = watchers
+            .get(key)
+            .map(|current| Arc::ptr_eq(current, cancel))
+            .unwrap_or(false);
+        if is_current {
+            watchers.remove(key);
+            cancel.store(true, Ordering::SeqCst);
+        }
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -234,7 +253,7 @@ async fn watch_task(
     }
 
     if let Some(manager) = app.try_state::<RemoteEditManager>() {
-        manager.stop(&key);
+        manager.stop_if_current(&key, &cancel);
     }
 }
 

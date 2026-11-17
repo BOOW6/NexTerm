@@ -231,14 +231,22 @@ impl SerialSessionManager {
 
     pub async fn write(&self, id: &str, data: &[u8]) -> anyhow::Result<()> {
         let session = self.session(id)?;
-        let mut guard = session.port.lock().unwrap_or_else(|p| p.into_inner());
-        let port = guard
-            .as_mut()
-            .ok_or_else(|| anyhow!("serial session closed"))?;
-        port.write_all(data)
-            .context("failed to write serial data")?;
-        port.flush().context("failed to flush serial data")?;
-        Ok(())
+        let data = data.to_vec();
+        // A serial device with flow control (or one that stopped reading) can
+        // block `write_all` until the driver timeout; keep that off the async
+        // workers, exactly like the PTY writer.
+        tokio::task::spawn_blocking(move || {
+            let mut guard = session.port.lock().unwrap_or_else(|p| p.into_inner());
+            let port = guard
+                .as_mut()
+                .ok_or_else(|| anyhow!("serial session closed"))?;
+            port.write_all(&data)
+                .context("failed to write serial data")?;
+            port.flush().context("failed to flush serial data")?;
+            anyhow::Ok(())
+        })
+        .await
+        .map_err(|err| anyhow!("failed to write serial data: {err}"))?
     }
 
     pub fn resize(&self, _id: &str, _cols: u16, _rows: u16) -> anyhow::Result<()> {
