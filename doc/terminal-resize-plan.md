@@ -91,11 +91,11 @@ applyResize
   → 冻结写队列 + 取消 16ms flush
   → 队列余量经 repaintFilter.consume() 写入
   → 等已发出写入解析完（回退定时器只在“整窗无进展”时才放行）
-  → 解冻，但保持 applyInProgress（旧几何字节继续按旧网格渲染）
-  → local-reflow：sendBackendResize 并等待 ack，再冻结、把期间到达的
-     旧几何输出写完、再次等解析 → applyGridResize
+  → local-reflow：保持冻结，sendBackendResize 并等待 ack；
      shell-repaint：直接 applyGridResize（远端重画，不必等网络 RTT）
-  → 解冻、恢复 flush、若 desiredDimensions 仍新则重入
+  → ack 后 applyGridResize（队列仍然冻结）
+  → 解冻、恢复 flush：ack 窗口内到达的字节按新网格解析
+  → 若 desiredDimensions 仍新则重入
 ```
 
 **两阶段 reflow 的原因**：xterm 的 reflow 与 ConPTY 自己回并折行行是两个独立事件。
@@ -104,6 +104,13 @@ applyResize
 行出现重复命令、光标错位。因此 `local-reflow` 会话必须等后端 ack 后再 reflow；
 `shell-repaint` 会话由 shell 在 SIGWINCH 后自行重画，逐帧等网络 RTT 会毁掉手感，保持
 立即 reflow。
+
+**ack 窗口内保持冻结**：发送 resize 后，新到达的字节可能是“PTY 尚未处理 resize 的旧几何
+输出”，也可能是“已处理后的新几何重绘”。两者无法从字节流区分，而把新几何重绘放在旧网格
+上解析会直接写坏缓冲区（探针场景：`CUP 4;16 ... \e[J` 被当成旧网格第 4 行，擦掉横幅）。
+因此统一在 reflow 后再解析：新几何重绘一定落在正确网格；旧几何回显即使错位到下方，随后
+到达的 `CUP ... \e[J` 重绘会把它擦掉（光标行及以下）。不要为了“让旧输出继续渲染”而在
+ack 前解冻。
 
 `sendBackendResize` 返回“最新目标已被后端确认”的 Promise；相同尺寸去重（`onResize`
 在 `applyGridResize` 后会重发同一网格），仍保持单飞与“收敛到最新值”。等待 ack 设有

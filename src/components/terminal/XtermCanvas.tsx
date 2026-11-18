@@ -2003,12 +2003,13 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             };
 
             // First drain complete: every byte produced at the old geometry
-            // has been parsed. Unfreeze so output that ConPTY emits BEFORE
-            // it learns about the new size keeps rendering against the old
-            // grid (applyInProgress stays set: direct writes and newer
-            // resizes must keep waiting).
-            writeFrozen = false;
-            scheduleFlush();
+            // has been parsed. For local ConPTY the queue stays frozen across
+            // the backend send; bytes that race the resize are therefore
+            // parsed AFTER the reflow, i.e. against the new grid. The
+            // cursor-line repaint (new geometry) then erases any stale copy
+            // an old-geometry echo put below the cursor. Parsing those bytes
+            // before the reflow would render the new-geometry repaint at the
+            // old coordinates and corrupt the buffer.
             logResizeDebug('parse-drained', {
               cols: next.cols,
               rows: next.rows,
@@ -2028,9 +2029,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             // only emits a cursor-line repaint. xterm must not reflow before
             // the PTY has adopted the new size — an echo CUP produced at the
             // old geometry would then land N rows below the re-joined prompt
-            // (the duplicated-command bug). Send first, await the ack, then
-            // drain whatever arrived meanwhile at the old geometry, then
-            // reflow. A hung IPC must not stall resizes forever.
+            // (the duplicated-command bug). Send, await the ack while the
+            // queue stays frozen, reflow, then release the queue. A hung IPC
+            // must not stall resizes forever.
             let secondPhaseStarted = false;
             let ackTimer: number | null = null;
             const startSecondPhase = () => {
@@ -2042,50 +2043,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
                 window.clearTimeout(ackTimer);
                 ackTimer = null;
               }
-              if (disposed) {
-                return;
-              }
-              if (!canApply()) {
-                finalize();
-                return;
-              }
-
-              writeFrozen = true;
-              cancelScheduledFlush();
-              const lateQueued = takeQueuedData();
-              if (lateQueued) {
-                issueWrite(repaintFilter ? repaintFilter.consume(lateQueued) : lateQueued);
-              }
-
-              let settled2 = false;
-              let fallbackTimer2: number | null = null;
-              const armFallback2 = () => {
-                const parsedAtArmTime = writesParsed;
-                fallbackTimer2 = window.setTimeout(() => {
-                  fallbackTimer2 = null;
-                  if (settled2) {
-                    return;
-                  }
-                  if (writesParsed !== parsedAtArmTime) {
-                    armFallback2();
-                    return;
-                  }
-                  finalize2();
-                }, RESIZE_PARSE_FALLBACK_MS);
-              };
-              const finalize2 = () => {
-                if (settled2) {
-                  return;
-                }
-                settled2 = true;
-                if (fallbackTimer2 !== null) {
-                  window.clearTimeout(fallbackTimer2);
-                  fallbackTimer2 = null;
-                }
-                finalize();
-              };
-              armFallback2();
-              whenWritesParsed(finalize2);
+              finalize();
             };
 
             ackTimer = window.setTimeout(() => {
