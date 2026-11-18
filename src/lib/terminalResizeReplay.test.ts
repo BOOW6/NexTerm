@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import headless from '@xterm/headless';
-import { trimConptyResizeRepaint } from './terminalResizeRepaint';
+import { ResizeRepaintFilter } from './terminalResizeRepaint';
 import { shouldCommitConptyPendingWrap } from './terminalResizePendingWrap';
 
 const { Terminal } = headless;
@@ -10,11 +10,26 @@ type HeadlessTerminal = InstanceType<typeof Terminal>;
 /**
  * Regression tests against real vt sequences.
  *
- * The ConPTY bytes were captured from the bundled ConPTY 1.25 with cmd.exe:
- * it emits a cursor-line repaint on resize (CUP, erase, CUP, text+padding,
- * CUP), not a full reprint. xterm must have reflowed the group already; only
- * the trailing padding is stripped. Never disable autowrap for the whole
- * batch: at 16-18 columns the repaint text itself wraps at the last column.
+ * The bundled-ConPTY bytes were captured by the probe
+ * (`src-tauri/src/pty/conpty_resize_probe.rs`) with cmd.exe. Booting cmd at a
+ * narrow width wraps the banner lines; widening re-joins them in BOTH ConPTY's
+ * buffer and xterm's, and the cursor-line repaint re-anchors the cursor. The
+ * repaint has three tail variants:
+ *
+ * - space padding (shrink with a wrapped cursor line);
+ * - `\e[K` right before the final CUP (grow from a wrapped cursor line);
+ * - bare final CUP (grow otherwise).
+ *
+ * Everything flows through `ResizeRepaintFilter.consume()` so the hold /
+ * release behavior is exercised exactly like the app's pipeline. A stale
+ * pre-resize echo CUP would land exactly N rows below the joined prompt
+ * (N = re-joined groups), which is the duplicated-command bug this suite
+ * guards against.
+ *
+ * The system-ConPTY bytes (probe without the bundled DLL) show the fallback
+ * contract: an absolute-CUP boot screen, a FULL screen reprint on resize, and
+ * raw echo without re-anchoring CUPs. The reprint must pass through the
+ * filter untouched and leave nothing held.
  *
  * The readline bytes mirror `_rl_redisplay_after_sigwinch()`: move to the
  * current cursor row, erase it, move up the old row count, redraw prompt and
@@ -31,6 +46,34 @@ const CMD_SHRINK_12 = '\x1b[11;4H\x1b[J\x1b[11;4Hhelp            \x1b[11;8H';
 const CMD_TYPED_X = '\x1b[11;8HX\x1b[11;9H';
 const CMD_GROW_100 = '\x1b[4;16H\x1b[J\x1b[4;16HhelpX\x1b[4;21H';
 const CMD_TYPED_Y = '\x1b[4;21HY\x1b[4;22H';
+
+/** 30-col boot: both banner lines wrap; widening re-joins two groups. */
+const CMD_ECHO_30 = '\x1b[6;16Hfoobar\x1b[6;22H';
+const CMD_REPAINT_WIDEN_30 = '\x1b[4;16H\x1b[J\x1b[4;16Hfoobar\x1b[4;22H';
+const CMD_TYPED_X_WIDE = '\x1b[4;22HX\x1b[4;23H';
+
+/** 18-col boot: the prompt line itself wraps; the grow repaint ends with `\e[K`. */
+const CMD_ECHO_18 = '\x1b[8;16Hfoobar\x1b[9;4H';
+const CMD_REPAINT_K = '\x1b[4;16H\x1b[J\x1b[4;16Hfoobar\x1b[K\x1b[4;22H';
+
+/**
+ * System ConPTY (bundled load failed): absolute-CUP boot screen, the banner's
+ * split wide char emitted as a literal space, then a full screen reprint on
+ * resize and raw echo.
+ */
+const SYS_BOOT =
+  '\x1b[?9001h\x1b[?1004h\x1b[?25l\x1b[2J\x1b[m\x1b[H' +
+  'Microsoft Windows [版本 10.0.26200.8875]\x1b]0;C:\\WINDOWS\\system32\\cmd.exe\x07\x1b[?25h\x1b[?25l\r\n' +
+  '(c) Microsoft Corporation。保 留所有权利。\r\n' +
+  '\x1b[6;1HC:\\Users\\46838>\x1b[?25h';
+const SYS_REPRINT =
+  '\x1b[?25l\x1b[8;30;100t\x1b[H' +
+  'Microsoft Windows [版本 10.0.26200.8875]\x1b[K\r\n' +
+  '(c) Microsoft Corporation。保留所有权利。\x1b[K\r\n' +
+  '\x1b[K\r\n' +
+  'C:\\Users\\46838>foobar\x1b[K\r\n' +
+  '\x1b[K\r\n'.repeat(25) +
+  '\x1b[K\x1b[4;22H\x1b[?25h';
 
 const BASH_PROMPT = 'dietpi@NanoPC-T4:~$ ';
 const BASH_INPUT = 'help';
@@ -61,15 +104,27 @@ function write(terminal: HeadlessTerminal, data: string): Promise<void> {
   return new Promise((resolve) => (data.length ? terminal.write(data, resolve) : resolve()));
 }
 
-/** xterm.resize() plus the captured backend repaint with its padding trimmed. */
-async function resizeWithRepaintTrim(
+/**
+ * xterm.resize() plus the captured backend repaint, through the same filter
+ * the app uses. Returns the filter so subsequent echo bytes can be routed
+ * through `consume()` as well.
+ */
+async function resizeWithRepaint(
   terminal: HeadlessTerminal,
   cols: number,
   rows: number,
-  backendRepaint: string
-): Promise<void> {
+  backendRepaint: string,
+  options: { settles?: boolean } = {}
+): Promise<ResizeRepaintFilter> {
+  const filter = new ResizeRepaintFilter();
+  const output = filter.arm() + filter.consume(backendRepaint);
+  expect(filter.takeCarry()).toBe('');
   terminal.resize(cols, rows);
-  await write(terminal, trimConptyResizeRepaint(backendRepaint));
+  await write(terminal, output);
+  if (options.settles ?? true) {
+    expect(filter.isPending).toBe(false);
+  }
+  return filter;
 }
 
 function lineText(terminal: HeadlessTerminal, y: number): string {
@@ -81,7 +136,7 @@ describe('ConPTY cmd cursor-line reflow', () => {
     const terminal = makeCmd();
     await write(terminal, CMD_BOOT + CMD_TYPED_HELP);
 
-    await resizeWithRepaintTrim(terminal, 12, 30, CMD_SHRINK_12);
+    const shrinkFilter = await resizeWithRepaint(terminal, 12, 30, CMD_SHRINK_12);
 
     // The prompt reflows above the cursor; the cursor sits at the end of
     // "38>help" instead of a phantom blank row.
@@ -91,16 +146,16 @@ describe('ConPTY cmd cursor-line reflow', () => {
     expect(terminal.buffer.active.cursorY).toBe(10);
     expect(lineText(terminal, 11)).toBe('');
 
-    await write(terminal, CMD_TYPED_X);
+    await write(terminal, shrinkFilter.consume(CMD_TYPED_X));
     expect(lineText(terminal, 10).trimEnd()).toBe('38>helpX');
     expect(terminal.buffer.active.cursorX).toBe(8);
 
-    await resizeWithRepaintTrim(terminal, 100, 30, CMD_GROW_100);
+    const growFilter = await resizeWithRepaint(terminal, 100, 30, CMD_GROW_100);
     expect(lineText(terminal, 3)).toBe('C:\\Users\\46838>helpX');
     expect(terminal.buffer.active.cursorX).toBe(20);
     expect(terminal.buffer.active.cursorY).toBe(3);
 
-    await write(terminal, CMD_TYPED_Y);
+    await write(terminal, growFilter.consume(CMD_TYPED_Y));
     expect(lineText(terminal, 3)).toBe('C:\\Users\\46838>helpXY');
     expect(terminal.buffer.active.cursorX).toBe(21);
   });
@@ -118,8 +173,8 @@ describe('ConPTY cmd cursor-line reflow', () => {
     const terminal = makeCmd();
     await write(terminal, CMD_BOOT + CMD_TYPED_HELP);
 
-    await resizeWithRepaintTrim(terminal, cols, 30, repaint);
-    await write(terminal, typedX);
+    const filter = await resizeWithRepaint(terminal, cols, 30, repaint);
+    await write(terminal, filter.consume(typedX));
 
     const buffer = terminal.buffer.active;
     let start = buffer.baseY;
@@ -145,7 +200,7 @@ describe('ConPTY cmd cursor-line reflow', () => {
     await write(terminal, CMD_BOOT + scroll + '\x1b[30;16Hhelp\x1b[30;20H');
     expect(terminal.buffer.active.cursorY).toBe(29);
 
-    await resizeWithRepaintTrim(
+    await resizeWithRepaint(
       terminal,
       12,
       30,
@@ -188,6 +243,110 @@ describe('ConPTY cmd cursor-line reflow', () => {
     expect(lineText(terminal, bottom).trimEnd()).toBe('helpX');
     expect(terminal.buffer.active.cursorX).toBe(5);
     expect(terminal.buffer.active.cursorY).toBe(29);
+  });
+});
+
+describe('bundled ConPTY: wrapped banner above the prompt', () => {
+  it('re-joins the banner and echoes at the joined cursor row', async () => {
+    const terminal = makeCmd(30);
+    await write(terminal, CMD_BOOT);
+
+    // Both banner lines wrap at 30 cols; the prompt sits below two groups
+    // that widening will re-join.
+    expect(lineText(terminal, 0)).toBe('Microsoft Windows [版本 10.0.2');
+    expect(lineText(terminal, 1)).toBe('6200.8875]');
+    expect(lineText(terminal, 2)).toBe('(c) Microsoft Corporation。保');
+    expect(lineText(terminal, 3)).toBe('留所有权利。');
+    expect(lineText(terminal, 4)).toBe('');
+    expect(lineText(terminal, 5)).toBe('C:\\Users\\46838>');
+    expect(terminal.buffer.active.cursorX).toBe(15);
+    expect(terminal.buffer.active.cursorY).toBe(5);
+
+    await write(terminal, CMD_ECHO_30);
+    expect(lineText(terminal, 5)).toBe('C:\\Users\\46838>foobar');
+    expect(terminal.buffer.active.cursorX).toBe(21);
+    expect(terminal.buffer.active.cursorY).toBe(5);
+
+    const filter = await resizeWithRepaint(terminal, 100, 30, CMD_REPAINT_WIDEN_30);
+    expect(lineText(terminal, 0)).toBe('Microsoft Windows [版本 10.0.26200.8875]');
+    expect(lineText(terminal, 1)).toBe('(c) Microsoft Corporation。保留所有权利。');
+    expect(lineText(terminal, 2)).toBe('');
+    expect(lineText(terminal, 3)).toBe('C:\\Users\\46838>foobar');
+    expect(terminal.buffer.active.cursorX).toBe(21);
+    expect(terminal.buffer.active.cursorY).toBe(3);
+
+    await write(terminal, filter.consume(CMD_TYPED_X_WIDE));
+    expect(lineText(terminal, 3)).toBe('C:\\Users\\46838>foobarX');
+    expect(terminal.buffer.active.cursorX).toBe(22);
+  });
+});
+
+describe('bundled ConPTY: wrapped cursor line grows with an \\e[K repaint', () => {
+  it('re-joins the cursor group and the repaint re-anchors the caret', async () => {
+    const terminal = makeCmd(18);
+    await write(terminal, CMD_BOOT);
+    await write(terminal, CMD_ECHO_18);
+
+    // The prompt line itself wraps at 18 cols; the cursor sits on "bar".
+    expect(lineText(terminal, 7)).toBe('C:\\Users\\46838>foo');
+    expect(lineText(terminal, 8)).toBe('bar');
+    expect(terminal.buffer.active.cursorX).toBe(3);
+    expect(terminal.buffer.active.cursorY).toBe(8);
+
+    const filter = await resizeWithRepaint(terminal, 100, 30, CMD_REPAINT_K);
+    expect(lineText(terminal, 0)).toBe('Microsoft Windows [版本 10.0.26200.8875]');
+    expect(lineText(terminal, 1)).toBe('(c) Microsoft Corporation。保留所有权利。');
+    expect(lineText(terminal, 2)).toBe('');
+    expect(lineText(terminal, 3)).toBe('C:\\Users\\46838>foobar');
+    // xterm's reflow leaves the caret mid-group; the repaint re-anchors it.
+    expect(terminal.buffer.active.cursorX).toBe(21);
+    expect(terminal.buffer.active.cursorY).toBe(3);
+
+    await write(terminal, filter.consume('\x1b[4;22HX\x1b[4;23H'));
+    expect(lineText(terminal, 3)).toBe('C:\\Users\\46838>foobarX');
+    expect(terminal.buffer.active.cursorX).toBe(22);
+  });
+});
+
+describe('system ConPTY fallback: full screen reprint', () => {
+  it('applies the reprint untouched and re-anchors the cursor for raw echo', async () => {
+    const terminal = makeCmd(30);
+    await write(terminal, SYS_BOOT);
+
+    // The boot screen positions the prompt with an absolute CUP.
+    expect(lineText(terminal, 5)).toBe('C:\\Users\\46838>');
+    expect(terminal.buffer.active.cursorX).toBe(15);
+    expect(terminal.buffer.active.cursorY).toBe(5);
+
+    await write(terminal, 'foobar');
+    expect(lineText(terminal, 5)).toBe('C:\\Users\\46838>foobar');
+    expect(terminal.buffer.active.cursorX).toBe(21);
+
+    // The reprint contains no `CUP \e[J CUP` framing: the filter passes it
+    // through byte-for-byte and the window stays armed until the timeout.
+    const filter = new ResizeRepaintFilter();
+    filter.arm();
+    expect(filter.consume(SYS_REPRINT)).toBe(SYS_REPRINT);
+    expect(filter.takeCarry()).toBe('');
+    terminal.resize(100, 30);
+    await write(terminal, SYS_REPRINT);
+
+    // The reprint rewrites the joined banner (without the boot-time split
+    // wide char) and its final CUP re-anchors the cursor.
+    expect(lineText(terminal, 0)).toBe('Microsoft Windows [版本 10.0.26200.8875]');
+    expect(lineText(terminal, 1)).toBe('(c) Microsoft Corporation。保留所有权利。');
+    expect(lineText(terminal, 2)).toBe('');
+    expect(lineText(terminal, 3)).toBe('C:\\Users\\46838>foobar');
+    expect(terminal.buffer.active.cursorX).toBe(21);
+    expect(terminal.buffer.active.cursorY).toBe(3);
+
+    // Raw echo has no CUP of its own: correctness depends entirely on the
+    // reprint's final CUP having been applied in order.
+    expect(filter.consume('X')).toBe('X');
+    await write(terminal, 'X');
+    expect(lineText(terminal, 3)).toBe('C:\\Users\\46838>foobarX');
+    expect(terminal.buffer.active.cursorX).toBe(22);
+    expect(filter.cancel()).toBe('');
   });
 });
 

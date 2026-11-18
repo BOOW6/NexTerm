@@ -60,6 +60,33 @@ describe('shouldCommitConptyPendingWrap', () => {
     ).toBe(false);
   });
 
+  it('commits when a typed trailing space fills the row', async () => {
+    const terminal = new Terminal({
+      allowProposedApi: true,
+      cols: 100,
+      rows: 30,
+      scrollback: 1000,
+      windowsPty: { backend: 'conpty', buildNumber: 26200 }
+    });
+    // The typed space is a written cell (code 32); chars-based trimming used
+    // to treat it as blank and miss the pending wrap.
+    await write(terminal, '\x1b[30;1HC:\\Users\\46838> ');
+    expect(terminal.buffer.active.cursorX).toBe(16);
+    expect(
+      shouldCommitConptyPendingWrap(terminal.buffer.active, terminal.cols, terminal.rows, 16)
+    ).toBe(true);
+  });
+
+  it('does not count erase-to-end cells as content', async () => {
+    const terminal = await makeTerminal(22, 'C:\\Users\\46838>foobar');
+    await write(terminal, '\x1b[30;16H\x1b[K');
+    // Cells 15..21 were erased (code 0): content ends at 15 again, so
+    // shrinking to 16 must not commit.
+    expect(
+      shouldCommitConptyPendingWrap(terminal.buffer.active, terminal.cols, terminal.rows, 16)
+    ).toBe(false);
+  });
+
   it('commits a wide-character row that exactly fills, including the width-0 tail', async () => {
     const terminal = await makeTerminal(8, '你好世界', 4);
     expect(terminal.buffer.active.cursorX).toBe(8);

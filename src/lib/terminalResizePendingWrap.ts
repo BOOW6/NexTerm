@@ -15,7 +15,7 @@
  * This is only valid for the normal buffer, and only when shrinking.
  */
 export interface PendingWrapBufferLine {
-  getCell(x: number): { getWidth(): number; getChars(): string } | undefined;
+  getCell(x: number): { getWidth(): number; getCode(): number } | undefined;
 }
 
 export interface PendingWrapBuffer {
@@ -26,7 +26,7 @@ export interface PendingWrapBuffer {
   getLine(y: number): PendingWrapBufferLine | undefined;
 }
 
-/** Exclusive cell index just past the last non-whitespace glyph, accounting for wide cells. */
+/** Exclusive cell index just past the last written cell, accounting for wide cells. */
 export function occupiedCellEnd(line: PendingWrapBufferLine, cols: number): number {
   let end = 0;
   for (let x = 0; x < cols; x += 1) {
@@ -34,7 +34,10 @@ export function occupiedCellEnd(line: PendingWrapBufferLine, cols: number): numb
     if (!cell || cell.getWidth() === 0) {
       continue;
     }
-    if (cell.getChars().trim() === '') {
+    // An untouched (or erased) cell has code 0. A space the user actually
+    // typed has code 32 and occupies a cell — trimming by chars would treat
+    // it as blank and miss a pending wrap that ConPTY does commit.
+    if (cell.getCode() === 0) {
       continue;
     }
     end = x + cell.getWidth();
