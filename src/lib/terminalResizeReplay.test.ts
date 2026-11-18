@@ -170,14 +170,15 @@ describe('ConPTY cmd cursor-line reflow', () => {
     await write(terminal, CMD_BOOT + scroll);
     expect(terminal.buffer.active.cursorY).toBe(29);
 
-    // 15 columns: the 15-char prompt exactly fills the bottom row. ConPTY
-    // emits nothing on resize but has already scrolled internally, so its
-    // next CUP targets a fresh bottom row.
-    terminal.resize(15, 30);
-    await write(terminal, '');
+    // 15 columns: the 15-char prompt exactly fills the bottom row. Decide
+    // before resize — afterwards xterm clamps the pending-wrap cursor onto
+    // the last glyph and the two states are indistinguishable. ConPTY emits
+    // nothing on resize but has already scrolled internally, so its next CUP
+    // targets a fresh bottom row.
     expect(
-      shouldCommitConptyPendingWrap(terminal.buffer.active, terminal.cols, terminal.rows)
+      shouldCommitConptyPendingWrap(terminal.buffer.active, terminal.cols, terminal.rows, 15)
     ).toBe(true);
+    terminal.resize(15, 30);
     await write(terminal, '\n');
     await write(terminal, '\x1b[30;1Hhelp\x1b[30;5H');
     await write(terminal, '\x1b[30;5HX\x1b[30;6H');

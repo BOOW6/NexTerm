@@ -3,10 +3,12 @@
  *
  * cmd.exe under ConPTY never repaints its prompt on SIGWINCH; the terminal has
  * to reflow the cursor line itself, otherwise the prompt prefix is truncated
- * and ConPTY's absolute cursor moves land on the wrong row. readline, zle,
- * fish and PSReadLine all repaint their prompt from the cursor position they
- * believe is current, so moving that cursor (parking it below the group, or
- * reflowing it) makes them draw the prompt twice or overwrite the line above.
+ * and ConPTY's absolute cursor moves land on the wrong row. PowerShell /
+ * PSReadLine also emits nothing on SIGWINCH: the next key sends DSR 6n and
+ * redraws only the input line, so the prompt must already have been reflowed.
+ * readline, zle and fish repaint the whole prompt from the cursor position
+ * they believe is current, so moving that cursor (parking it below the group,
+ * or reflowing it) makes them draw the prompt twice or overwrite the line above.
  *
  * The decision therefore depends on the shell, not on whether the cursor line
  * happens to overflow the new width.

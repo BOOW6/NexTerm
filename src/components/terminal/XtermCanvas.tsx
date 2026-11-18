@@ -122,12 +122,24 @@ const MAX_WRITE_CHUNK = 256 * 1024;
 const MAX_PENDING_OUTPUT = 4 * 1024 * 1024;
 
 /**
- * VS Code's TerminalResizeDebouncer applies vertical resizes immediately and
- * delays the expensive horizontal reflow. The delay must also give the shell
- * enough time to finish its SIGWINCH prompt redraw before the next resize;
- * 300ms is the value proposed in microsoft/vscode#334532 for that issue.
+ * Vertical resizes apply immediately; horizontal reflow is delayed. VS Code
+ * main still uses 100ms and skips the debounce when the normal buffer is
+ * under 200 lines (terminalResizeDebouncer.ts). 300ms is the delay proposed
+ * in microsoft/vscode#334532 so a shell can finish its SIGWINCH redraw before
+ * the next one. Continuous drags always wait here, including small buffers:
+ * a per-frame resize interleaves xterm reflow with ConPTY's cursor-line repaint.
  */
 const RESIZE_X_DEBOUNCE_MS = 300;
+
+/**
+ * xterm.write invokes its callback only when the whole chunk has been parsed.
+ * Slice large flushes so a resize stall-detector sees intermediate progress
+ * instead of reflowing mid-parse after one silent 250ms window.
+ */
+const PARSE_SLICE_CHARS = 16 * 1024;
+
+/** Primary DA1 reply. ConPTY 1.22+ waits on this before the first prompt. */
+const CONPTY_DA1_REPLY = '\x1b[?61;4c';
 
 interface XtermBufferLineList {
   length: number;
@@ -423,6 +435,55 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       let resizeTarget: { id: string; transport: TerminalTransport } | null = null;
       let pendingBackendResize: { cols: number; rows: number } | null = null;
       let backendResizeInFlight = false;
+      let da1Disposable: IDisposable | undefined;
+      const pendingPtyReplies: string[] = [];
+
+      const isPrimaryDa1 = (params: (number | number[])[]): boolean => {
+        if (params.length === 0) {
+          return true;
+        }
+        if (params.length !== 1) {
+          return false;
+        }
+        const first = params[0];
+        if (typeof first === 'number') {
+          return first === 0;
+        }
+        return first.length === 0 || first[0] === 0;
+      };
+
+      const replyToLocalPty = (data: string): void => {
+        const target = resizeTarget;
+        if (target?.transport === 'local' && target.id) {
+          void writePty(target.id, data);
+          return;
+        }
+        pendingPtyReplies.push(data);
+      };
+
+      const flushPtyReplies = (): void => {
+        const target = resizeTarget;
+        if (!target || target.transport !== 'local' || pendingPtyReplies.length === 0) {
+          return;
+        }
+        const queued = pendingPtyReplies.splice(0, pendingPtyReplies.length);
+        for (const data of queued) {
+          void writePty(target.id, data);
+        }
+      };
+
+      const armConptyDa1 = (instance: Terminal): void => {
+        da1Disposable?.dispose();
+        // `{ final: 'c' }` matches primary DA only. `CSI > c` carries a prefix
+        // and does not hit this handler, so secondary DA is left to xterm.
+        da1Disposable = instance.parser.registerCsiHandler({ final: 'c' }, (params) => {
+          if (!isPrimaryDa1(params)) {
+            return false;
+          }
+          replyToLocalPty(CONPTY_DA1_REPLY);
+          return true;
+        });
+      };
 
       let maximized: boolean | null = null;
       let maximizeTimer: number | null = null;
@@ -483,18 +544,59 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         if (disposed || !terminal || !data) {
           return;
         }
-        writesIssued += 1;
-        terminal.write(data, () => {
-          writesParsed += 1;
-          resolveParseWaiters();
-        });
+        let offset = 0;
+        while (offset < data.length) {
+          let end = Math.min(offset + PARSE_SLICE_CHARS, data.length);
+          // Keep a UTF-16 surrogate pair in one write. The parser is stateful
+          // across writes, so splitting an escape sequence is fine; splitting
+          // a surrogate is not.
+          if (end < data.length) {
+            const tail = data.charCodeAt(end - 1);
+            if (tail >= 0xd800 && tail <= 0xdbff) {
+              end -= 1;
+            }
+          }
+          if (end <= offset) {
+            end = Math.min(offset + 1, data.length);
+          }
+          const slice = data.slice(offset, end);
+          offset = end;
+          writesIssued += 1;
+          terminal.write(slice, () => {
+            writesParsed += 1;
+            resolveParseWaiters();
+          });
+        }
       };
+
+      const flushRepaintCarry = (): void => {
+        // A waiter from the previous window can run after arm() has opened the
+        // next one. Leave that window's held prefix alone.
+        if (repaintFilter?.isPending) {
+          return;
+        }
+        const carry = repaintFilter?.takeCarry() ?? '';
+        if (carry) {
+          issueWrite(carry);
+        }
+      };
+
+      let repaintWaitArmed = false;
 
       const armResizeRepaintFilter = (): void => {
         if (!repaintFilter) {
           repaintFilter = new ResizeRepaintFilter();
         }
-        repaintFilter.arm();
+        const leftover = repaintFilter.arm();
+        if (leftover) {
+          issueWrite(leftover);
+        }
+        repaintFilter.whenSettled(flushRepaintCarry);
+      };
+
+      const releaseRepaintFilter = (): string => {
+        repaintWaitArmed = false;
+        return repaintFilter?.cancel() ?? '';
       };
 
       const takeQueuedData = () => {
@@ -695,8 +797,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           return;
         }
         // A direct write sequence must never be mistaken for ConPTY's resize
-        // repaint.
-        repaintFilter?.cancel();
+        // repaint. Write any split prefix the filter was holding first.
+        const repaintCarry = releaseRepaintFilter();
+        if (repaintCarry) {
+          issueWrite(repaintCarry);
+        }
         flushPendingWrites();
         // Hold the queue for the whole sequence and block new resizes: the
         // notice spans several asynchronous writes and interleaved output or
@@ -1126,6 +1231,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           backendId = createdId;
           backendIdRef.current = createdId;
           resizeTarget = { id: createdId, transport: 'local' };
+          flushPtyReplies();
           useConnectionStore.getState().addTransport(sessionId, 'pty', createdId);
           useSessionStore.getState().setStatus(sessionId, 'connected');
 
@@ -1493,6 +1599,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
               theme: getTerminalTheme(settings.terminalColorScheme, themeId)
             });
             terminal = instance;
+            if (platform?.backend === 'conpty') {
+              armConptyDa1(instance);
+            }
 
             const fit = new FitAddon();
             instance.loadAddon(fit);
@@ -1696,10 +1805,40 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         parseWaiters.push(callback);
       };
 
+      // Apply one grid change: pending-wrap is decided from the pre-resize
+      // cursor (resize clamps it), then the local-reflow repaint window opens.
+      const applyGridResize = (
+        instance: Terminal,
+        cols: number,
+        rows: number,
+        armFilter: boolean
+      ) => {
+        const previousCols = instance.cols;
+        const previousRows = instance.rows;
+        const scrollback =
+          typeof instance.options.scrollback === 'number' ? instance.options.scrollback : 1000;
+        const commitWrap =
+          cursorLineResizeMode === 'local-reflow' &&
+          cols < previousCols &&
+          shouldCommitConptyPendingWrap(instance.buffer.active, previousCols, previousRows, cols);
+        syncEmptyBufferCapacity(instance, rows, scrollback);
+        instance.resize(cols, rows);
+        const normalBuffer = instance.buffer.active.type === 'normal';
+        if (commitWrap && normalBuffer) {
+          issueWrite('\n');
+        }
+        if (armFilter && cursorLineResizeMode === 'local-reflow' && normalBuffer) {
+          armResizeRepaintFilter();
+        }
+      };
+
       // Serialize resizes and coalesce bursts to the newest target. The write
       // queue is frozen while resizing so no output is parsed against a
       // half-changed geometry, and xterm.resize() only runs after every
-      // previously issued write has reached the parser.
+      // previously issued write has reached the parser. A previous ConPTY
+      // repaint window must settle first: freezing early would hide that
+      // repaint from the filter, and the next reflow would land on padding
+      // that already scrolled the viewport.
       const applyResize = (cols: number, rows: number, id: number) => {
         if (disposed || !terminal) {
           return;
@@ -1716,6 +1855,29 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           if (disposed || !terminal) {
             applyInProgress = false;
             desiredDimensions = null;
+            repaintWaitArmed = false;
+            return;
+          }
+          // A direct write sequence holds the buffer. Keep the request parked
+          // in desiredDimensions; resumePendingResize() applies it afterwards.
+          if (directWriteDepth > 0) {
+            applyInProgress = false;
+            return;
+          }
+          // Do not freeze while the previous repaint window is open. The 16ms
+          // flush has to deliver that batch to the filter; freezing here is
+          // what used to write the padding raw and then reflow on top of it.
+          if (repaintFilter?.isPending) {
+            applyInProgress = true;
+            if (!repaintWaitArmed) {
+              repaintWaitArmed = true;
+              repaintFilter.whenSettled(() => {
+                repaintWaitArmed = false;
+                if (!disposed) {
+                  runResize();
+                }
+              });
+            }
             return;
           }
           const next = desiredDimensions;
@@ -1731,7 +1893,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
           const queued = takeQueuedData();
           if (queued) {
-            issueWrite(queued);
+            issueWrite(repaintFilter ? repaintFilter.consume(queued) : queued);
           }
 
           let settled = false;
@@ -1754,38 +1916,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
               (instance.cols !== next.cols || instance.rows !== next.rows)
             ) {
               try {
-                const scrollback =
-                  typeof instance.options.scrollback === 'number'
-                    ? instance.options.scrollback
-                    : 1000;
-                const previousCols = instance.cols;
-                syncEmptyBufferCapacity(instance, next.rows, scrollback);
-                instance.resize(next.cols, next.rows);
-                const normalBuffer = instance.buffer.active.type === 'normal';
-                // ConPTY commits a pending wrap at resize time: when the
-                // prompt exactly filled the bottom row it scrolls internally
-                // and later positions input on a fresh bottom row. xterm keeps
-                // the prompt on the old row, so the next CUP would overwrite
-                // it; make the same scroll locally.
-                if (
-                  cursorLineResizeMode === 'local-reflow' &&
-                  normalBuffer &&
-                  next.cols < previousCols &&
-                  shouldCommitConptyPendingWrap(
-                    instance.buffer.active,
-                    instance.cols,
-                    instance.rows
-                  )
-                ) {
-                  issueWrite('\n');
-                }
-                // ConPTY follows with a cursor-line repaint whose trailing
-                // padding would wrap on the last row and scroll the viewport.
-                // Trim that padding from the first output batch instead of
-                // touching autowrap (text may legitimately wrap).
-                if (cursorLineResizeMode === 'local-reflow' && normalBuffer) {
-                  armResizeRepaintFilter();
-                }
+                applyGridResize(instance, next.cols, next.rows, true);
               } catch (error) {
                 console.warn('[terminal] resize failed', error);
               }
@@ -2031,7 +2162,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       // (maximize/restore) take the separate window-state path and call
       // refit(true) directly.
       const observer = new ResizeObserver((entries) => {
-        if (disposed || !visibleRef.current) {
+        if (disposed) {
           return;
         }
         const entry = entries[entries.length - 1];
@@ -2040,13 +2171,29 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         if (width === lastWidth && height === lastHeight) {
           return;
         }
+        // Record the size even while hidden. ResizeObserver does not redeliver
+        // an ignored notification, and resume() refits from the live container
+        // when the tab is shown again.
         lastWidth = width;
         lastHeight = height;
+        if (!visibleRef.current) {
+          return;
+        }
         refit(false);
       });
       observer.observe(container);
 
       return () => {
+        // Write a split repaint prefix before dispose. issueWrite no-ops once
+        // `disposed` is set, and cancel() would otherwise drop the carry.
+        const repaintCarry = releaseRepaintFilter();
+        if (repaintCarry && terminal) {
+          try {
+            issueWrite(repaintCarry);
+          } catch {
+            /* terminal is being torn down */
+          }
+        }
         // Flush a pending debounced resize before teardown so the final
         // geometry still reaches the PTY instead of being silently dropped.
         if (resizeTimer !== null && latestDimensions && terminal) {
@@ -2055,12 +2202,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           const latest = latestDimensions;
           if (terminal.cols !== latest.cols || terminal.rows !== latest.rows) {
             try {
-              const scrollback =
-                typeof terminal.options.scrollback === 'number'
-                  ? terminal.options.scrollback
-                  : 1000;
-              syncEmptyBufferCapacity(terminal, latest.rows, scrollback);
-              terminal.resize(latest.cols, latest.rows);
+              // No new repaint window: the instance is about to be disposed,
+              // but pending-wrap and onResize still have to match the PTY.
+              applyGridResize(terminal, latest.cols, latest.rows, false);
             } catch {
               /* terminal is being torn down */
             }
@@ -2103,6 +2247,8 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         writeQueue.length = 0;
         repaintFilter?.cancel();
         repaintFilter = null;
+        da1Disposable?.dispose();
+        da1Disposable = undefined;
 
         unlistenOutput?.();
         unlistenClosed?.();

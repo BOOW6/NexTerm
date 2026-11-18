@@ -186,14 +186,22 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - **混合尺寸同步策略 (Hybrid Debounce Strategy)**：
   - **按事件来源区分连续与离散**：ResizeObserver 驱动的变化（分屏拖拽、窗口拖拽缩放、侧栏开合）一律视为**连续变化**，即使单次跳变超过 200px 或缓冲区很小——逐帧 resize 会让 xterm reflow 与 ConPTY 重绘交错，造成文字叠印。
   - **垂直缩放（rows）**：立即应用。行变化不触发水平 reflow，且能避免 DOM 与 PTY 行数脱节。
-  - **水平缩放（cols）**：连续变化**始终**走约 300ms 防抖（按最新目标收敛），给 shell 留出处理 SIGWINCH 与重绘提示符的时间，避免提示符重影；拖拽/变化停止后由最后一次防抖尾火收敛到最终尺寸（对齐 VS Code `TerminalResizeDebouncer` 与 microsoft/vscode#334532）。
+  - **水平缩放（cols）**：连续变化**始终**走约 300ms 防抖（按最新目标收敛），给 shell 留出处理 SIGWINCH 与重绘提示符的时间，避免提示符重影；拖拽/变化停止后由最后一次防抖尾火收敛到最终尺寸。300ms 是本项目取值（理由同 microsoft/vscode#334532），**不要**照抄 VS Code `TerminalResizeDebouncer`：其 main 分支仍是 100ms，且 normal buffer 少于 200 行时完全不防抖。
   - **离散突变（窗口最大化 / 恢复、标签页激活、字体设置变更）**：**必须绕过防抖（Bypass Debounce）**，立即应用最新尺寸并强同步给 PTY。
   - **无变化不发送**：请求的 cols/rows 与当前网格一致时不得调用 `resize()`，避免无意义的 SIGWINCH 风暴。
+  - **隐藏标签页不得丢弃尺寸事件**：`ResizeObserver` 在 `visible=false` 时仍要更新缓存的宽高再返回；被忽略的通知不会重发，切回标签页依赖 `resume()` 的离散 refit。
   - **防抖窗口内的视觉裁剪**：终端宿主容器必须 `overflow-hidden`，防抖生效前旧尺寸画布被裁剪而不是溢出到相邻面板。
-  - **解析等待回退是卡死检测而非超时硬切**：resize 等待已发出写入解析完成时，回退定时器在解析器仍有进展（有 write 回调完成）时必须重臂；只有整整一个窗口无任何进展才允许在未解析状态下 reflow。
+  - **解析等待回退是卡死检测而非超时硬切**：resize 等待已发出写入解析完成时，回退定时器在解析器仍有进展（有 write 回调完成）时必须重臂；只有整整一个窗口无任何进展才允许在未解析状态下 reflow。单次 `terminal.write` 的回调只在**整块**解析完后触发，所以批量写入必须按约 16 KiB 切片（`PARSE_SLICE_CHARS`），否则一次大块写入会让“有进展”永远观察不到。
   - **光标行重排按 shell 能力分流（cursor-line policy）**：xterm.js 的 reflow 默认跳过包含光标的折行组。cmd.exe / conhost 在 SIGWINCH 后**不重画**提示符；PowerShell / pwsh 的 PSReadLine 也**不重画**，而是在下一次按键时发 `DSR 6n`、拿到光标位置后只重画输入行。因此本地 cmd / PowerShell / pwsh 会话必须启用 xterm 6 的 `reflowCursorLine: true`，由终端自己拆分/回并光标组；bash / zsh / fish / Git Bash / WSL 使用 readline、zle、fish，会在 SIGWINCH 后从“它认为的当前光标行”重画提示符，**绝不能** park 或本地重排光标行，否则会重复提示符或吞掉上一行。会话类型与 `shellCommand` 经 `src/lib/terminalResizePolicy.ts` 解析为 `local-reflow` / `shell-repaint`，SSH / Telnet / Serial 一律 `shell-repaint`；自定义 shell 默认 `shell-repaint`。禁止再按“这一行会不会被截断”判断是否 park。
-  - **ConPTY 重绘的行尾补空格必须裁掉**：随包 ConPTY 在 resize 时只重绘光标行尾部（`CUP`、`Erase`、`CUP`、文本+补空格、`CUP`），不是静默；当光标行位于视口最后一行时，补空格会触发自动折行、滚动视口，使后续 CUP 落到空行。`local-reflow` 会话在 resize 后用 `ResizeRepaintFilter` 处理首个输出批次：**只剥掉最终 CUP 前的尾部空格**，保留可能合法折行的文本（16–18 列时 `help` 正好从最后一列开始折行，整批关闭 DECAWM 会丢字），150ms 超时兜底；备用缓冲不启用。回归用例见 `src/lib/terminalResizePolicy.test.ts`、`src/lib/terminalResizeReplay.test.ts`、`src/lib/terminalResizeRepaint.test.ts`。
-  - **底部精确填满时提交 pending wrap**：缩小后若提示符恰好填满最后一行，ConPTY 会在内部先滚动一行，xterm 不会；下一次输入用 `CUP row30 col1` 会覆盖提示符。`local-reflow` 缩小 cols 后，用 `shouldCommitConptyPendingWrap` 检测（normal buffer、光标在最后一行且位于/越过最后一列、末格非空），命中时向 xterm 补一个 `LF`，让两边滚动一致；放大不执行。回归用例见 `src/lib/terminalResizePendingWrap.test.ts`。
+  - **ConPTY 重绘的行尾补空格必须裁掉**：随包 ConPTY 在 resize 时只重绘光标行尾部（`CUP`、`Erase`、`CUP`、文本+补空格、`CUP`），不是静默；当光标行位于视口最后一行时，补空格会触发自动折行、滚动视口，使后续 CUP 落到空行。`local-reflow` 会话在 resize 后由 `ResizeRepaintFilter` 接管后续输出：**只剥掉最终 CUP 前的尾部空格**，保留可能合法折行的文本（16–18 列时 `help` 正好从最后一列开始折行，整批关闭 DECAWM 会丢字）。
+    - 过滤器**不是“首个批次一次性”**：重绘可能和别的输出同批、前面带前缀、被 IPC 切成两半。匹配不到就继续 armed 直到命中或 150ms 超时；只保留“仍是重绘前缀”的尾部（`repaintHoldLength`），其余立刻透传，超时/取消时把 hold 住的字节原样发出去，不许吞。
+    - **前一个重绘窗口必须先落定再开始下一次重排**（`runResize` 等待 `whenSettled`）：否则冻结写队列会让上一轮重绘到达不了过滤器，补空格原样写进 xterm 后再叠加新一轮 reflow，正是重影来源。等待期间不冻结队列，常规 16ms flush 仍走过滤器。
+    - 队列数据出队时**必须经过 `repaintFilter.consume()`**，禁止裸 `issueWrite`，否则上一轮重绘绕过裁剪。
+    - 拦截直写（快照恢复、断线通知）与被取消的重绘窗口都要把 `cancel()` 返回的残余字节写回，保持 FIFO。
+    - 备用缓冲不启用。回归用例见 `src/lib/terminalResizePolicy.test.ts`、`src/lib/terminalResizeReplay.test.ts`、`src/lib/terminalResizeRepaint.test.ts`。
+  - **底部精确填满时提交 pending wrap**：缩小前若行末内容恰好等于目标 cols、且光标已越过最后一个字形（pending wrap），ConPTY 会在内部先滚动一行，xterm 不会；下一次输入用 `CUP row30 col1` 会覆盖提示符。`local-reflow` 缩小 cols 时，**在 `resize()` 之前**用 `shouldCommitConptyPendingWrap(buffer, previousCols, previousRows, targetCols)` 判定（normal buffer、光标在最后一行、`occupiedCellEnd === targetCols`、`cursorX >= contentEnd`），命中时 resize 后向 xterm 补一个 `LF`；放大不执行。判定必须在 resize 前：resize 会把 pending-wrap 的 `cursorX === cols` 夹到 `cols - 1`，之后与“光标停在最后一个字形上”无法区分，而后者 ConPTY 不滚动。
+    - `occupiedCellEnd` 必须按单元格宽度累加，宽字符的后半格 `getWidth() === 0` 不能当成空列（中文提示恰好填满时必须命中）。回归用例见 `src/lib/terminalResizePendingWrap.test.ts`。
+  - **ConPTY DA1 必须应答**：ConPTY 1.22+ 启动时会发 `CSI c` 并等待设备属性，不应答会卡住首个提示符与首轮 SIGWINCH。本地 ConPTY 会话在 `Terminal` 创建后注册 `parser.registerCsiHandler({ final: 'c' })`，主 DA（无参数或 `0`）回 `\x1b[?61;4c` 并返回 `true` 吞掉该序列；`CSI > c` 等带 prefix 的次级 DA 不匹配该 handler，仍交给 xterm。PTY id 尚未就绪时先排队，`resizeTarget` 赋值后补发。
 - **ConPTY 与缓冲区安全 (ConPTY Buffer Safety)**：
   - Windows 端随包加载 Microsoft ConPTY 1.25（`conpty-assets`），确保 `PSEUDOCONSOLE_RESIZE_QUIRK` 生效，避免系统 ConPTY 在 resize 时重印整屏；许可证与哈希见 `src-tauri/THIRD_PARTY_NOTICES.md`。
   - 创建 Terminal 时注入真实的 `windowsPty: { backend, buildNumber }`，启用 xterm 针对 ConPTY 的行增长与 reflow 策略；本地 cmd / PowerShell / pwsh 另开 xterm 6 的 `reflowCursorLine`。

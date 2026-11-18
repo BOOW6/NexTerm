@@ -9,16 +9,16 @@ function write(terminal: HeadlessTerminal, data: string): Promise<void> {
   return new Promise((resolve) => (data.length ? terminal.write(data, resolve) : resolve()));
 }
 
-async function makeTerminal(cols: number, text: string): Promise<HeadlessTerminal> {
+async function makeTerminal(cols: number, text: string, rows = 30): Promise<HeadlessTerminal> {
   const terminal = new Terminal({
     allowProposedApi: true,
     cols,
-    rows: 30,
+    rows,
     scrollback: 1000,
     windowsPty: { backend: 'conpty', buildNumber: 26200 }
   });
   // Put the text on the last row so the cursor ends there.
-  await write(terminal, `\x1b[30;1H${text}`);
+  await write(terminal, `\x1b[${rows};1H${text}`);
   return terminal;
 }
 
@@ -28,6 +28,22 @@ describe('shouldCommitConptyPendingWrap', () => {
     expect(
       shouldCommitConptyPendingWrap(terminal.buffer.active, terminal.cols, terminal.rows)
     ).toBe(true);
+  });
+
+  it('detects the same prompt before a shrink to the fill width', async () => {
+    const terminal = await makeTerminal(100, 'C:\\Users\\46838>');
+    expect(
+      shouldCommitConptyPendingWrap(terminal.buffer.active, terminal.cols, terminal.rows, 15)
+    ).toBe(true);
+  });
+
+  it('does not commit when the cursor is sitting on the last glyph', async () => {
+    const terminal = await makeTerminal(20, 'C:\\Users\\46838>');
+    await write(terminal, '\x1b[30;15H');
+    expect(terminal.buffer.active.cursorX).toBe(14);
+    expect(
+      shouldCommitConptyPendingWrap(terminal.buffer.active, terminal.cols, terminal.rows, 15)
+    ).toBe(false);
   });
 
   it('does not commit when the bottom row still has a free cell', async () => {
@@ -42,6 +58,14 @@ describe('shouldCommitConptyPendingWrap', () => {
     expect(
       shouldCommitConptyPendingWrap(terminal.buffer.active, terminal.cols, terminal.rows)
     ).toBe(false);
+  });
+
+  it('commits a wide-character row that exactly fills, including the width-0 tail', async () => {
+    const terminal = await makeTerminal(8, '你好世界', 4);
+    expect(terminal.buffer.active.cursorX).toBe(8);
+    expect(
+      shouldCommitConptyPendingWrap(terminal.buffer.active, terminal.cols, terminal.rows)
+    ).toBe(true);
   });
 
   it('does not commit for the alternate buffer', async () => {
