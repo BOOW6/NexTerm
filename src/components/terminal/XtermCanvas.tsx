@@ -65,6 +65,7 @@ import {
 import { registerTerminalReconnect } from '../../lib/terminalReconnect';
 import { ResizeRepaintFilter } from '../../lib/terminalResizeRepaint';
 import { shouldCommitConptyPendingWrap } from '../../lib/terminalResizePendingWrap';
+import { logResizeDebug } from '../../lib/terminalResizeDebug';
 import {
   resolveCursorLineResizeMode,
   type CursorLineResizeMode
@@ -609,6 +610,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         if (leftover) {
           issueWrite(leftover);
         }
+        logResizeDebug('repaint-arm');
         repaintFilter.whenSettled(flushRepaintCarry);
       };
 
@@ -726,6 +728,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       // in that case the queued send happens in flushQueuedBackendResize).
       const sendBackendResize = (cols: number, rows: number): Promise<void> => {
         if (!resizeTarget) {
+          logResizeDebug('backend-queued (no target)', { cols, rows });
           queuedResizeWithoutTarget = { cols, rows };
           return Promise.resolve();
         }
@@ -734,8 +737,10 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           lastSentBackendResize.cols === cols &&
           lastSentBackendResize.rows === rows
         ) {
+          logResizeDebug('backend-deduped', { cols, rows });
           return whenBackendResizeIdle();
         }
+        logResizeDebug('backend-send', { cols, rows, target: resizeTarget.transport });
         pendingBackendResize = { cols, rows };
         if (!backendResizeInFlight) {
           flushBackendResize();
@@ -774,6 +779,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             );
           })
           .finally(() => {
+            logResizeDebug('backend-ack', { cols: next.cols, rows: next.rows });
             if (pendingBackendResize && resizeTarget) {
               flushBackendResize();
             } else {
@@ -793,6 +799,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         const queued = queuedResizeWithoutTarget;
         queuedResizeWithoutTarget = null;
         const target = queued ?? { cols: instance.cols, rows: instance.rows };
+        logResizeDebug('backend-flush-queued', { ...target, queued: queued !== null });
         void sendBackendResize(target.cols, target.rows);
       };
 
@@ -1639,6 +1646,17 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
               return;
             }
 
+            // The bundled ConPTY re-joins its own wrapped rows and emits a
+            // cursor-line repaint; the OS ConPTY reprints the whole screen
+            // and echoes without re-anchoring CUPs. Falling back silently
+            // changes the resize contract, so make it visible.
+            if (platform?.backend === 'conpty' && platform.bundled === false) {
+              console.warn(
+                '[terminal] bundled ConPTY unavailable; using the system ConPTY ' +
+                  '(full-screen reprint on resize, see doc/terminal-resize-plan.md)'
+              );
+            }
+
             cursorLineResizeMode = resolveCursorLineResizeMode({
               transport,
               shellCommand: localShellCommand,
@@ -1920,6 +1938,16 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           cursorLineResizeMode === 'local-reflow' &&
           cols < previousCols &&
           shouldCommitConptyPendingWrap(instance.buffer.active, previousCols, previousRows, cols);
+        logResizeDebug('grid-apply', {
+          cols,
+          rows,
+          previousCols,
+          previousRows,
+          cursorX: instance.buffer.active.cursorX,
+          cursorY: instance.buffer.active.cursorY,
+          cursorLineResizeMode,
+          commitWrap
+        });
         syncEmptyBufferCapacity(instance, rows, scrollback);
         instance.resize(cols, rows);
         const normalBuffer = instance.buffer.active.type === 'normal';
@@ -2043,6 +2071,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             // resizes must keep waiting).
             writeFrozen = false;
             scheduleFlush();
+            logResizeDebug('parse-drained', {
+              cols: next.cols,
+              rows: next.rows,
+              localReflow: cursorLineResizeMode === 'local-reflow'
+            });
 
             if (cursorLineResizeMode !== 'local-reflow') {
               // Remote/readline shells repaint themselves after SIGWINCH;
@@ -2203,6 +2236,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         // Show the target grid while the drag is still running; the applied
         // report confirms it once xterm and the PTY agree.
         publishResizeHud(cols, rows);
+        logResizeDebug('request', { cols, rows, immediate, currentCols, currentRows });
 
         // Discrete one-shot changes (maximize/restore, tab activation, font
         // changes) apply immediately; their reflow runs once and cannot

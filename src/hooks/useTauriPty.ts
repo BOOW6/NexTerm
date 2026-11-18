@@ -9,6 +9,8 @@ export interface PtyOutputPayload {
 export interface PtyPlatformInfo {
   backend: 'conpty' | 'winpty' | null;
   buildNumber: number | null;
+  /** Windows only: whether the bundled ConPTY redistributable is in use. */
+  bundled: boolean | null;
 }
 
 let platformInfoPromise: Promise<PtyPlatformInfo> | null = null;
@@ -23,7 +25,7 @@ export function getPtyPlatformInfo(): Promise<PtyPlatformInfo> {
     platformInfoPromise = invoke<PtyPlatformInfo>('pty_platform_info').catch(() => {
       // Do not cache a transport failure; a later terminal may retry.
       platformInfoPromise = null;
-      return { backend: null, buildNumber: null };
+      return { backend: null, buildNumber: null, bundled: null };
     });
   }
   return platformInfoPromise;

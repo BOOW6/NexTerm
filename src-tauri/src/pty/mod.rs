@@ -95,6 +95,10 @@ struct PtyOutputPayload {
 pub struct PtyPlatformInfo {
     backend: Option<&'static str>,
     build_number: Option<u32>,
+    /// Windows only: whether the bundled ConPTY redistributable was loaded.
+    /// `Some(false)` means the OS ConPTY is in use — a different resize
+    /// contract (full screen reprint, raw echo without CUPs).
+    bundled: Option<bool>,
 }
 
 fn validate_session_id(id: &str) -> anyhow::Result<()> {
@@ -193,6 +197,7 @@ impl PtySessionManager {
             PtyPlatformInfo {
                 backend: Some("conpty"),
                 build_number: conpty_bundle::reported_build_number(windows_build_number()),
+                bundled: Some(conpty_bundle::bundled_loaded()),
             }
         }
 
@@ -201,6 +206,7 @@ impl PtySessionManager {
             PtyPlatformInfo {
                 backend: None,
                 build_number: None,
+                bundled: None,
             }
         }
     }

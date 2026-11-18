@@ -33,6 +33,13 @@ mod imp {
         BUNDLED_CONPTY_LOADED.load(Ordering::Relaxed)
     }
 
+    /// Whether the bundled ConPTY redistributable is in use. The frontend
+    /// surfaces a warning when it is not: the OS ConPTY reprints the whole
+    /// screen on resize and echoes without re-anchoring CUPs.
+    pub fn bundled_loaded() -> bool {
+        is_loaded()
+    }
+
     pub fn reported_build_number(os_build: Option<u32>) -> Option<u32> {
         if is_loaded() {
             // The bundled ConPTY supports native reflow and the resize quirk
@@ -217,12 +224,20 @@ mod imp {
     pub fn reported_build_number(os_build: Option<u32>) -> Option<u32> {
         os_build
     }
+
+    #[cfg(windows)]
+    pub fn bundled_loaded() -> bool {
+        false
+    }
 }
 
 pub use imp::install;
 
 #[cfg(windows)]
 pub use imp::reported_build_number;
+
+#[cfg(windows)]
+pub use imp::bundled_loaded;
 
 #[cfg(all(test, windows, target_arch = "x86_64"))]
 mod tests {
