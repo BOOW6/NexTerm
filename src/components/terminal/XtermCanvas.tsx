@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Terminal, type IDisposable } from '@xterm/xterm';
 import { writeText as writeClipboardText } from '@tauri-apps/plugin-clipboard-manager';
@@ -141,6 +141,9 @@ const PARSE_SLICE_CHARS = 16 * 1024;
 /** Primary DA1 reply. ConPTY 1.22+ waits on this before the first prompt. */
 const CONPTY_DA1_REPLY = '\x1b[?61;4c';
 
+/** How long the resize HUD stays after the last applied grid change. */
+const RESIZE_HUD_HIDE_MS = 1000;
+
 interface XtermBufferLineList {
   length: number;
   maxLength: number;
@@ -227,6 +230,12 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
     const refitRef = useRef<(() => void) | null>(null);
     const flushResizeRef = useRef<(() => void) | null>(null);
     const ligaturesRef = useRef<((enabled: boolean, featureSettings: string) => void) | null>(null);
+    // Centre overlay that reports the applied grid; it is driven by real
+    // resize results, not by ResizeObserver intents, so it never shows a size
+    // the PTY has not been told about yet.
+    const [resizeHud, setResizeHud] = useState<{ cols: number; rows: number } | null>(null);
+    const resizeHudTimerRef = useRef<number | null>(null);
+    const resizeHudReadyRef = useRef(false);
     const { themeId } = useTheme();
     const { t } = useI18n();
 
@@ -1805,6 +1814,25 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         parseWaiters.push(callback);
       };
 
+      // Report an applied grid. The first apply is the initial fit (or the
+      // refit after the terminal is recreated), not a user resize, so it is
+      // skipped; a hidden pane records the fact but does not flash an overlay.
+      const publishResizeHud = (cols: number, rows: number) => {
+        const firstApply = !resizeHudReadyRef.current;
+        resizeHudReadyRef.current = true;
+        if (firstApply || !visibleRef.current) {
+          return;
+        }
+        setResizeHud({ cols, rows });
+        if (resizeHudTimerRef.current !== null) {
+          window.clearTimeout(resizeHudTimerRef.current);
+        }
+        resizeHudTimerRef.current = window.setTimeout(() => {
+          resizeHudTimerRef.current = null;
+          setResizeHud(null);
+        }, RESIZE_HUD_HIDE_MS);
+      };
+
       // Apply one grid change: pending-wrap is decided from the pre-resize
       // cursor (resize clamps it), then the local-reflow repaint window opens.
       const applyGridResize = (
@@ -1917,6 +1945,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             ) {
               try {
                 applyGridResize(instance, next.cols, next.rows, true);
+                publishResizeHud(instance.cols, instance.rows);
               } catch (error) {
                 console.warn('[terminal] resize failed', error);
               }
@@ -2368,6 +2397,18 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       refitRef.current?.();
     }, [fontSize]);
 
+    useEffect(
+      () => () => {
+        // The hide timer lives outside the main terminal effect so a re-run
+        // (font change) cannot leave the overlay stuck on screen.
+        if (resizeHudTimerRef.current !== null) {
+          window.clearTimeout(resizeHudTimerRef.current);
+          resizeHudTimerRef.current = null;
+        }
+      },
+      []
+    );
+
     useImperativeHandle(
       ref,
       () => ({
@@ -2428,8 +2469,22 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
     );
 
     // overflow-hidden clips the not-yet-reflowed canvas during the horizontal
-    // debounce window instead of letting it spill over the splitter.
-    return <div ref={containerRef} className="h-full w-full overflow-hidden" />;
+    // debounce window instead of letting it spill over the splitter. The HUD
+    // is a sibling of the terminal host so React never reconciles around the
+    // DOM nodes xterm.js appends itself.
+    return (
+      <div className="relative h-full w-full overflow-hidden">
+        <div ref={containerRef} className="h-full w-full" />
+        {resizeHud ? (
+          <div
+            aria-live="polite"
+            className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-border bg-surface-elevated px-2 py-1 text-meta tabular-nums text-foreground shadow-panel"
+          >
+            {resizeHud.cols} × {resizeHud.rows}
+          </div>
+        ) : null}
+      </div>
+    );
   }
 );
 
