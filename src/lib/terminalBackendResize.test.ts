@@ -151,6 +151,17 @@ describe('BackendResizeSender', () => {
     await sender.whenIdle();
   });
 
+  it('re-sends an identical grid after the previous IPC failed', async () => {
+    let call = 0;
+    const { sender, sent } = setup(() => {
+      call += 1;
+      return call === 1 ? Promise.reject(new Error('closed')) : Promise.resolve();
+    });
+    await sender.send(100, 30);
+    await sender.send(100, 30);
+    expect(sent).toHaveLength(2);
+  });
+
   it('reset releases waiters and forgets the queued request', async () => {
     const ack = deferred();
     const { sender, sent } = setup(() => ack.promise);

@@ -113,6 +113,17 @@ export class BackendResizeSender<T extends BackendResizeTarget> {
     }
     void request
       .catch((error) => {
+        // Let a later request re-send instead of treating a failed IPC as
+        // delivered (the two-phase reflow would otherwise reflow on a grid
+        // the PTY never adopted).
+        if (
+          this.lastSent &&
+          this.lastSent.targetId === target.id &&
+          this.lastSent.cols === next.cols &&
+          this.lastSent.rows === next.rows
+        ) {
+          this.lastSent = null;
+        }
         this.options.onError?.(target, next.cols, next.rows, error);
       })
       .finally(() => {

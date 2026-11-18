@@ -106,7 +106,9 @@ applyResize
 立即 reflow。
 
 `sendBackendResize` 返回“最新目标已被后端确认”的 Promise；相同尺寸去重（`onResize`
-在 `applyGridResize` 后会重发同一网格），仍保持单飞与“收敛到最新值”。
+在 `applyGridResize` 后会重发同一网格），仍保持单飞与“收敛到最新值”。等待 ack 设有
+1500ms 兜底：IPC 回复丢失时不能把后续 resize 与直写通知永远堵在 `applyInProgress`
+后面；超时会打日志并提前 reflow（会重新引入旧 CUP 错位风险，仅作为卡死逃生口）。
 
 **连接窗口内的 resize 不丢**：`resizeTarget` 为 null（PTY 创建中、重连窗口）时请求
 进入 `queuedResizeWithoutTarget`，由 `flushQueuedBackendResize` 在 transport 注册

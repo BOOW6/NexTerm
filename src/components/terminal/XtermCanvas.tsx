@@ -192,6 +192,15 @@ function syncEmptyBufferCapacity(terminal: Terminal, rows: number, scrollback: n
  */
 const RESIZE_PARSE_FALLBACK_MS = 250;
 
+/**
+ * A local-reflow resize reflows only after the backend acknowledged the new
+ * grid. A lost IPC reply must not park every later resize (and direct-write
+ * notices) behind `applyInProgress` forever, so the wait falls back after
+ * this window — noisily, because reflowing early reintroduces the old-CUP
+ * misplacement the wait exists to prevent.
+ */
+const RESIZE_BACKEND_ACK_TIMEOUT_MS = 1500;
+
 function logResizeError(target: string, cols: number, rows: number, error: unknown): void {
   console.warn(`[terminal] failed to resize ${target} to ${cols}x${rows}`, error);
 }
@@ -2021,8 +2030,18 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             // old geometry would then land N rows below the re-joined prompt
             // (the duplicated-command bug). Send first, await the ack, then
             // drain whatever arrived meanwhile at the old geometry, then
-            // reflow.
-            void backendResize.send(next.cols, next.rows).then(() => {
+            // reflow. A hung IPC must not stall resizes forever.
+            let secondPhaseStarted = false;
+            let ackTimer: number | null = null;
+            const startSecondPhase = () => {
+              if (secondPhaseStarted) {
+                return;
+              }
+              secondPhaseStarted = true;
+              if (ackTimer !== null) {
+                window.clearTimeout(ackTimer);
+                ackTimer = null;
+              }
               if (disposed) {
                 return;
               }
@@ -2067,7 +2086,13 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
               };
               armFallback2();
               whenWritesParsed(finalize2);
-            });
+            };
+
+            ackTimer = window.setTimeout(() => {
+              logResizeDebug('backend-ack-timeout', { cols: next.cols, rows: next.rows });
+              startSecondPhase();
+            }, RESIZE_BACKEND_ACK_TIMEOUT_MS);
+            void backendResize.send(next.cols, next.rows).then(startSecondPhase);
           };
 
           // Re-arm while the parser is still draining issued writes. Resizing
