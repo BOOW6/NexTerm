@@ -235,6 +235,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
     // the PTY has not been told about yet.
     const [resizeHud, setResizeHud] = useState<{ cols: number; rows: number } | null>(null);
     const resizeHudTimerRef = useRef<number | null>(null);
+    const resizeHudValueRef = useRef<{ cols: number; rows: number } | null>(null);
     const resizeHudReadyRef = useRef(false);
     const { themeId } = useTheme();
     const { t } = useI18n();
@@ -1814,21 +1815,37 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         parseWaiters.push(callback);
       };
 
-      // Report an applied grid. The first apply is the initial fit (or the
-      // refit after the terminal is recreated), not a user resize, so it is
-      // skipped; a hidden pane records the fact but does not flash an overlay.
-      const publishResizeHud = (cols: number, rows: number) => {
-        const firstApply = !resizeHudReadyRef.current;
-        resizeHudReadyRef.current = true;
-        if (firstApply || !visibleRef.current) {
+      // Report a grid change. Intents (`applied: false`) are published too, so
+      // the overlay tracks the measured size while a drag is still in flight;
+      // the applied report then confirms the final grid. The first applied
+      // grid is the initial fit (or the refit after the terminal is
+      // recreated), not a user resize, so it is skipped, and intents before it
+      // are ignored so opening a session stays quiet.
+      const publishResizeHud = (cols: number, rows: number, applied: boolean) => {
+        if (applied) {
+          const firstApply = !resizeHudReadyRef.current;
+          resizeHudReadyRef.current = true;
+          if (firstApply) {
+            return;
+          }
+        } else if (!resizeHudReadyRef.current) {
           return;
         }
+        if (!visibleRef.current) {
+          return;
+        }
+        const shown = resizeHudValueRef.current;
+        if (shown && shown.cols === cols && shown.rows === rows) {
+          return;
+        }
+        resizeHudValueRef.current = { cols, rows };
         setResizeHud({ cols, rows });
         if (resizeHudTimerRef.current !== null) {
           window.clearTimeout(resizeHudTimerRef.current);
         }
         resizeHudTimerRef.current = window.setTimeout(() => {
           resizeHudTimerRef.current = null;
+          resizeHudValueRef.current = null;
           setResizeHud(null);
         }, RESIZE_HUD_HIDE_MS);
       };
@@ -1945,7 +1962,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             ) {
               try {
                 applyGridResize(instance, next.cols, next.rows, true);
-                publishResizeHud(instance.cols, instance.rows);
+                publishResizeHud(instance.cols, instance.rows, true);
               } catch (error) {
                 console.warn('[terminal] resize failed', error);
               }
@@ -2055,6 +2072,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         }
 
         latestDimensions = { cols, rows, id };
+        // Show the target grid while the drag is still running; the applied
+        // report below/timer confirms it once xterm and the PTY agree.
+        publishResizeHud(cols, rows, false);
 
         // Discrete one-shot changes (maximize/restore, tab activation, font
         // changes) apply immediately; their reflow runs once and cannot
