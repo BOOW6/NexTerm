@@ -236,7 +236,6 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
     const [resizeHud, setResizeHud] = useState<{ cols: number; rows: number } | null>(null);
     const resizeHudTimerRef = useRef<number | null>(null);
     const resizeHudValueRef = useRef<{ cols: number; rows: number } | null>(null);
-    const resizeHudReadyRef = useRef(false);
     const { themeId } = useTheme();
     const { t } = useI18n();
 
@@ -1817,20 +1816,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
       // Report a grid change. Intents (`applied: false`) are published too, so
       // the overlay tracks the measured size while a drag is still in flight;
-      // the applied report then confirms the final grid. The first applied
-      // grid is the initial fit (or the refit after the terminal is
-      // recreated), not a user resize, so it is skipped, and intents before it
-      // are ignored so opening a session stays quiet.
-      const publishResizeHud = (cols: number, rows: number, applied: boolean) => {
-        if (applied) {
-          const firstApply = !resizeHudReadyRef.current;
-          resizeHudReadyRef.current = true;
-          if (firstApply) {
-            return;
-          }
-        } else if (!resizeHudReadyRef.current) {
-          return;
-        }
+      // the applied report then confirms the final grid. The initial fit runs
+      // through `fit.fit()` during `initialize` and never reaches this path,
+      // so opening a session does not flash the overlay and no "first apply"
+      // latch is needed — a latch here would swallow the first real drag.
+      const publishResizeHud = (cols: number, rows: number) => {
         if (!visibleRef.current) {
           return;
         }
@@ -1962,7 +1952,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             ) {
               try {
                 applyGridResize(instance, next.cols, next.rows, true);
-                publishResizeHud(instance.cols, instance.rows, true);
+                publishResizeHud(instance.cols, instance.rows);
               } catch (error) {
                 console.warn('[terminal] resize failed', error);
               }
@@ -2073,8 +2063,8 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
         latestDimensions = { cols, rows, id };
         // Show the target grid while the drag is still running; the applied
-        // report below/timer confirms it once xterm and the PTY agree.
-        publishResizeHud(cols, rows, false);
+        // report confirms it once xterm and the PTY agree.
+        publishResizeHud(cols, rows);
 
         // Discrete one-shot changes (maximize/restore, tab activation, font
         // changes) apply immediately; their reflow runs once and cannot
