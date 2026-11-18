@@ -114,8 +114,9 @@ PowerShell 5 / pwsh 是另一种情况：实测 resize 时**不输出**，在下
 用 xterm 6 headless 回放上面的 ConPTY 字节流可验证：
 
 - `reflowCursorLine: true` + 无 park：顶部/底部提示符在缩小后都得到正确的两行布局；
-- 但在 resize 重绘期间临时关闭 DECAWM（`\e[?7l` / `\e[?7h`），让 ConPTY 的行尾补空格被
-  裁掉而不是折行，底部提示符的“幽灵行 + 光标落到空行”问题消失；
+- 重绘批次只剥掉最终 `CUP` 前的尾部空格：底部提示符的“幽灵行 + 光标落到空行”问题消失，
+  同时 16–18 列这种“文本正好从最后一列开始折行”的 repaint 不会被破坏（整批关闭 DECAWM
+  会丢字，已由真实 cmd 字节流证伪）；
 - 放大回原宽度后，光标也落在正确的提示符行，不再依赖 ConPTY 的补救 CUP。
 
 结论：**按会话能力选择“本地重排”或“交给 shell 重排”，是比“按组形状判断是否 park”更可靠
@@ -170,16 +171,16 @@ type CursorLineResizeMode = 'local-reflow' | 'shell-repaint';
 2. `new Terminal({ ..., reflowCursorLine: mode === 'local-reflow' })`。
 3. 删除 `terminalCursorReflow.ts` 的 park/restore 与 `applyResize` 中的 `cursorPlan` 分支；
    对应的旧用例改写成 xterm 6 回放用例（保留“不得截断/不得重复”的断言）。
-4. **ConPTY 行尾补空格裁剪（关键）**：仅 `local-reflow` 且 `cols` 变化时：
-   - resize 前记录 `instance.modes.wraparoundMode`；
-   - 解冻写队列前写 `\e[?7l`（若原本开启）；
-   - 让 resize 后的第一段后端输出（ConPTY 的 `CUP / J / CUP / 文本+空格 / CUP` 重绘）
-     在关自动折行状态下解析；
-   - 在该段解析完成（或 50–100ms 超时）后按原状态写 `\e[?7h`；
-   - 只改前端 xterm 的 DECAWM，不写 PTY；恢复必须覆盖 dispose / 断线 / 重连路径。
-   - 已验证：该组合下顶部与底部提示符在 100→12→100 往返后文本与光标均正确，`X`/`Y`
-     落在正确行，无幽灵行。
-5. `shell-repaint` 路径保持 `reflowCursorLine: false`，不写 DECAWM，不做任何 CUP。
+4. **ConPTY 行尾补空格裁剪（关键）**：仅 `local-reflow` 且正常缓冲：
+   - 不碰 DECAWM。16–18 列时 `help` 从最后一列开始，repaint 文本本身就要折行；整批关
+     自动折行会把 `elp` 吞掉，这是第一版方案的错误；
+   - 用 `ResizeRepaintFilter` 只处理 resize 后的第一段后端输出：匹配
+     `CUP`、`Erase`、`CUP`、文本+空格、`CUP` 的结构，**只剥掉最终 CUP 前的尾部空格**；
+   - 文本中的空格和合法折行保持原样；匹配失败原样透传；150ms 超时兜底；
+   - 不写 PTY、不改 xterm 模式；dispose / 直写通知前 `cancel`。
+   - 已验证：13/14/15/16/17/18 列与底部提示符，裁剪后逻辑文本均为
+     `C:\Users\46838>helpX`，无丢字、无幽灵行；只关 DECAWM 的方案在 16 列会把 `elp` 吃掉。
+5. `shell-repaint` 路径保持 `reflowCursorLine: false`，不裁剪、不做任何 CUP。
 6. 修正 `conpty_bundle.rs` 的过时注释：quirk 模式不是“静默”，而是“只重绘光标行尾部”，
    且该重绘依赖终端侧重排。
 
@@ -219,9 +220,9 @@ type CursorLineResizeMode = 'local-reflow' | 'shell-repaint';
 自动化分层：
 
 - `terminalResizePolicy.test.ts`：会话 → 模式判定表。
-- `terminalResizeReadline.test.ts`：用 readline 实际重绘序列回放，覆盖 park/reflow 回归。
-- `terminalResizeConptyReplay.test.ts`：读取真实 ConPTY fixture，按 `applyResize` 顺序回放。
-- `terminalDecawmGuard.test.ts`：保存/恢复 DECAWM、超时恢复、dispose 恢复。
+- `terminalResizeReplay.test.ts`：真实 ConPTY 顶部/底部与 13–18 列折行矩阵，加 readline
+  实际重绘序列回放。
+- `terminalResizeRepaint.test.ts`：只裁尾部空格、合法折行保留、超时/取消。
 - 手动：Windows cmd / PowerShell 5 / pwsh / Git Bash；SSH Linux bash/zsh；分屏拖拽、侧栏
   开合、字体缩放、最大化/还原、标签切换、重连后缩放。
 
@@ -237,18 +238,18 @@ type CursorLineResizeMode = 'local-reflow' | 'shell-repaint';
    `cols+1` 光标）；放到 fixture 里覆盖。
 4. **CJK/emoji 宽字符**：xterm 与 ConPTY 的宽度表、行尾留白策略可能不同；逐字符比对，
    不能只比较总文本。
-5. **alt buffer（vim/less/top）**：不做本地重排；依赖应用重画。确认 `buildCursorGroupResizePlan`
-   的 `type !== 'normal'` 早退仍然保留，且 DECAWM 裁剪不作用在 alt buffer。
-6. **光标下方还有内容**（分页输出、TUI 局部刷新）：park 只检查组下方空行，未检查更下方；
-   新策略下不再 park，但仍需验证“上方行重排导致下方内容位移”是否与对端一致。
-7. **提示符组跨越视口顶部**（长命令进入 scrollback）：park 返回 null；`reflowCursorLine`
+5. **alt buffer（vim/less/top）**：不做本地重排；依赖应用重画。新策略已按
+   `type === 'normal'` 关闭重绘裁剪与光标行重排。
+6. **光标下方还有内容**（分页输出、TUI 局部刷新）：新策略下不再 park，但仍需验证
+   “上方行重排导致下方内容位移”是否与对端一致。
+7. **提示符组跨越视口顶部**（长命令进入 scrollback）：`reflowCursorLine`
    也只处理可见区。需要确认截断只发生在 scrollback，不污染当前屏幕。
 8. **行列同时变化**：当前先立即应用 rows、再防抖 cols；ConPTY 可能先发一次与 rows 相关的
    重绘。加 rows-only / rows+cols 组合 fixture。
 9. **最大化/还原 + 防抖竞争**：`refit(true)` 与尾部防抖可能产生两次连续 resize；确认
-   DECAWM 守卫成对恢复，不叠加。
+   重绘过滤器只消费首个批次，不叠加、不误伤后续输出。
 10. **标签切换 / 隐藏面板**：卸载前 `flushPendingResize` 会直接 `terminal.resize()`，绕过
-    park/守卫；新策略下需确认它也只对 `local-reflow` 生效，且不留下 DECAWM=off。
+    过滤器；新策略下需确认它也只对 `local-reflow` 生效。
 11. **快照恢复后 resize**：快照的 cursor 与真实 shell cursor 可能不同；恢复期间 `directWriteDepth`
     会延迟 resize，恢复完成后计划可能基于快照尾部；`shell-repaint` 下风险较低，仍需用例。
 12. **字体/缩放改变 cols**：走同一路径；readline 重复提示符同样会出现，必须由模式判定覆盖。
@@ -258,8 +259,8 @@ type CursorLineResizeMode = 'local-reflow' | 'shell-repaint';
     需要会话级覆盖。
 15. **`cursorRow.length` 与 `terminal.cols` 不一致**：旧 park 用 `length` 判断“变宽”，历史上
     的 resize 会让 `length > cols`；新策略删除该逻辑后问题消失，但 fixture 仍应覆盖连续缩放。
-16. **DECAWM 状态泄漏**：dispose、重连、切换主题/字体导致 Terminal 重建时必须恢复；否则
-    用户之后的长行不再折行。
+16. **重绘裁剪状态泄漏**：dispose、重连、直写通知前必须 `cancel` 过滤器；否则通知文本
+    可能被误当作 resize 重绘处理。
 
 ## 7. 实施顺序与验收
 
@@ -267,15 +268,15 @@ type CursorLineResizeMode = 'local-reflow' | 'shell-repaint';
 | -------------- | --------------------------------------------------------- | ------------------------------------------------------------ |
 | P0（0.5–1 天） | 会话模式判定 + 仅 cmd 走 park；SSH/Unix/PS 停止 park      | Linux 重复提示符与吞行消失；现有 Windows 顶部 cmd 用例不回归 |
 | P1a（1–2 天）  | xterm 6 + addons 升级，`reflowCursorLine` 接入，删除 park | 全量前端检查通过；顶部/底部 cmd fixture 文本与光标正确       |
-| P1b（0.5 天）  | DECAWM 裁剪守卫                                           | 底部提示符不再出现幽灵行/光标落到空行；连续缩放往返稳定      |
+| P1b（0.5 天）  | 尾部补空格裁剪（DECAWM 方案已废弃）                       | 13–18 列不丢字；底部提示符无幽灵行；连续缩放往返稳定         |
 | P1c（1 天）    | readline/ConPTY 回放测试 + 手动矩阵                       | 第 5 节 1–6 条全部通过                                       |
 | P2             | 会话级覆盖、诊断日志、fixture 生成器、Telnet/serial 复核  | 自定义 shell 可人工纠正；现场问题可用日志定位                |
 
 回滚策略：
 
-- 模式判定与守卫都加设置项/构建期开关；若 xterm 6 升级出现问题，可回退到 5.5 + P0
+- 模式判定与重绘过滤器都加设置项/构建期开关；若 xterm 6 升级出现问题，可回退到 5.5 + P0
   （只修 SSH/Unix，Windows 底部问题保留并记录）。
-- DECAWM 裁剪若在现场造成裁剪异常，可单独关闭该守卫，退回 `reflowCursorLine` 单用；
+- 尾部补空格裁剪若在现场误伤输出，可关闭过滤器，退回 `reflowCursorLine` 单用；
   此时底部提示符仍可能错位，但不影响 readline 会话。
 
 ## 8. 关键结论（一句话）
@@ -297,25 +298,32 @@ cmd/conhost 与 PowerShell/PSReadLine 都需要本地重排（后者只重画输
   “跳过光标组 + 截断”行为。
 - **删除 park**：`terminalCursorReflow.ts`、`terminalResizePrompt.test.ts`、
   `terminalCursorReflow.test.ts` 已删除；`applyResize` 不再写 `CUP` 或恢复光标。
-- **DECAWM 裁剪**：`src/lib/terminalResizeWrapGuard.ts` 在 `local-reflow` 会话 resize 后
-  临时关闭自动折行，首个输出批次解析后恢复（150ms 超时兜底）；备用缓冲、应用原本关闭
-  DECAWM、dispose 都不写 `?7h`。
+- **ConPTY 补空格裁剪**：`src/lib/terminalResizeRepaint.ts` 的 `ResizeRepaintFilter` 在
+  `local-reflow` 会话 resize 后只处理首个输出批次，剥掉最终 CUP 前的尾部空格；150ms
+  超时兜底。第一版用 `\e[?7l` 整批关闭 DECAWM，实测在 16–18 列会把合法折行的 `help`
+  尾部吃掉，已废弃。
+- **底部 pending wrap 提交**：`src/lib/terminalResizePendingWrap.ts` 在缩小后检测
+  “normal buffer + 光标在最后一行且位于/越过最后一列 + 末格非空”，命中时向 xterm 补一个
+  `LF`。真实 cmd 在提示符恰好填满最后一行时 resize 不输出、但在内部滚了一行；不补这一行，
+  下一次输入 `CUP row30 col1` 会覆盖提示符（15 列实测得到 `helpsers\46838>`）。
 - **依赖**：`@xterm/xterm` / `@xterm/headless` 升级到 6.0，`addon-fit` 0.11、
   `addon-webgl` 0.19；其余 addon 保持当前版本。
 - **测试**：`terminalResizePolicy.test.ts`（判定表）、`terminalResizeReplay.test.ts`
-  （真实 ConPTY 顶部/底部字节流 + readline 缩小/放大回放）、
-  `terminalResizeWrapGuard.test.ts`（arm/release/超时/dispose）。
-- **提交**：`1a7e80a`（策略分流，P0）、`55abc4d`（xterm 6 + 裁剪守卫，P1）。
+  （真实 ConPTY 顶部/底部 + 13–18 列折行矩阵 + 15 列底部 pending wrap + readline
+  缩小/放大回放）、`terminalResizeRepaint.test.ts`（尾部空格/超时/取消）、
+  `terminalResizePendingWrap.test.ts`（命中/未命中/alt buffer）。
+- **提交**：`1a7e80a`（策略分流）、`55abc4d`（xterm 6 + 初版裁剪）、`8443879`
+  （PowerShell 归入 local-reflow）、后续提交修正为“只裁尾部空格 + 提交 pending wrap”。
 
-验证结果：`npm run check` 全绿（444 passed / 1 skipped），`npm run build` 通过，
-`cargo fmt --check` 通过。回放用例覆盖 100→12→100 的 cmd 顶部/底部提示符、缩放后输入
-哨兵字符、readline 缩小不重复、放大不吞上一行。
+验证结果：`npm run check` 全绿（457 passed / 1 skipped），`npm run build` 通过，
+`cargo fmt --check` 通过。回放覆盖 13–18 列 `C:\Users\46838>helpX` 不丢字、底部提示符
+无幽灵行、15 列底部提示符不被 `help` 覆盖、readline 缩小不重复、放大不吞上一行。
 
 已知边界（后续 P2）：
 
 - 远端 Windows cmd（SSH 到 cmd）目前按 `shell-repaint` 处理，会被截断；需要会话级覆盖。
 - 自定义包装脚本按 basename 判定，可能误判；默认 `shell-repaint` 是安全侧。
-- DECAWM 守卫在“第一个输出批次”后恢复；如果某个后端把 resize 重绘拆成多个异步批次，
-  后续批次仍可能折行。当前随包 ConPTY 的重绘是单次小写入，回放用例覆盖该行为。
+- 重绘过滤器只处理“第一个输出批次”；如果某个后端把 resize 重绘拆成多个异步批次，后续
+  批次里的尾部空格仍可能折行。当前随包 ConPTY 的重绘是单次小写入，回放用例覆盖该行为。
 - 仅做了 xterm headless + 构建验证，仍需在 Windows 实机对 cmd / PowerShell / Git Bash
-  以及 Linux SSH 做一次手工拖拽缩放烟测。
+  以及 Linux SSH 做一次手工拖拽缩放烟测（本轮问题的宽度边界是 15–18 列）。

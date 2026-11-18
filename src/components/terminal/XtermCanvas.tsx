@@ -63,7 +63,8 @@ import {
   writeTerminalSnapshot
 } from '../../lib/terminalSnapshot';
 import { registerTerminalReconnect } from '../../lib/terminalReconnect';
-import { ResizeWrapGuard } from '../../lib/terminalResizeWrapGuard';
+import { ResizeRepaintFilter } from '../../lib/terminalResizeRepaint';
+import { shouldCommitConptyPendingWrap } from '../../lib/terminalResizePendingWrap';
 import {
   resolveCursorLineResizeMode,
   type CursorLineResizeMode
@@ -408,7 +409,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       let parseWaiters: Array<() => void> = [];
       let writeFrozen = false;
       let unfreezeWaiters: Array<() => void> = [];
-      let wrapGuard: ResizeWrapGuard | null = null;
+      let repaintFilter: ResizeRepaintFilter | null = null;
 
       let latestDimensions: { cols: number; rows: number; id: number } | null = null;
       let desiredDimensions: { cols: number; rows: number; id: number } | null = null;
@@ -489,11 +490,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         });
       };
 
-      const armResizeWrapGuard = (instance: Terminal): void => {
-        if (!wrapGuard) {
-          wrapGuard = new ResizeWrapGuard(issueWrite);
+      const armResizeRepaintFilter = (): void => {
+        if (!repaintFilter) {
+          repaintFilter = new ResizeRepaintFilter();
         }
-        wrapGuard.arm(instance.modes.wraparoundMode);
+        repaintFilter.arm();
       };
 
       const takeQueuedData = () => {
@@ -516,8 +517,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         }
         const data = takeQueuedData();
         if (data) {
-          issueWrite(data);
-          wrapGuard?.release();
+          issueWrite(repaintFilter ? repaintFilter.consume(data) : data);
         }
       };
 
@@ -540,10 +540,10 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         }
         const data = writeQueue.splice(0, count).join('');
         pendingChars -= size;
-        issueWrite(data);
-        // The first post-resize batch is ConPTY's cursor-line repaint: it is
-        // parsed with autowrap off, then the application's mode is restored.
-        wrapGuard?.release();
+        // The first post-resize batch is ConPTY's cursor-line repaint. Strip
+        // only its trailing padding: legitimate text may still wrap at the
+        // last column, and killing autowrap for the whole batch corrupts it.
+        issueWrite(repaintFilter ? repaintFilter.consume(data) : data);
         if (writeQueue.length > 0) {
           scheduleFlush();
         }
@@ -694,9 +694,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         if (disposed) {
           return;
         }
-        // A direct write sequence must never run with the resize guard's
-        // autowrap state still applied.
-        wrapGuard?.release();
+        // A direct write sequence must never be mistaken for ConPTY's resize
+        // repaint.
+        repaintFilter?.cancel();
         flushPendingWrites();
         // Hold the queue for the whole sequence and block new resizes: the
         // notice spans several asynchronous writes and interleaved output or
@@ -1758,17 +1758,33 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
                   typeof instance.options.scrollback === 'number'
                     ? instance.options.scrollback
                     : 1000;
+                const previousCols = instance.cols;
                 syncEmptyBufferCapacity(instance, next.rows, scrollback);
                 instance.resize(next.cols, next.rows);
-                // cmd is the only client that does not repaint its prompt.
-                // ConPTY follows with a cursor-line repaint whose trailing
-                // padding would wrap on the last row and scroll the viewport;
-                // clip that batch instead of letting it move the cursor.
+                const normalBuffer = instance.buffer.active.type === 'normal';
+                // ConPTY commits a pending wrap at resize time: when the
+                // prompt exactly filled the bottom row it scrolls internally
+                // and later positions input on a fresh bottom row. xterm keeps
+                // the prompt on the old row, so the next CUP would overwrite
+                // it; make the same scroll locally.
                 if (
                   cursorLineResizeMode === 'local-reflow' &&
-                  instance.buffer.active.type === 'normal'
+                  normalBuffer &&
+                  next.cols < previousCols &&
+                  shouldCommitConptyPendingWrap(
+                    instance.buffer.active,
+                    instance.cols,
+                    instance.rows
+                  )
                 ) {
-                  armResizeWrapGuard(instance);
+                  issueWrite('\n');
+                }
+                // ConPTY follows with a cursor-line repaint whose trailing
+                // padding would wrap on the last row and scroll the viewport.
+                // Trim that padding from the first output batch instead of
+                // touching autowrap (text may legitimately wrap).
+                if (cursorLineResizeMode === 'local-reflow' && normalBuffer) {
+                  armResizeRepaintFilter();
                 }
               } catch (error) {
                 console.warn('[terminal] resize failed', error);
@@ -2085,8 +2101,8 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         }
         parseWaiters = [];
         writeQueue.length = 0;
-        wrapGuard?.dispose();
-        wrapGuard = null;
+        repaintFilter?.cancel();
+        repaintFilter = null;
 
         unlistenOutput?.();
         unlistenClosed?.();
