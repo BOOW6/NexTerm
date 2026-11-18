@@ -279,6 +279,27 @@ describe('bundled ConPTY: wrapped banner above the prompt', () => {
     expect(lineText(terminal, 3)).toBe('C:\\Users\\46838>foobarX');
     expect(terminal.buffer.active.cursorX).toBe(22);
   });
+
+  it('heals a pre-resize echo that is parsed after the reflow', async () => {
+    const terminal = makeCmd(30);
+    await write(terminal, CMD_BOOT);
+
+    // The two-phase path keeps writes frozen across the backend ack, so an
+    // echo produced at the old geometry can be parsed AFTER xterm's reflow.
+    // The repaint that follows (new geometry) must erase it: cursor-line
+    // CUP + erase-to-end covers every row below the caret.
+    terminal.resize(100, 30);
+    await write(terminal, CMD_ECHO_30 + CMD_REPAINT_WIDEN_30);
+
+    expect(lineText(terminal, 0)).toBe('Microsoft Windows [版本 10.0.26200.8875]');
+    expect(lineText(terminal, 1)).toBe('(c) Microsoft Corporation。保留所有权利。');
+    expect(lineText(terminal, 2)).toBe('');
+    expect(lineText(terminal, 3)).toBe('C:\\Users\\46838>foobar');
+    // The stale copy at the old row must not survive.
+    expect(lineText(terminal, 5)).toBe('');
+    expect(terminal.buffer.active.cursorX).toBe(21);
+    expect(terminal.buffer.active.cursorY).toBe(3);
+  });
 });
 
 describe('bundled ConPTY: wrapped cursor line grows with an \\e[K repaint', () => {
