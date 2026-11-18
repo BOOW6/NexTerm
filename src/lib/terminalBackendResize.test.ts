@@ -51,6 +51,14 @@ describe('BackendResizeSender', () => {
     expect(sent).toEqual([{ target: 'pty-1', cols: 100, rows: 30 }]);
   });
 
+  it('reports whether the last dispatched grid differs from the live grid', async () => {
+    const { sender } = setup();
+    expect(sender.lastSentDiffers(100, 30)).toBe(false);
+    await sender.send(100, 30);
+    expect(sender.lastSentDiffers(100, 30)).toBe(false);
+    expect(sender.lastSentDiffers(80, 30)).toBe(true);
+  });
+
   it('sends the same grid again when the target changed (reconnect)', async () => {
     const { sender, sent, setTarget } = setup();
     await sender.send(100, 30);

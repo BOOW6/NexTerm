@@ -199,7 +199,7 @@ const RESIZE_PARSE_FALLBACK_MS = 250;
  * this window — noisily, because reflowing early reintroduces the old-CUP
  * misplacement the wait exists to prevent.
  */
-const RESIZE_BACKEND_ACK_TIMEOUT_MS = 1500;
+const RESIZE_BACKEND_ACK_TIMEOUT_MS = 500;
 
 function logResizeError(target: string, cols: number, rows: number, error: unknown): void {
   console.warn(`[terminal] failed to resize ${target} to ${cols}x${rows}`, error);
@@ -1974,10 +1974,18 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             }
 
             const instance = terminal;
+            // A newer request during the wait must not make this grid stale:
+            // for local-reflow the backend already adopted `next`, so the
+            // queued bytes belong to it and xterm must reflow to it before
+            // the newest target applies. The exception is a no-op request
+            // back to the current grid: it cleared desiredDimensions, so
+            // applying `next` would move xterm away from the final intent.
             const canApply = () =>
               !disposed &&
               !!instance &&
-              next.id === resizeRequestId &&
+              // Evaluated at call time: a newer request (or a no-op back to
+              // the current grid) may arrive while the ack is pending.
+              !(next.id !== resizeRequestId && desiredDimensions === null) &&
               (instance.cols !== next.cols || instance.rows !== next.rows);
 
             const finalize = () => {
@@ -2141,6 +2149,14 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           cancelResizeTimer();
           latestDimensions = { cols, rows, id };
           desiredDimensions = null;
+          // The grid is unchanged in xterm, but the PTY may already have
+          // adopted an in-flight target (the two-phase path keeps xterm at
+          // the old grid until the ack). Re-sending the current grid is
+          // deduped unless the backend really is at a different size, so the
+          // no-op cannot strand the PTY at a stale size.
+          if (backendResize.lastSentDiffers(cols, rows)) {
+            void backendResize.send(cols, rows);
+          }
           return;
         }
 

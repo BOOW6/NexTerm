@@ -75,6 +75,15 @@ export class BackendResizeSender<T extends BackendResizeTarget> {
     void this.send(queued?.cols ?? cols, queued?.rows ?? rows);
   }
 
+  /**
+   * True when the last dispatched grid differs from `cols/rows`. Used by the
+   * no-op path: xterm's grid did not change, but the PTY may already have
+   * adopted an in-flight target.
+   */
+  lastSentDiffers(cols: number, rows: number): boolean {
+    return !!this.lastSent && (this.lastSent.cols !== cols || this.lastSent.rows !== rows);
+  }
+
   whenIdle(): Promise<void> {
     if (!this.inFlight && !this.pending) {
       return Promise.resolve();
