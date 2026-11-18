@@ -66,6 +66,7 @@ import { registerTerminalReconnect } from '../../lib/terminalReconnect';
 import { ResizeRepaintFilter } from '../../lib/terminalResizeRepaint';
 import { shouldCommitConptyPendingWrap } from '../../lib/terminalResizePendingWrap';
 import { logResizeDebug } from '../../lib/terminalResizeDebug';
+import { BackendResizeSender } from '../../lib/terminalBackendResize';
 import {
   resolveCursorLineResizeMode,
   type CursorLineResizeMode
@@ -443,17 +444,6 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       let directWriteDepth = 0;
 
       let resizeTarget: { id: string; transport: TerminalTransport } | null = null;
-      let pendingBackendResize: { cols: number; rows: number } | null = null;
-      let backendResizeInFlight = false;
-      // The last dimensions actually sent to the backend. onResize re-sends
-      // the grid after applyGridResize; an identical request is skipped so
-      // the pre-reflow send (Fix A) is not duplicated.
-      let lastSentBackendResize: { cols: number; rows: number } | null = null;
-      // Resizes requested while no transport was connected (session creation,
-      // reconnect window). Applied when the next transport registers its
-      // target, so the PTY never boots at a stale grid.
-      let queuedResizeWithoutTarget: { cols: number; rows: number } | null = null;
-      let backendResizeIdleWaiters: Array<() => void> = [];
       let da1Disposable: IDisposable | undefined;
       const pendingPtyReplies: string[] = [];
 
@@ -697,97 +687,36 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
       const isSsh = transport === 'ssh';
 
-      const signalBackendResizeIdle = () => {
-        if (backendResizeInFlight || pendingBackendResize) {
-          return;
-        }
-        const waiters = backendResizeIdleWaiters;
-        backendResizeIdleWaiters = [];
-        for (const waiter of waiters) {
-          waiter();
-        }
-      };
-
-      /** Resolve once no backend resize is pending or in flight. */
-      const whenBackendResizeIdle = (): Promise<void> => {
-        if (!backendResizeInFlight && !pendingBackendResize) {
-          return Promise.resolve();
-        }
-        return new Promise((resolve) => {
-          backendResizeIdleWaiters.push(resolve);
-        });
-      };
-
-      // Keep at most one resize command in flight and always converge on the
-      // newest requested dimensions. Separate async IPC invokes can otherwise
-      // be delivered out of order, leaving the PTY at a stale size.
-      //
-      // Resolves when the backend has acknowledged the newest requested grid
-      // (or immediately when the dimensions were already sent, or when the
-      // request had to be queued for a transport that is not connected yet —
-      // in that case the queued send happens in flushQueuedBackendResize).
-      const sendBackendResize = (cols: number, rows: number): Promise<void> => {
-        if (!resizeTarget) {
-          logResizeDebug('backend-queued (no target)', { cols, rows });
-          queuedResizeWithoutTarget = { cols, rows };
-          return Promise.resolve();
-        }
-        if (
-          lastSentBackendResize &&
-          lastSentBackendResize.cols === cols &&
-          lastSentBackendResize.rows === rows
-        ) {
-          logResizeDebug('backend-deduped', { cols, rows });
-          return whenBackendResizeIdle();
-        }
-        logResizeDebug('backend-send', { cols, rows, target: resizeTarget.transport });
-        pendingBackendResize = { cols, rows };
-        if (!backendResizeInFlight) {
-          flushBackendResize();
-        }
-        return whenBackendResizeIdle();
-      };
-
-      const flushBackendResize = () => {
-        const target = resizeTarget;
-        const next = pendingBackendResize;
-        pendingBackendResize = null;
-        if (!target || !next) {
-          backendResizeInFlight = false;
-          signalBackendResizeIdle();
-          return;
-        }
-        backendResizeInFlight = true;
-        lastSentBackendResize = next;
-        const request =
-          target.transport === 'ssh'
-            ? resizeSsh(target.id, next.cols, next.rows)
+      // Keep at most one resize command in flight, converge on the newest
+      // requested dimensions, and let a caller await the backend ack before
+      // reflowing xterm (see the two-phase path in finish()).
+      const backendResize = new BackendResizeSender<{
+        id: string;
+        transport: TerminalTransport;
+      }>({
+        getTarget: () => resizeTarget,
+        send: (target, cols, rows) => {
+          logResizeDebug('backend-send', { cols, rows, target: target.transport });
+          return target.transport === 'ssh'
+            ? resizeSsh(target.id, cols, rows)
             : target.transport === 'telnet'
-              ? resizeTelnet(target.id, next.cols, next.rows)
-              : resizePty(target.id, next.cols, next.rows);
-        void request
-          .catch((error) => {
-            logResizeError(
-              target.transport === 'ssh'
-                ? 'SSH PTY'
-                : target.transport === 'telnet'
-                  ? 'Telnet'
-                  : 'PTY',
-              next.cols,
-              next.rows,
-              error
-            );
-          })
-          .finally(() => {
-            logResizeDebug('backend-ack', { cols: next.cols, rows: next.rows });
-            if (pendingBackendResize && resizeTarget) {
-              flushBackendResize();
-            } else {
-              backendResizeInFlight = false;
-              signalBackendResizeIdle();
-            }
-          });
-      };
+              ? resizeTelnet(target.id, cols, rows)
+              : resizePty(target.id, cols, rows);
+        },
+        onError: (target, cols, rows, error) => {
+          logResizeDebug('backend-error', { cols, rows, target: target.transport });
+          logResizeError(
+            target.transport === 'ssh'
+              ? 'SSH PTY'
+              : target.transport === 'telnet'
+                ? 'Telnet'
+                : 'PTY',
+            cols,
+            rows,
+            error
+          );
+        }
+      });
 
       /**
        * Called when a transport registers its resize target: deliver a resize
@@ -796,11 +725,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
        * before the first prompt.
        */
       const flushQueuedBackendResize = (instance: Terminal): void => {
-        const queued = queuedResizeWithoutTarget;
-        queuedResizeWithoutTarget = null;
-        const target = queued ?? { cols: instance.cols, rows: instance.rows };
-        logResizeDebug('backend-flush-queued', { ...target, queued: queued !== null });
-        void sendBackendResize(target.cols, target.rows);
+        logResizeDebug('backend-flush-queued', {
+          cols: instance.cols,
+          rows: instance.rows
+        });
+        backendResize.flushQueued(instance.cols, instance.rows);
       };
 
       let reconnectAttempts = 0;
@@ -1179,7 +1108,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             recordKeystroke(data);
           });
           resizeDisposable = instance.onResize(({ cols, rows }) => {
-            sendBackendResize(cols, rows);
+            void backendResize.send(cols, rows);
           });
 
           // A background pane's auto-reconnect must not steal keyboard focus
@@ -1321,7 +1250,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             recordKeystroke(data);
           });
           resizeDisposable = instance.onResize(({ cols, rows }) => {
-            sendBackendResize(cols, rows);
+            void backendResize.send(cols, rows);
           });
 
           // A background pane's connect must not steal focus from the pane
@@ -1443,7 +1372,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             recordKeystroke(data);
           });
           resizeDisposable = instance.onResize(({ cols, rows }) => {
-            sendBackendResize(cols, rows);
+            void backendResize.send(cols, rows);
           });
 
           // Same rule as the SSH/local paths: do not steal focus from the
@@ -2093,7 +2022,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             // (the duplicated-command bug). Send first, await the ack, then
             // drain whatever arrived meanwhile at the old geometry, then
             // reflow.
-            void sendBackendResize(next.cols, next.rows).then(() => {
+            void backendResize.send(next.cols, next.rows).then(() => {
               if (disposed) {
                 return;
               }
@@ -2493,12 +2422,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         }
 
         resizeTarget = null;
-        pendingBackendResize = null;
-        queuedResizeWithoutTarget = null;
-        lastSentBackendResize = null;
-        const idleWaiters = backendResizeIdleWaiters;
-        backendResizeIdleWaiters = [];
-        idleWaiters.forEach((resolve) => resolve());
+        backendResize.reset();
         backendIdRef.current = '';
 
         terminalRef.current = null;

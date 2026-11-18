@@ -192,8 +192,10 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
   - **隐藏标签页不得丢弃尺寸事件**：`ResizeObserver` 在 `visible=false` 时仍要更新缓存的宽高再返回；被忽略的通知不会重发，切回标签页依赖 `resume()` 的离散 refit。
   - **防抖窗口内的视觉裁剪**：终端宿主容器必须 `overflow-hidden`，防抖生效前旧尺寸画布被裁剪而不是溢出到相邻面板。
   - **解析等待回退是卡死检测而非超时硬切**：resize 等待已发出写入解析完成时，回退定时器在解析器仍有进展（有 write 回调完成）时必须重臂；只有整整一个窗口无任何进展才允许在未解析状态下 reflow。单次 `terminal.write` 的回调只在**整块**解析完后触发，所以批量写入必须按约 16 KiB 切片（`PARSE_SLICE_CHARS`），否则一次大块写入会让“有进展”永远观察不到。
+  - **reflow 必须等后端 resize ack（两阶段）**：xterm 的 reflow 与 ConPTY 自己回并折行行是两个独立事件。`local-reflow` 会话在 `instance.resize()` 之前，先写完旧几何输出并等解析、解冻、`await sendBackendResize(...)`（后端已采纳新尺寸），再把期间到达的旧几何输出写完并等解析，最后才 reflow；否则按旧几何产出的回显 CUP 会在新网格上渲染，落点正好是回并后提示符下方 N 行（N = 回并组数），表现为提示符下方隔行重复命令、光标错位。`shell-repaint` 会话（SSH/Telnet/readline）不等网络 RTT，直接 reflow。`sendBackendResize` 对相同尺寸去重、单飞、收敛最新值，并返回 ack Promise。
+  - **连接窗口内的 resize 不得丢弃**：`resizeTarget` 为 null（PTY 创建中、重连窗口）时请求进 `queuedResizeWithoutTarget`，transport 注册 target 时由 `flushQueuedBackendResize` 补发；没有排队值时发送当前网格。不要恢复成 `if (!resizeTarget) return`。
   - **光标行重排按 shell 能力分流（cursor-line policy）**：xterm.js 的 reflow 默认跳过包含光标的折行组。cmd.exe / conhost 在 SIGWINCH 后**不重画**提示符；PowerShell / pwsh 的 PSReadLine 也**不重画**，而是在下一次按键时发 `DSR 6n`、拿到光标位置后只重画输入行。因此本地 cmd / PowerShell / pwsh 会话必须启用 xterm 6 的 `reflowCursorLine: true`，由终端自己拆分/回并光标组；bash / zsh / fish / Git Bash / WSL 使用 readline、zle、fish，会在 SIGWINCH 后从“它认为的当前光标行”重画提示符，**绝不能** park 或本地重排光标行，否则会重复提示符或吞掉上一行。会话类型与 `shellCommand` 经 `src/lib/terminalResizePolicy.ts` 解析为 `local-reflow` / `shell-repaint`，SSH / Telnet / Serial 一律 `shell-repaint`；自定义 shell 默认 `shell-repaint`。禁止再按“这一行会不会被截断”判断是否 park。
-  - **ConPTY 重绘的行尾补空格必须裁掉**：随包 ConPTY 在 resize 时只重绘光标行尾部（`CUP`、`Erase`、`CUP`、文本+补空格、`CUP`），不是静默；当光标行位于视口最后一行时，补空格会触发自动折行、滚动视口，使后续 CUP 落到空行。`local-reflow` 会话在 resize 后由 `ResizeRepaintFilter` 接管后续输出：**只剥掉最终 CUP 前的尾部空格**，保留可能合法折行的文本（16–18 列时 `help` 正好从最后一列开始折行，整批关闭 DECAWM 会丢字）。
+  - **ConPTY 重绘的尾部有三种变体**：缩小是 `CUP, Erase, CUP, 文本 + 补空格, CUP`；从折行光标行放大是 `... 文本, \e[K, CUP`；其余放大是 `... 文本, CUP`。`ResizeRepaintFilter` 三种都算 complete，只剥掉“最终 CUP 前的空格 run”（保留 `\e[K`），`\e[0J` 也认作 erase。当光标行位于视口最后一行时，补空格会触发自动折行、滚动视口，使后续 CUP 落到空行；保留可能合法折行的文本（16–18 列时 `help` 正好从最后一列开始折行，整批关闭 DECAWM 会丢字）。hold 上限 8 KiB，避免宽终端长提示符重绘跨块时 padding 漏裁。
     - 过滤器**不是“首个批次一次性”**：重绘可能和别的输出同批、前面带前缀、被 IPC 切成两半。匹配不到就继续 armed 直到命中或 150ms 超时；只保留“仍是重绘前缀”的尾部（`repaintHoldLength`），其余立刻透传，超时/取消时把 hold 住的字节原样发出去，不许吞。
     - **前一个重绘窗口必须先落定再开始下一次重排**（`runResize` 等待 `whenSettled`）：否则冻结写队列会让上一轮重绘到达不了过滤器，补空格原样写进 xterm 后再叠加新一轮 reflow，正是重影来源。等待期间不冻结队列，常规 16ms flush 仍走过滤器。
     - 队列数据出队时**必须经过 `repaintFilter.consume()`**，禁止裸 `issueWrite`，否则上一轮重绘绕过裁剪。
@@ -203,7 +205,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
     - `occupiedCellEnd` 必须按单元格宽度累加，宽字符的后半格 `getWidth() === 0` 不能当成空列（中文提示恰好填满时必须命中）。回归用例见 `src/lib/terminalResizePendingWrap.test.ts`。
   - **ConPTY DA1 必须应答**：ConPTY 1.22+ 启动时会发 `CSI c` 并等待设备属性，不应答会卡住首个提示符与首轮 SIGWINCH。本地 ConPTY 会话在 `Terminal` 创建后注册 `parser.registerCsiHandler({ final: 'c' })`，主 DA（无参数或 `0`）回 `\x1b[?61;4c` 并返回 `true` 吞掉该序列；`CSI > c` 等带 prefix 的次级 DA 不匹配该 handler，仍交给 xterm。PTY id 尚未就绪时先排队，`resizeTarget` 赋值后补发。
 - **ConPTY 与缓冲区安全 (ConPTY Buffer Safety)**：
-  - Windows 端随包加载 Microsoft ConPTY 1.25（`conpty-assets`），确保 `PSEUDOCONSOLE_RESIZE_QUIRK` 生效，避免系统 ConPTY 在 resize 时重印整屏；许可证与哈希见 `src-tauri/THIRD_PARTY_NOTICES.md`。
+  - Windows 端随包加载 Microsoft ConPTY 1.25（`conpty-assets`），确保 `PSEUDOCONSOLE_RESIZE_QUIRK` 生效，避免系统 ConPTY 在 resize 时重印整屏；许可证与哈希见 `src-tauri/THIRD_PARTY_NOTICES.md`。`pty_platform_info` 会报告 `bundled`；加载失败回退系统 ConPTY 时前端 `console.warn`，因为系统后端是另一套契约（整屏重印 + 回显裸文本、不重锚定 CUP），不要按光标行重绘假设去调它。
   - 创建 Terminal 时注入真实的 `windowsPty: { backend, buildNumber }`，启用 xterm 针对 ConPTY 的行增长与 reflow 策略；本地 cmd / PowerShell / pwsh 另开 xterm 6 的 `reflowCursorLine`。
   - resize 前同步空 `alt` buffer 的 `lines.maxLength` 到目标行数，规避 xtermjs/xterm.js#6163 在垂直 grow 时把幻影行拉回视口造成的重影。
   - 针对 Windows ConPTY 在 resize 时发送的重绘与清屏控制符（如 `\x1b[2J` / 光标定位符），前端在 resize 期间**严禁主动清空或截断 `xterm.js` 的 `write` 缓存队列**；通知类直写（断线/重连提示等）在冻结期必须等待解冻后再写，保持 FIFO。

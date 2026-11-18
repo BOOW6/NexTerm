@@ -91,9 +91,27 @@ applyResize
   → 冻结写队列 + 取消 16ms flush
   → 队列余量经 repaintFilter.consume() 写入
   → 等已发出写入解析完（回退定时器只在“整窗无进展”时才放行）
-  → applyGridResize
+  → 解冻，但保持 applyInProgress（旧几何字节继续按旧网格渲染）
+  → local-reflow：sendBackendResize 并等待 ack，再冻结、把期间到达的
+     旧几何输出写完、再次等解析 → applyGridResize
+     shell-repaint：直接 applyGridResize（远端重画，不必等网络 RTT）
   → 解冻、恢复 flush、若 desiredDimensions 仍新则重入
 ```
+
+**两阶段 reflow 的原因**：xterm 的 reflow 与 ConPTY 自己回并折行行是两个独立事件。
+如果 xterm 先 reflow、`resize_pty` 还在途，PTY 里按旧几何产出的回显 CUP 会在新网格上
+渲染，落点正好是回并后提示符下方 N 行（N = 回并掉的折行组数）——表现为提示符下方隔
+行出现重复命令、光标错位。因此 `local-reflow` 会话必须等后端 ack 后再 reflow；
+`shell-repaint` 会话由 shell 在 SIGWINCH 后自行重画，逐帧等网络 RTT 会毁掉手感，保持
+立即 reflow。
+
+`sendBackendResize` 返回“最新目标已被后端确认”的 Promise；相同尺寸去重（`onResize`
+在 `applyGridResize` 后会重发同一网格），仍保持单飞与“收敛到最新值”。
+
+**连接窗口内的 resize 不丢**：`resizeTarget` 为 null（PTY 创建中、重连窗口）时请求
+进入 `queuedResizeWithoutTarget`，由 `flushQueuedBackendResize` 在 transport 注册
+target 时补发；没有排队值时发送当前网格。三条 connect 路径（local / SSH / Telnet）
+统一走这个入口，boot 输出从第一字节起就按同一几何产出与渲染。
 
 `applyGridResize` 的顺序不可交换：
 
@@ -117,9 +135,15 @@ cancel(): string              // 解除窗口并返回 hold 的字节
 
 必须全部成立：
 
+- **重绘尾部有三种真实变体**（bundled ConPTY 1.25 探针采集）：缩小时是
+  `<文本><空格 padding><CUP>`；从折行光标行放大时是 `<文本>\e[K<CUP>`；其余放大是
+  `<文本><CUP>`。三者都算 `complete`，只有“空格 run”（保留 `\e[K`）算 padding。
+  旧实现只认“空格 + CUP”，后两种会一直 armed 到 150ms 超时，既延迟最终 CUP，也让
+  下一轮 resize 卡在 `whenSettled`。
 - **不是“首个批次一次性”**。重绘可能和别的输出同批、带前缀、或被 IPC 切成两半。匹配
   不到就继续 armed 直到命中或 150ms 超时；`repaintHoldLength` 只保留“仍是重绘前缀”的
-  尾部，其余立即透传。
+  尾部，其余立即透传。hold 上限 8 KiB：宽终端的长提示符重绘可能超过 512 字节，上限太
+  小会让跨块的 padding 原样写入。
 - **任何路径都不许吞字节**：超时、`cancel()`、`arm()` 重入时，hold 住的字节要么由调用方
   立即写回，要么随返回值带回。
 - **前一个窗口落定才能开始下一次重排**。否则冻结写队列会让上一轮重绘到达不了过滤器，
@@ -150,7 +174,9 @@ shouldCommitConptyPendingWrap(buffer, previousCols, previousRows, targetCols);
 - `cursorX >= contentEnd`（光标在内容之后，即 pending wrap，而不是停在最后一个字形上）。
 
 `occupiedCellEnd` 必须按单元格宽度累加：宽字符占两格，后半格 `getWidth() === 0`，不能
-当成空列。中文提示恰好填满时必须命中。
+当成空列。中文提示恰好填满时必须命中。**已写单元格按 `getCode() !== 0` 判定**：用户
+真正键入的空格 code 为 32，未写/擦除的单元格 code 为 0；按 `getChars().trim()` 判空会
+漏掉“提示符 + 尾随空格恰好填满”的 pending wrap。
 
 命中后行为：`resize()` 之后补一个 `LF`。放大不执行。
 
@@ -208,12 +234,12 @@ ConPTY 光标行重绘逐帧交错，小缓冲同样叠印。小缓冲的收益�
 
 自动化分层：
 
-| 文件                                        | 覆盖                                                                             |
-| ------------------------------------------- | -------------------------------------------------------------------------------- |
-| `src/lib/terminalResizePolicy.test.ts`      | 会话 → `local-reflow` / `shell-repaint` 判定表                                   |
-| `src/lib/terminalResizeRepaint.test.ts`     | 裁剪、同批前缀、无关输出不解除、跨 consume 拼接、超时、取消返回值                |
-| `src/lib/terminalResizePendingWrap.test.ts` | 精确填满、光标停在最后字形、宽字符、alt buffer、未到末列                         |
-| `src/lib/terminalResizeReplay.test.ts`      | 真实 ConPTY 顶部/底部 + 13–18 列折行矩阵 + pending wrap + readline 缩小/放大回放 |
+| 文件                                        | 覆盖                                                                                                                                      |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/terminalResizePolicy.test.ts`      | 会话 → `local-reflow` / `shell-repaint` 判定表                                                                                            |
+| `src/lib/terminalResizeRepaint.test.ts`     | 三种重绘尾部、按 padding 裁剪、`\e[0J`、同批前缀、无关输出、跨 consume 拼接、长行、超时、取消                                             |
+| `src/lib/terminalResizePendingWrap.test.ts` | 精确填满、尾随空格、擦除格、光标停在最后字形、宽字符、alt buffer、未到末列                                                                |
+| `src/lib/terminalResizeReplay.test.ts`      | 真实 ConPTY 顶部/底部 + 13–18 列矩阵 + pending wrap + 折行横幅拖宽 30→100 + 折行光标行 18→100 + 系统 ConPTY 整屏重印 + readline 缩小/放大 |
 
 场景坐标：顶部提示符 / 最后一行提示符 / 已折行命令 / 行中光标 / 长于视口的命令 /
 光标下方有输出 / alt buffer / CJK 与 emoji / 1 列边界。
@@ -227,8 +253,12 @@ ConPTY 光标行重绘逐帧交错，小缓冲同样叠印。小缓冲的收益�
 5. 提示符上一行内容未被吞；
 6. 不出现 `isWrapped` 的幽灵空白行。
 
-Rust 侧：`src-tauri/src/pty/conpty_resize_probe.rs` 保留为字节流探针（`#[ignore]`），
-ConPTY 升级后先跑它重新采集 fixture。
+Rust 侧：`src-tauri/src/pty/conpty_resize_probe.rs` 保留为字节流探针（`#[ignore]`）：
+`conpty_resize_byte_stream_probe`（原始 100→12→100）、
+`conpty_wrapped_banner_resize_probe`（30 列折行横幅 → 100 列，光标上方回并两组）、
+`conpty_wrapped_cursor_line_resize_probe`（18 列折行光标行 → 100，`\e[K` 重绘）、
+`conpty_system_wrapped_banner_resize_probe`（不加载 bundled DLL，观察系统 ConPTY 的
+整屏重印契约）。ConPTY 升级后先跑它们重新采集 fixture。
 
 ## 6. 版本策略：不同步 VS Code 的 xterm 预发布线
 
@@ -264,26 +294,38 @@ ConPTY 升级后先跑它重新采集 fixture。
 
 1. **远端 Windows cmd（SSH 到 cmd）**：仍按 `shell-repaint`，会被截断。需要会话级覆盖
    （`cursorLineResize` = `auto` / `local-reflow` / `shell-repaint`）。
-2. **自定义包装脚本**（`cmd /c bash`、`powershell -NoProfile`）：按 basename 判定可能误判，
-   默认 `shell-repaint` 是安全侧，同样等会话级覆盖。
+2. **自定义包装脚本**（`cmd /c bash`、`powershell -NoProfile`）：按 basename 判定可能误判。
+   注意当前代码对 `cmd /c bash` 仍返回 `local-reflow`（它是已知可执行文件），与“默认
+   `shell-repaint` 是安全侧”不一致；`powershell -NoProfile` 仍是 PowerShell，判定本身正确。
+   等会话级覆盖统一解决。
 3. **重绘窗口与行重绘的竞态**：行数立即提交时 ConPTY 也会发一次重绘。当前实现把
    “上一窗口落定”作为下一轮 resize 的前置条件，通常行重绘会在 300ms 防抖内到达；若某后端
    把重绘延迟到 150ms 之后，会走超时放行，随后列 resize 才 arm 新窗口——此时旧重绘已原样
    写入，仍可能留下幽灵行。需要现场日志或更长的 fixture 才能进一步收紧。
 4. **解析等待的回退窗口**：`RESIZE_PARSE_FALLBACK_MS = 250`。切片后单次回调的最大间隔是
-   一片解析耗时；极端宽字符/装饰器场景下仍可能超窗，届时会在未解析完成时 reflow。
+   一片解析耗时；极端宽字符/装饰器场景下仍可能超窗，届时会在未解析完成时 reflow。两阶段
+   reflow 的第二次等待也使用同一个回退，因此后端 ack 后若旧几何输出仍在解析，最坏会晚
+   250ms 才 reflow。
 5. **连续拖拽的 300ms 延迟**：容器先变窄、画布后折行，靠 `overflow-hidden` 裁剪。这是
-   正确性换手感的有意取舍。
+   正确性换手感的有意取舍。`local-reflow` 还要再叠加一次 resize IPC 往返与最多 250ms 的
+   第二段解析等待，最终尺寸的落地上限比 `shell-repaint` 更长。
 6. **行数 + 列数同时变化**：先提交 rows，再提交 cols，会产生两次 SIGWINCH。`shell-repaint`
    会话对连续两次重画敏感；300ms 只是把窗口拉长，不能消除“松开手再拖一次”的竞态。
 7. **卸载路径**：只提交最后尺寸与 pending wrap，不等待解析、不 arm 重绘窗口（实例即将
-   dispose）。分屏卸载瞬间的折行可能不完美。
+   dispose）；两阶段路径在 dispose 后直接返回。分屏卸载瞬间的折行可能不完美。
 8. **Telnet / Serial**：后端 resize 为 no-op，前端只改视口，不重排光标行。记录为不支持。
-9. **测试覆盖缺口**：`XtermCanvas` 的重绘窗口序列化、DA1 应答、卸载路径目前只有纯函数与
-   headless 回放覆盖，没有组件级测试（jsdom 里也没有真实 PTY）。这三条路径必须在 Windows
-   实机烟测：cmd / PowerShell / pwsh 拖拽缩放、Git Bash 与 WSL 收缩/放大、SSH Linux bash，
-   以及分屏拖拽、侧栏开合、最大化/还原、字体缩放、标签切换、重连后缩放。DA1 卡死如果仍
-   出现，先看 ConPTY 1.25 的探针输出再改。
+9. **系统 ConPTY 回退**：bundled `conpty.dll` 加载失败时，后端改用系统 ConPTY，resize
+   契约完全不同（整屏重印 + 回显裸文本，不重锚定 CUP）。前端在 `pty_platform_info`
+   发现 `bundled === false` 时输出一次 `console.warn`；`terminalResizeReplay` 有对应的
+   整屏重印夹具。系统 ConPTY 的完整适配（专门处理整屏重印）仍待办；Win10（build <
+   21376）下 xterm 还会关闭自身 reflow，只能依赖重印字节。
+10. **测试覆盖缺口**：`XtermCanvas` 的重绘窗口序列化、两阶段 reflow、后端 resize 排队、
+    DA1 应答、卸载路径目前只有纯函数与 headless 回放覆盖，没有组件级测试（jsdom 里也没有
+    真实 PTY）。这些路径必须在 Windows 实机烟测：cmd / PowerShell / pwsh 拖拽缩放、
+    Git Bash 与 WSL 收缩/放大、SSH Linux bash，以及分屏拖拽、侧栏开合、最大化/还原、
+    字体缩放、标签切换、重连后缩放。排查时先打开
+    `localStorage['nexterm.debug.resize'] = '1'` 看 request / parse-drained /
+    backend-send / backend-ack / grid-apply 序列。
 
 ## 8. 本次修复记录
 
@@ -291,6 +333,13 @@ ConPTY 升级后先跑它重新采集 fixture。
 
 - **重绘过滤器改为流式窗口**：不再“首个批次不匹配就解除”；支持同批前缀、跨 consume
   拼接、超时/取消时保留残余字节。
+- **重绘尾部三种变体**：`空格 padding`、`\e[K`、裸 CUP 都算 complete；`\e[0J` 也算
+  erase。旧实现只认第一种，grow 重绘会卡满 150ms。
+- **hold 上限 8 KiB 与 `getCode()` 判占位**：修复长行跨块 padding 原样写入、尾随空格
+  漏判 pending wrap。
+- **两阶段 reflow**：`local-reflow` 会话先 drain 旧几何输出、等 `resize_pty` ack、再 drain
+  一次、最后 reflow；旧几何产出的回显 CUP 不会落到回并后的网格上。
+- **连接窗口 resize 排队**：`resizeTarget` 为 null 时的请求不再丢，transport 注册时补发。
 - **队列余量不再绕过过滤器**：`runResize` 出队时走 `consume()`，消除“上一轮补空格被裸写
   进 xterm”的重影路径。
 - **重绘窗口序列化**：下一次 reflow 等待上一窗口落定（命中或 150ms 超时），等待期间不冻结
@@ -304,6 +353,8 @@ ConPTY 升级后先跑它重新采集 fixture。
 - **卸载路径**统一走 `applyGridResize`，并先写回过滤器残余字节。
 - **注释修正**：`terminalResizePolicy.ts` 头部不再把 PSReadLine 描述成“重画提示符”。
 
-验证：`npm run check`（typecheck + eslint + vitest）全绿，`prettier --check` 通过，
-`npm run build` 通过。**未做** Windows 实机烟测——见第 7 节第 9 条；组件级状态机（序列化、
-DA1、卸载）没有自动化测试，实机拖拽是交付前必须补的一步。
+验证：`npm run check`（typecheck + eslint + vitest，476 通过）与 `cargo fmt --check` /
+`cargo clippy --all-targets -- -D warnings` / `cargo test`（101 通过）全绿。
+Bundled 与系统 ConPTY 各跑了真实 PTY 探针，字节已写入回放夹具。**未做**应用内交互式
+烟测（拖拽、分屏、标签切换）——见第 7 节第 10 条；组件级状态机（两阶段 reflow、后端排队、
+DA1、卸载）仍没有自动化测试，实机拖拽是交付前必须补的一步。
