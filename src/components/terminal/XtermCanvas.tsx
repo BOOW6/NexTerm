@@ -444,6 +444,15 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       let resizeTarget: { id: string; transport: TerminalTransport } | null = null;
       let pendingBackendResize: { cols: number; rows: number } | null = null;
       let backendResizeInFlight = false;
+      // The last dimensions actually sent to the backend. onResize re-sends
+      // the grid after applyGridResize; an identical request is skipped so
+      // the pre-reflow send (Fix A) is not duplicated.
+      let lastSentBackendResize: { cols: number; rows: number } | null = null;
+      // Resizes requested while no transport was connected (session creation,
+      // reconnect window). Applied when the next transport registers its
+      // target, so the PTY never boots at a stale grid.
+      let queuedResizeWithoutTarget: { cols: number; rows: number } | null = null;
+      let backendResizeIdleWaiters: Array<() => void> = [];
       let da1Disposable: IDisposable | undefined;
       const pendingPtyReplies: string[] = [];
 
@@ -686,56 +695,105 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
       const isSsh = transport === 'ssh';
 
+      const signalBackendResizeIdle = () => {
+        if (backendResizeInFlight || pendingBackendResize) {
+          return;
+        }
+        const waiters = backendResizeIdleWaiters;
+        backendResizeIdleWaiters = [];
+        for (const waiter of waiters) {
+          waiter();
+        }
+      };
+
+      /** Resolve once no backend resize is pending or in flight. */
+      const whenBackendResizeIdle = (): Promise<void> => {
+        if (!backendResizeInFlight && !pendingBackendResize) {
+          return Promise.resolve();
+        }
+        return new Promise((resolve) => {
+          backendResizeIdleWaiters.push(resolve);
+        });
+      };
+
       // Keep at most one resize command in flight and always converge on the
       // newest requested dimensions. Separate async IPC invokes can otherwise
       // be delivered out of order, leaving the PTY at a stale size.
-      const sendBackendResize = (cols: number, rows: number) => {
+      //
+      // Resolves when the backend has acknowledged the newest requested grid
+      // (or immediately when the dimensions were already sent, or when the
+      // request had to be queued for a transport that is not connected yet —
+      // in that case the queued send happens in flushQueuedBackendResize).
+      const sendBackendResize = (cols: number, rows: number): Promise<void> => {
         if (!resizeTarget) {
-          return;
+          queuedResizeWithoutTarget = { cols, rows };
+          return Promise.resolve();
+        }
+        if (
+          lastSentBackendResize &&
+          lastSentBackendResize.cols === cols &&
+          lastSentBackendResize.rows === rows
+        ) {
+          return whenBackendResizeIdle();
         }
         pendingBackendResize = { cols, rows };
-        if (backendResizeInFlight) {
+        if (!backendResizeInFlight) {
+          flushBackendResize();
+        }
+        return whenBackendResizeIdle();
+      };
+
+      const flushBackendResize = () => {
+        const target = resizeTarget;
+        const next = pendingBackendResize;
+        pendingBackendResize = null;
+        if (!target || !next) {
+          backendResizeInFlight = false;
+          signalBackendResizeIdle();
           return;
         }
+        backendResizeInFlight = true;
+        lastSentBackendResize = next;
+        const request =
+          target.transport === 'ssh'
+            ? resizeSsh(target.id, next.cols, next.rows)
+            : target.transport === 'telnet'
+              ? resizeTelnet(target.id, next.cols, next.rows)
+              : resizePty(target.id, next.cols, next.rows);
+        void request
+          .catch((error) => {
+            logResizeError(
+              target.transport === 'ssh'
+                ? 'SSH PTY'
+                : target.transport === 'telnet'
+                  ? 'Telnet'
+                  : 'PTY',
+              next.cols,
+              next.rows,
+              error
+            );
+          })
+          .finally(() => {
+            if (pendingBackendResize && resizeTarget) {
+              flushBackendResize();
+            } else {
+              backendResizeInFlight = false;
+              signalBackendResizeIdle();
+            }
+          });
+      };
 
-        const flush = () => {
-          const target = resizeTarget;
-          const next = pendingBackendResize;
-          pendingBackendResize = null;
-          if (!target || !next) {
-            backendResizeInFlight = false;
-            return;
-          }
-          backendResizeInFlight = true;
-          const request =
-            target.transport === 'ssh'
-              ? resizeSsh(target.id, next.cols, next.rows)
-              : target.transport === 'telnet'
-                ? resizeTelnet(target.id, next.cols, next.rows)
-                : resizePty(target.id, next.cols, next.rows);
-          void request
-            .catch((error) => {
-              logResizeError(
-                target.transport === 'ssh'
-                  ? 'SSH PTY'
-                  : target.transport === 'telnet'
-                    ? 'Telnet'
-                    : 'PTY',
-                next.cols,
-                next.rows,
-                error
-              );
-            })
-            .finally(() => {
-              if (pendingBackendResize && resizeTarget) {
-                flush();
-              } else {
-                backendResizeInFlight = false;
-              }
-            });
-        };
-
-        flush();
+      /**
+       * Called when a transport registers its resize target: deliver a resize
+       * that arrived while nothing was connected (session creation, reconnect
+       * window), else sync the current grid so the shell and xterm agree
+       * before the first prompt.
+       */
+      const flushQueuedBackendResize = (instance: Terminal): void => {
+        const queued = queuedResizeWithoutTarget;
+        queuedResizeWithoutTarget = null;
+        const target = queued ?? { cols: instance.cols, rows: instance.rows };
+        void sendBackendResize(target.cols, target.rows);
       };
 
       let reconnectAttempts = 0;
@@ -1104,8 +1162,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           void resumeInterruptedTransfers(sessionId);
 
           // A fit may have happened while the connection was being
-          // established. Sync the final grid to the remote PTY.
-          sendBackendResize(instance.cols, instance.rows);
+          // established. Sync the final grid to the remote PTY — or the
+          // queued request if one arrived before the target existed.
+          flushQueuedBackendResize(instance);
 
           dataDisposable = instance.onData((data) => {
             void writeSsh(connectedId, data);
@@ -1245,8 +1304,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           useSessionStore.getState().setStatus(sessionId, 'connected');
 
           // A fit may have happened while the PTY was being created. Sync the
-          // final grid so the shell and xterm agree before the first prompt.
-          sendBackendResize(instance.cols, instance.rows);
+          // final grid so the shell and xterm agree before the first prompt —
+          // a resize that arrived before the target existed takes precedence.
+          flushQueuedBackendResize(instance);
 
           dataDisposable = instance.onData((data) => {
             void writePty(createdId, data);
@@ -1365,6 +1425,10 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           resizeTarget = { id: connectedId, transport: 'telnet' };
           useConnectionStore.getState().addTransport(sessionId, 'telnet', connectedId);
           useSessionStore.getState().setStatus(sessionId, 'connected');
+          // Telnet does not negotiate window size (backend no-op), but keep
+          // the queue drained so a stale entry cannot leak into a later
+          // transport of this session.
+          flushQueuedBackendResize(instance);
 
           dataDisposable = instance.onData((data) => {
             void writeTelnet(connectedId, data);
@@ -1944,30 +2008,104 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             }
 
             const instance = terminal;
-            if (
+            const canApply = () =>
               !disposed &&
-              instance &&
+              !!instance &&
               next.id === resizeRequestId &&
-              (instance.cols !== next.cols || instance.rows !== next.rows)
-            ) {
-              try {
-                applyGridResize(instance, next.cols, next.rows, true);
-                publishResizeHud(instance.cols, instance.rows);
-              } catch (error) {
-                console.warn('[terminal] resize failed', error);
-              }
-            }
+              (instance.cols !== next.cols || instance.rows !== next.rows);
 
+            const finalize = () => {
+              if (canApply()) {
+                try {
+                  applyGridResize(instance as Terminal, next.cols, next.rows, true);
+                  publishResizeHud((instance as Terminal).cols, (instance as Terminal).rows);
+                } catch (error) {
+                  console.warn('[terminal] resize failed', error);
+                }
+              }
+
+              writeFrozen = false;
+              applyInProgress = false;
+              const unfreezeWaiterList = unfreezeWaiters;
+              unfreezeWaiters = [];
+              unfreezeWaiterList.forEach((resolve) => resolve());
+              scheduleFlush();
+
+              if (desiredDimensions && !disposed) {
+                runResize();
+              }
+            };
+
+            // First drain complete: every byte produced at the old geometry
+            // has been parsed. Unfreeze so output that ConPTY emits BEFORE
+            // it learns about the new size keeps rendering against the old
+            // grid (applyInProgress stays set: direct writes and newer
+            // resizes must keep waiting).
             writeFrozen = false;
-            applyInProgress = false;
-            const unfreezeWaiterList = unfreezeWaiters;
-            unfreezeWaiters = [];
-            unfreezeWaiterList.forEach((resolve) => resolve());
             scheduleFlush();
 
-            if (desiredDimensions && !disposed) {
-              runResize();
+            if (cursorLineResizeMode !== 'local-reflow') {
+              // Remote/readline shells repaint themselves after SIGWINCH;
+              // their terminal-side reflow does not race a silent ConPTY
+              // buffer, and awaiting a network RTT per vertical change
+              // would wreck responsiveness. Reflow immediately.
+              finalize();
+              return;
             }
+
+            // Local ConPTY: it re-joins its own wrapped rows on resize and
+            // only emits a cursor-line repaint. xterm must not reflow before
+            // the PTY has adopted the new size — an echo CUP produced at the
+            // old geometry would then land N rows below the re-joined prompt
+            // (the duplicated-command bug). Send first, await the ack, then
+            // drain whatever arrived meanwhile at the old geometry, then
+            // reflow.
+            void sendBackendResize(next.cols, next.rows).then(() => {
+              if (disposed) {
+                return;
+              }
+              if (!canApply()) {
+                finalize();
+                return;
+              }
+
+              writeFrozen = true;
+              cancelScheduledFlush();
+              const lateQueued = takeQueuedData();
+              if (lateQueued) {
+                issueWrite(repaintFilter ? repaintFilter.consume(lateQueued) : lateQueued);
+              }
+
+              let settled2 = false;
+              let fallbackTimer2: number | null = null;
+              const armFallback2 = () => {
+                const parsedAtArmTime = writesParsed;
+                fallbackTimer2 = window.setTimeout(() => {
+                  fallbackTimer2 = null;
+                  if (settled2) {
+                    return;
+                  }
+                  if (writesParsed !== parsedAtArmTime) {
+                    armFallback2();
+                    return;
+                  }
+                  finalize2();
+                }, RESIZE_PARSE_FALLBACK_MS);
+              };
+              const finalize2 = () => {
+                if (settled2) {
+                  return;
+                }
+                settled2 = true;
+                if (fallbackTimer2 !== null) {
+                  window.clearTimeout(fallbackTimer2);
+                  fallbackTimer2 = null;
+                }
+                finalize();
+              };
+              armFallback2();
+              whenWritesParsed(finalize2);
+            });
           };
 
           // Re-arm while the parser is still draining issued writes. Resizing
@@ -2322,6 +2460,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
         resizeTarget = null;
         pendingBackendResize = null;
+        queuedResizeWithoutTarget = null;
+        lastSentBackendResize = null;
+        const idleWaiters = backendResizeIdleWaiters;
+        backendResizeIdleWaiters = [];
+        idleWaiters.forEach((resolve) => resolve());
         backendIdRef.current = '';
 
         terminalRef.current = null;
