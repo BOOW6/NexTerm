@@ -304,7 +304,7 @@ export default function TerminalPreview({
     <div
       ref={containerRef}
       data-native-context-menu
-      className="h-40 w-full overflow-hidden rounded-sm border border-border bg-[hsl(var(--terminal-background))] p-1"
+      className="h-40 w-full overflow-hidden rounded-sm border border-border bg-terminal-background p-1"
     />
   );
 }

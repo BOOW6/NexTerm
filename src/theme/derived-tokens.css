@@ -1,0 +1,27 @@
+/* Accent-derived interaction ramp.
+ *
+ * Single derivation layer: every value below is computed from the base accent
+ * with color-mix(in oklch), so dark mode never redefines a derived token —
+ * mixing toward `foreground` darkens on light themes and lightens on dark
+ * themes automatically, and mixing toward `surface` keeps washes seated on
+ * whichever ground the theme provides.
+ *
+ * This works from one :root block because [data-theme] and the accent
+ * override (accent.ts inline styles) both live on document.documentElement:
+ * var() substitutes against the cascaded winner on that same element, so the
+ * declarations below resolve per theme even though they are written once.
+ *
+ * --primary is the full-colour view of the --accent HSL triplet; gradient and
+ * selection tokens in tokens.css derive from it so they follow a custom
+ * accent too. */
+
+:root {
+  --primary: hsl(var(--accent));
+  --primary-hover: color-mix(in oklch, var(--primary) 88%, hsl(var(--foreground)));
+  --primary-active: color-mix(in oklch, var(--primary) 76%, hsl(var(--foreground)));
+  --primary-strong: color-mix(in oklch, var(--primary) 82%, hsl(var(--foreground)));
+  --primary-soft: color-mix(in oklch, var(--primary) 60%, hsl(var(--surface)));
+  --primary-muted: color-mix(in oklch, var(--primary) 38%, hsl(var(--surface)));
+  --primary-border: color-mix(in oklch, var(--primary) 45%, hsl(var(--surface)));
+  --primary-subtle: color-mix(in oklch, var(--primary) 12%, transparent);
+}

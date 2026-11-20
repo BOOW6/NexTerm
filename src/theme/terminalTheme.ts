@@ -15,6 +15,30 @@ function readHsl(styles: CSSStyleDeclaration, name: string, fallback: string): s
   return parts.length === 3 ? `hsl(${parts[0]}, ${parts[1]}, ${parts[2]})` : raw;
 }
 
+const FALLBACK_TERMINAL_SELECTION = 'rgba(91,155,213,0.35)';
+
+/**
+ * xterm's colour parser predates color-mix(); round-trip derived values
+ * through a canvas fillStyle so the selection keeps following the accent.
+ */
+function readSelection(styles: CSSStyleDeclaration): string {
+  const raw = styles.getPropertyValue('--terminal-selection').trim();
+  if (!raw) {
+    return FALLBACK_TERMINAL_SELECTION;
+  }
+  if (!raw.startsWith('color-mix(')) {
+    return raw;
+  }
+  const ctx = document.createElement('canvas').getContext('2d');
+  if (!ctx) {
+    return FALLBACK_TERMINAL_SELECTION;
+  }
+  const sentinel = 'rgba(0, 0, 0, 0)';
+  ctx.fillStyle = sentinel;
+  ctx.fillStyle = raw;
+  return ctx.fillStyle === sentinel ? FALLBACK_TERMINAL_SELECTION : String(ctx.fillStyle);
+}
+
 /**
  * Terminal themes for the modern families, written as xterm `ITheme` objects
  * rather than read from CSS: the 16 ANSI colours have no CSS token to derive
@@ -300,7 +324,6 @@ export function getTerminalTheme(colorSchemeId = 'theme', themeId = ''): ITheme 
     foreground: readHsl(styles, '--terminal-foreground', FALLBACK_TERMINAL_FOREGROUND),
     cursor: readHsl(styles, '--terminal-cursor', '#5b9bd5'),
     cursorAccent: readHsl(styles, '--terminal-background', FALLBACK_TERMINAL_BACKGROUND),
-    selectionBackground:
-      styles.getPropertyValue('--terminal-selection').trim() || 'rgba(91,155,213,0.35)'
+    selectionBackground: readSelection(styles)
   });
 }

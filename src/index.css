@@ -5,6 +5,7 @@
  * the utilities they replace (see theme/skin-tokens.css). */
 @import './theme/layout-tokens.css';
 @import './theme/tokens.css';
+@import './theme/derived-tokens.css';
 @import './theme/skin-tokens.css';
 @import './theme/skins/holo.css';
 @import './theme/skins/slate.css';

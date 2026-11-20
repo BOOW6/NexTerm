@@ -41,6 +41,7 @@ export default {
         'table-header': 'hsl(var(--table-header))',
         'row-hover': 'hsl(var(--row-hover))',
         'row-selected': 'hsl(var(--row-selected))',
+        'terminal-background': 'hsl(var(--terminal-background))',
         header: {
           DEFAULT: 'hsl(var(--header-foreground))',
           muted: 'hsl(var(--header-muted))'
