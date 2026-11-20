@@ -16,6 +16,9 @@
     "test": "vitest",
     "test:run": "vitest run",
     "check": "npm run typecheck && npm run lint && npm run test:run",
+    "ds:tokens": "node scripts/ds-tokens.mjs --write",
+    "ds:tokens:check": "node scripts/ds-tokens.mjs --check",
+    "ds:lint": "node scripts/ds-lint.mjs",
     "prepare": "husky"
   },
   "lint-staged": {
