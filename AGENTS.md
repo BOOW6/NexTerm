@@ -157,6 +157,21 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - 新增设置项：先加 store 字段 → 在设置面板加控件 → 在使用处读取，避免散落的 localStorage 键。
 - known_hosts 为本项目自有 JSON 格式，暂不与 OpenSSH 的 `~/.ssh/known_hosts` 互通。
 
+### UI de-slop 边界（不可协商）
+
+- 组件与窗口颜色只消费语义令牌（Tailwind 语义类或 `hsl(var(--token))`）；裸 hex、`rgb()` 字面量、调色板类、任意值颜色由 `npm run ds:lint` 拦截。
+- 新派生色先入令牌层再被组件消费：逐主题结构色写 `src/theme/tokens.css`，跨主题交互 ramp 写 `src/theme/derived-tokens.css`。
+- 令牌层改动后运行 `npm run ds:tokens` 更新 `.ai/ds/ds-tokens.json` 快照；`npm run ds:tokens:check` 失败即视为变更未交付。
+- 布局键（字号/字重/字距/标签几何）只改 `src/theme/layout-tokens.css`，主题块与皮肤不得覆盖。
+- 用户可见文案（i18n 值、schema description、组件字符串字面量）禁止 em dash（—）。
+- 用户可见文案禁止 AI 演示风动词：elevate / seamless / revolutionize / supercharge / effortless / delve / unleash / empower。
+- 用户可见字符串禁止开发者标记：TODO / FIXME / "AI generated" / "This component"；逻辑代码中的 WHY 注释保留。
+- 面向用户的产物（主题 schema、导出文件、错误提示）不得含仓库内部路径（如 `src/…`）。
+- `unlock`/「解锁」是凭据保险库功能术语，豁免于禁词，不得按营销措辞改写。
+- 装饰性 `hover:scale-*` 禁止；功能性豁免只能登记在 `scripts/ds-lint.mjs` 的 EXEMPTIONS 并附理由。
+- UI 变更交付前依次通过 `npm run ds:lint` → `npm run ds:tokens:check` → `npm run check`；失败时修复或登记豁免，禁止放宽检查正则。
+- 生成或审查 Tauri UI（`src/components`、`src/windows`、`src/theme`、`src/i18n`、用户可见模板）时，加载 `.agents/skills/deslop-ui/SKILL.md` 并按其生成前约束、生成后自检与审计简表执行。
+
 ## xterm.js 开发与性能规范
 
 在开发本项目的高性能终端功能时，所有涉及 `xterm.js` 的组件编写、重构或数据流处理，**必须严格遵守**以下架构与性能准则，严禁直接在主线程同步挂载或进行未经节流的高频数据渲染。
