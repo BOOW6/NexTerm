@@ -207,7 +207,7 @@ export const EN: Dictionary = {
   'sftp.edit.openedToast': 'Opened "{name}" in your local editor; saves upload automatically',
   'sftp.edit.failedToast': 'Failed to open the remote file',
   'remoteEdit.syncedToast': 'Auto-uploaded "{name}"',
-  'zmodem.startToast': 'Receiving "{name}" via ZMODEM — progress in the transfer queue',
+  'zmodem.startToast': 'Receiving "{name}" via ZMODEM. Progress is in the transfer queue.',
   'remoteEdit.failedToast': 'Failed to auto-upload "{name}"',
   'sftp.menu.download': 'Download',
   'sftp.menu.rename': 'Rename',

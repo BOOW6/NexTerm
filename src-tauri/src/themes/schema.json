@@ -46,7 +46,7 @@
     "structure": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Optional structure overrides (radii and chrome colours). Sizes, spacing, font weight and letter spacing are layout, not theme: they live in src/theme/layout-tokens.css and cannot be overridden.",
+      "description": "Optional structure overrides (radii and chrome colours). Sizes, spacing, font weight and letter spacing are controlled by the app layout and cannot be overridden in a theme.",
       "properties": {
         "radius": {
           "$ref": "#/definitions/px"

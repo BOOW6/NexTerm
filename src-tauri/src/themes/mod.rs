@@ -822,7 +822,7 @@ fn load_theme_file(path: &Path, seen: &mut HashSet<String>) -> Result<CustomThem
     }
     if !seen.insert(id.clone()) {
         return Err(format!(
-            "duplicate theme id '{id}' — another file already uses it"
+            "duplicate theme id '{id}': another file already uses it"
         ));
     }
     build_custom_theme(id, parts)

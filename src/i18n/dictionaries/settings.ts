@@ -383,7 +383,7 @@ export const EN: Dictionary = {
   'settings.appearance.openThemesFolder': 'Open themes folder',
   'settings.appearance.refreshThemes': 'Refresh',
   'settings.appearance.customThemesEmpty':
-    'No custom themes yet — open the themes folder to add some.',
+    'No custom themes yet. Open the themes folder to add some.',
   'settings.appearance.customThemeLoadFailed': 'Some theme files failed to load:',
 
   // Fonts
@@ -568,7 +568,7 @@ export const EN: Dictionary = {
   'settings.about.checkUpdate': 'Check for updates',
   'settings.about.upToDate': 'You are already on the latest version.',
   'settings.about.newVersionFound':
-    'New version {version} found — download it from the releases page.',
+    'New version {version} found. Download it from the releases page.',
   'settings.about.openReleases': 'Open releases page',
   'settings.about.updateFailed': 'Update check failed: {error}',
 
@@ -592,7 +592,7 @@ export const EN: Dictionary = {
   'settings.snippets.cancelEdit': 'Cancel editing',
   'settings.snippets.save': 'Save changes',
   'settings.snippets.add': 'Add snippet',
-  'settings.snippets.empty': 'No snippets yet — add one above.',
+  'settings.snippets.empty': 'No snippets yet. Add one above.',
   'settings.snippets.updatedToast': 'Snippet updated',
   'settings.snippets.addedToast': 'Snippet added',
   'settings.snippets.editAria': 'Edit snippet {name}',
