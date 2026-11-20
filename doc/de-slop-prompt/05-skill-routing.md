@@ -8,8 +8,8 @@
 
 把 de-slop 与主题 token 规范沉淀为仓库内可实时更新、可检查的 Skill，并在 `AGENTS.md` 留路由指针，使后续 Agent 会话自动遵守：
 
-1. 新增 `.claude/skills/theme-token-guard/SKILL.md`（仓库当前**没有** `.claude/` 目录，属全新创建；若目标 Agent 工具使用别的约定目录如 `.qoder/skills/`，先向用户确认再定路径——标注"需确认"）；
-2. `AGENTS.md` 追加 ≤10 行指针：在"开发约定"节加一条"主题/token/文案治理规则见 `.claude/skills/theme-token-guard/SKILL.md`"，正文规则不复制进 AGENTS.md（避免双份漂移）。
+1. 新增 `.agents/skills/deslop-ui/SKILL.md`；
+2. `AGENTS.md` 追加 ≤10 行指针：在"开发约定"节加一条"主题/token/文案治理规则见 `.agents/skills/deslop-ui/SKILL.md`"，正文规则不复制进 AGENTS.md（避免双份漂移）。
 
 ## 先计划、后修改
 
@@ -41,7 +41,7 @@
 
 ## 允许修改范围
 
-- 新增 `.claude/skills/theme-token-guard/SKILL.md`（或确认后的其它路径）；
+- 新增 `.agents/skills/deslop-ui/SKILL.md`（或确认后的其它路径）；
 - `AGENTS.md`：仅追加指针条目，≤10 行，不重写既有内容。
 
 ## 禁止事项
@@ -60,7 +60,7 @@
 ## 验收命令
 
 ```bash
-test -s .claude/skills/theme-token-guard/SKILL.md   # 路径按最终确认结果调整
+test -s .agents/skills/deslop-ui/SKILL.md   # 路径按最终确认结果调整
 git diff --stat AGENTS.md                            # 增加行数 ≤ 10
 npm run format:check                                 # prettier 覆盖 md（lint-staged 同款）
 # SKILL.md 中每条命令逐一手抄执行一次，全部存在且可运行（测试命令允许红，命令本身必须存在）
@@ -70,5 +70,4 @@ npm run format:check                                 # prettier 覆盖 md（lint
 
 - `format:check` 对 md 报格式问题：运行 `npx prettier --write` 修复对应文件后重查；
 - 某规则找不到对应门禁：要么降级为"人工检查项"并明确标注，要么先补门禁（回到第 2/4 步范围）再写入，禁止写成无法验证的断言；
-- Skill 目录约定不确定（`.claude/skills` vs `.qoder` vs 其它）：停下来问用户，不要两个目录都建；
 - AGENTS.md 指针与既有条目冲突/重复：合并进既有条目而非新增段落。

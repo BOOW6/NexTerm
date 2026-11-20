@@ -16,7 +16,7 @@
 
 ## 输入文件
 
-- `docs/de-slop-audit.md`（假设 2、3 的发现）
+- `doc/de-slop/audit.md`（假设 2、3 的发现）
 - `src/i18n/dictionaries/{core,panels,settings,terminal,workspace}.ts`、`src/i18n/index.ts`、`types.ts`
 - `src-tauri/src/themes/schema.json`、`src-tauri/src/themes/mod.rs`（了解 schema 如何写出到用户主题文件夹）
 - `src/i18n/index.test.ts`（中英键位一致性门禁）

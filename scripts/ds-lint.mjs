@@ -18,7 +18,7 @@
 // Comments are stripped before scanning (line numbers preserved), so WHY
 // comments and issue references (#334532) never trip the color rules.
 // `unlock` is deliberately NOT a keyword: it is the credential vault's
-// real functional term (docs/de-slop-audit.md B3).
+// real functional term (doc/de-slop/audit.md B3).
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve, dirname, relative } from 'node:path';

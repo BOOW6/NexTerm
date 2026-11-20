@@ -14,13 +14,13 @@
 
 ## 输入文件
 
-- `docs/de-slop-audit.md`（逐条核对闭环）
+- `doc/de-slop/audit.md`（逐条核对闭环）
 - 第 2-5 步的变更摘要与 `git log` / `git diff main...HEAD`（如分支执行）
 - `AGENTS.md`（走查依据：14 款主题、明暗、accent 预设、自定义主题流程）
 
 ## 允许修改范围
 
-- 新增 `docs/de-slop-verification.md`（验收报告）；
+- 新增 `doc/de-slop/verify.md`（验收报告）；
 - **仅当**验收发现前几步引入的小问题（格式、漏改一处 token）时可做最小修复，并在报告中记录；超出最小修复范围的问题一律记为"未闭环"退回对应步骤，不得自行大改。
 
 ## 禁止事项
@@ -62,11 +62,11 @@ grep -n "src/" src-tauri/src/themes/schema.json   # 应无命中
 
 ## 闭环核对
 
-对 `docs/de-slop-audit.md` 每条发现，在报告中标注：已修复（对应提交/文件）/ 豁免（理由）/ 有意保留（裁决人）/ **未闭环**（退回第几步）。存在"未闭环"时验收结论只能是"不通过"。
+对 `doc/de-slop/audit.md` 每条发现，在报告中标注：已修复（对应提交/文件）/ 豁免（理由）/ 有意保留（裁决人）/ **未闭环**（退回第几步）。存在"未闭环"时验收结论只能是"不通过"。
 
 ## 输出格式
 
-写入 `docs/de-slop-verification.md`：
+写入 `doc/de-slop/verify.md`：
 
 ```markdown
 # De-Slop 验收报告（日期）

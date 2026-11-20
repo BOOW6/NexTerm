@@ -1,8 +1,8 @@
 # NexTerm De-Slop 与主题治理计划
 
 > 生成日期：2026-11-20。基于只读探索，未修改任何业务代码。
-> 配套分步提示词见 [`docs/de-slop-prompt/`](./de-slop-prompt/)，供编码 Agent 逐步执行。
-> 注意：仓库既有文档目录是 `doc/`（单数），本计划按任务要求放在 `docs/`；合并时可考虑归入 `doc/`。
+> 配套分步提示词见 [`doc/de-slop-prompt/`](../de-slop-prompt/)，供编码 Agent 逐步执行。
+> **状态：六步已全部实施并验收（5/5 通过），见 [`verify.md`](./verify.md)；阶段 5 迁移裁定 NO-GO，见 [`accent-colormix-report.md`](./accent-colormix-report.md)。**
 
 ## 探索结论（审计基线）
 
@@ -11,7 +11,7 @@
 1. **主色调跟随**：派生体系已存在且已接线——`src/theme/accent.ts`（406 行，从单一 hex 派生 accent 梯度、语义色、终端 16 色、中性化）由 `src/theme/ThemeProvider.tsx:106-125` 在基底主题之后应用。组件层 grep 未发现 Tailwind 调色板类（`bg-blue-500` 等）、内联 color 样式或 `rgba()` 硬编码。合法 hex 只出现在数据文件：`src/theme/themes.ts`（swatches/预设）、`src/theme/terminalTheme.ts`（16 色板）、`src/theme/accent.ts` 预设。
 2. **AI 演示风文案**：`src/i18n/dictionaries/`（core/panels/settings/terminal/workspace 五分片）抽样为专业口吻；`seamless/effortless/supercharge/🚀` 等模式全仓 grep 无命中。需人工通读双语全量确认。
 3. **开发者注释泄露**：源码注释（如 `XtermCanvas.tsx` 引用 GitHub issue 编号）不面向用户，属合法 WHY 注释。**确认的泄露点**：`src-tauri/src/themes/schema.json:49` 的 `description` 含仓库内部路径 `src/theme/layout-tokens.css`，该文件随 `themes_list` 扫描写出到**用户主题文件夹**，面向终端用户。需排查是否还有同类。
-4. **规范沉淀**：`AGENTS.md`（根目录）已含大量主题/布局 token 规范；**无** `.claude/skills` 或 `.qoder` 目录。既有机器可查门禁：`contrast.test.ts`（WCAG AA）、`layoutTokens.test.ts`（禁 `text-[11px]` 等）、`terminalTheme.test.ts`、`skinRules.test.ts`、`themes.test.ts`、`accentReport.test.ts`（ACCENT_REPORT=1 手动报告）、i18n `index.test.ts`（中英键位一致）。
+4. **规范沉淀**：`AGENTS.md`（根目录）已含大量主题/布局 token 规范；探索时无 Skill 目录（现已建立 `.agents/skills/deslop-ui`）。既有机器可查门禁：`contrast.test.ts`（WCAG AA）、`layoutTokens.test.ts`（禁 `text-[11px]` 等）、`terminalTheme.test.ts`、`skinRules.test.ts`、`themes.test.ts`、`accentReport.test.ts`（ACCENT_REPORT=1 手动报告）、i18n `index.test.ts`（中英键位一致）。
 
 ## 可复用的验收命令（全部已存在，勿编造新命令）
 
@@ -27,7 +27,7 @@
 
 - **目标**：把三个假设变成带文件/行号证据的清单；只读，不改任何文件。
 - **涉及文件**：`src/theme/`（tokens.css、accent.ts、themes.ts、terminalTheme.ts、ThemeProvider.tsx、skin-tokens.css、skins/）、`src/components/**`、`src/windows/**`、`src/i18n/dictionaries/*`、`src-tauri/src/themes/schema.json`、`tailwind.config.js`、`AGENTS.md`。
-- **验收标准**：产出 `docs/de-slop-audit.md`，每条发现含 路径:行号、类别（颜色硬编码 / 文案 / 注释泄露 / 规范缺口）、严重度、建议处置；明确"确认/排除"三个假设；无发现也要写明检查过什么、用什么命令。
+- **验收标准**：产出 `doc/de-slop/audit.md`，每条发现含 路径:行号、类别（颜色硬编码 / 文案 / 注释泄露 / 规范缺口）、严重度、建议处置；明确"确认/排除"三个假设；无发现也要写明检查过什么、用什么命令。
 - **风险**：审计者把合法数据文件（themes.ts 的 hex 色板）误报为 slop——提示词中要写明豁免清单。
 
 ## 第 2 步：颜色 token 治理（02-color-tokens.md）
@@ -53,10 +53,10 @@
 
 ## 第 5 步：Skill 与 AGENTS 路由（05-skill-routing.md）
 
-- **目标**：把 de-slop/主题 token 规范沉淀为仓库内可更新的 Skill，并在 `AGENTS.md` 加路由指针，使后续 Agent 会话自动遵守。仓库当前**无** `.claude/skills`；创建 `.claude/skills/theme-token-guard/SKILL.md`（单数 `skill` 惯例以目标 Agent 工具为准，需确认），内容：token 分层（tokens.css / skin-tokens.css / layout-tokens.css / accent.ts）、禁止事项（裸 hex、`text-[11px]`、主题覆盖布局键、组件内 Tailwind 调色板类）、门禁命令清单、新增主题/强调色的标准流程。`AGENTS.md` 在"开发约定"或主题节追加一行指向该 Skill。
-- **涉及文件**：`.claude/skills/theme-token-guard/SKILL.md`（新增）、`AGENTS.md`（追加指针，不重写）。
+- **目标**：把 de-slop/主题 token 规范沉淀为仓库内可更新的 Skill，并在 `AGENTS.md` 加路由指针，使后续 Agent 会话自动遵守。**已落地**：`.agents/skills/deslop-ui/SKILL.md`（目录约定已确认为 `.agents/skills/`，宿主实时注册），内容：token 分层（tokens.css / derived-tokens.css / skin-tokens.css / layout-tokens.css / accent.ts）、禁止事项（裸 hex、`text-[11px]`、主题覆盖布局键、组件内 Tailwind 调色板类）、门禁命令清单（ds:lint / ds:tokens:check / check）、审计简表（clean / flagged / 有意保留）。`AGENTS.md` "开发约定"节追加 12 条不可协商边界与加载路由。
+- **涉及文件**：`.agents/skills/deslop-ui/SKILL.md`（新增）、`AGENTS.md`（追加指针，不重写）。
 - **验收标准**：SKILL.md 中每条规则都能对应到一个已存在的机器门禁或可执行命令；`AGENTS.md` 变更 ≤ 10 行；`npm run format:check` 对 md 通过（lint-staged 会 prettier md）。
-- **风险**：Skill 与 AGENTS.md 内容重复漂移——规则正文只放 Skill，AGENTS.md 只留指针；Skill 目录约定（`.claude/skills` vs `.qoder`）需按实际使用的 Agent 工具确认。
+- **风险**：Skill 与 AGENTS.md 内容重复漂移——规则正文只放 Skill 与 `scripts/ds-lint.mjs`，AGENTS.md 只留边界与指针。目录约定已确认为 `.agents/skills/`（宿主实时注册验证通过）。
 
 ## 第 6 步：最终验收（06-verify.md）
 

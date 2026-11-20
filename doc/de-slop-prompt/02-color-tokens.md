@@ -6,7 +6,7 @@
 
 ## 目标
 
-1. 修复 `docs/de-slop-audit.md`（第 1 步产出）中确认的全部颜色硬编码违规：组件层改用 `hsl(var(--token))` 体系或 Tailwind 语义类（`bg-accent`、`text-muted-foreground` 等，映射见 `tailwind.config.js`）；
+1. 修复 `doc/de-slop/audit.md`（第 1 步产出）中确认的全部颜色硬编码违规：组件层改用 `hsl(var(--token))` 体系或 Tailwind 语义类（`bg-accent`、`text-muted-foreground` 等，映射见 `tailwind.config.js`）；
 2. 验证强调色全链路跟随：改 `themeAccent` 后 accent 梯度、focus-ring、链接、success/warning/error、终端光标与 ANSI 2-6 槽均由 `src/theme/accent.ts` 派生生效；
 3. 新增一个机器门禁测试，禁止 `src/components/**` 与 `src/windows/**` 再引入裸 hex / `rgb()` / Tailwind 调色板类 / 内联 color 样式（参考 `src/theme/layoutTokens.test.ts` 的静态扫描写法）。
 
@@ -16,7 +16,7 @@
 
 ## 输入文件
 
-- `docs/de-slop-audit.md`（工作清单）
+- `doc/de-slop/audit.md`（工作清单）
 - `AGENTS.md` —— "Token + 皮肤分层（P5-1）"与"强调色自定义"两节是本次改动的宪法，改 accent 相关代码前必读
 - `tailwind.config.js`（token → 工具类映射）
 - `src/theme/tokens.css`、`skin-tokens.css`、`layout-tokens.css`、`accent.ts`、`ThemeProvider.tsx`

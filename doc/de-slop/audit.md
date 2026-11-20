@@ -129,7 +129,7 @@ em dash 是典型 AI 文案指纹，建议改为冒号/句号/逗号：
 3. **门禁补强**：新增组件层颜色扫描测试（把本次 A4 的干净状态固化）+ 按族 token 键集合快照 + accent 派生快照（覆盖 A1 修复后的 gradient 键）。
 4. **B1 + B2**（低）：7 处 em dash 与省略号统一，`npx vitest run src/i18n` 验收。
 5. **A3**（低）：TerminalPreview 任意值改 token 映射。
-6. **Skill 沉淀**：把上述规则写入 `.claude/skills/theme-token-guard/SKILL.md`（目录约定需确认），AGENTS.md 加 ≤10 行指针。
+6. **Skill 沉淀**：把上述规则写入 `.agents/skills/deslop-ui/SKILL.md`（已落地，目录约定确认为 `.agents/skills/`），AGENTS.md 加不可协商边界与加载路由。
 
 ## 不建议本次处理
 

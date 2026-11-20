@@ -9,7 +9,7 @@ import { resolve } from 'node:path';
  * `--primary`, and the per-theme gradient / terminal-selection tokens in
  * `tokens.css` must stay derived (var / hsl / color-mix) so they follow a
  * custom accent. A hardcoded hex or rgba() in either place silently breaks
- * that (see docs/de-slop-audit.md A1/A2).
+ * that (see doc/de-slop/audit.md A1/A2).
  */
 
 const TOKENS = readFileSync(resolve(__dirname, 'tokens.css'), 'utf8');

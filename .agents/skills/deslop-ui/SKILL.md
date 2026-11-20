@@ -60,7 +60,7 @@ npm run check            # typecheck + eslint + vitest 全量
 | src/…:NN  | copy-emdash | clean    | 已为句号短句               |
 
 - 判定三值：**clean / flagged / 有意保留**。
-- "有意保留"必须引用 `docs/de-slop-audit.md` 的裁定或 `EXEMPTIONS` 条目，不允许裸豁免。
+- "有意保留"必须引用 `doc/de-slop/audit.md` 的裁定或 `EXEMPTIONS` 条目，不允许裸豁免。
 - 表尾给三类计数汇总；flagged 未清零时结论只能是"未通过"。
 
 ## 5. 规则演进（实时更新方式）

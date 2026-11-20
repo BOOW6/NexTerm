@@ -66,7 +66,7 @@ ACCENT_REPORT=1 npx vitest run src/theme/accentReport.test.ts
 
 ## 输出格式
 
-写入 `docs/de-slop-audit.md`，结构：
+写入 `doc/de-slop/audit.md`，结构：
 
 ```markdown
 # De-Slop 审计报告（日期）
@@ -95,9 +95,9 @@ ACCENT_REPORT=1 npx vitest run src/theme/accentReport.test.ts
 
 ```bash
 # 报告存在且非空
-test -s docs/de-slop-audit.md
+test -s doc/de-slop/audit.md
 # 只读审计没有污染工作区（除报告本身）
-git status --porcelain | grep -v "docs/de-slop"   # 应无输出
+git status --porcelain | grep -v "doc/de-slop"   # 应无输出
 ```
 
 ## 失败时如何处理
