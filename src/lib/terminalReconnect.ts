@@ -40,3 +40,22 @@ export function requestTerminalReconnect(sessionId: string): boolean {
   }
   return handled;
 }
+
+/** Backoff attempts before the SSH reconnect ladder gives up. */
+export const MAX_RECONNECT_ATTEMPTS = 5;
+
+/** A connection must survive this long to count as healthy; otherwise a
+ * server that accepts and immediately drops would reset the backoff and
+ * reconnect forever. */
+export const RECONNECT_HEALTHY_UPTIME_MS = 10_000;
+
+/** Delay before the nth reconnect attempt (1-based): 1s, 2s, 4s, 8s, capped
+ * at 16s. */
+export function nextReconnectDelay(attempt: number): number {
+  return Math.min(16_000, 1_000 * 2 ** (Math.max(1, attempt) - 1));
+}
+
+/** Whether a connection that lived for uptimeMs should reset the backoff. */
+export function shouldResetBackoff(uptimeMs: number): boolean {
+  return uptimeMs > RECONNECT_HEALTHY_UPTIME_MS;
+}

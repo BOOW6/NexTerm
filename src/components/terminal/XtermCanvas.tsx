@@ -25,6 +25,7 @@ import {
   listenSshClosed,
   listenSshOutput,
   resizeSsh,
+  type SshClosedPayload,
   setSessionLog,
   writeSsh
 } from '../../hooks/useTauriSsh';
@@ -65,7 +66,12 @@ import {
   readTerminalSnapshot,
   writeTerminalSnapshot
 } from '../../lib/terminalSnapshot';
-import { registerTerminalReconnect } from '../../lib/terminalReconnect';
+import {
+  MAX_RECONNECT_ATTEMPTS,
+  nextReconnectDelay,
+  registerTerminalReconnect,
+  shouldResetBackoff
+} from '../../lib/terminalReconnect';
 import { ResizeRepaintFilter } from '../../lib/terminalResizeRepaint';
 import { shouldCommitConptyPendingWrap } from '../../lib/terminalResizePendingWrap';
 import { logResizeDebug } from '../../lib/terminalResizeDebug';
@@ -913,6 +919,120 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           ? t('terminal.serialLost', { message: payload.message })
           : t('terminal.serialDisconnected');
 
+      // ---- transport attempt skeleton ----
+      // Shared by all four transports: the generation guard, listener
+      // registration (which must precede the backend connect, because Tauri
+      // drops events with no listener) and stale teardown are identical
+      // everywhere and only the endpoints differ. Per-attempt flags live in
+      // one object so these helpers can guard the closed handlers.
+      interface TransportAttempt {
+        established: boolean;
+        closedEarly: boolean;
+      }
+
+      const beginTransportAttempt = (disposeStale: (backendId: string) => void): number => {
+        clearTransportListeners();
+        const generation = ++transportGeneration;
+        if (backendId) {
+          disposeStale(backendId);
+          backendId = '';
+          backendIdRef.current = '';
+          resizeTarget = null;
+        }
+        return generation;
+      };
+
+      const attachOutputListener = async (
+        listen: (id: string, handler: (payload: { data: string }) => void) => Promise<() => void>,
+        id: string,
+        generation: number
+      ): Promise<boolean> => {
+        const stop = await listen(id, ({ data }) => {
+          if (generation === transportGeneration && !disposed) {
+            enqueueWrite(data);
+          }
+        });
+        if (disposed || generation !== transportGeneration) {
+          stop();
+          return false;
+        }
+        unlistenOutput = stop;
+        return true;
+      };
+
+      const attachClosedListener = async <P,>(
+        listen: (id: string, handler: (payload: P) => void) => Promise<() => void>,
+        id: string,
+        generation: number,
+        attempt: TransportAttempt,
+        onEstablishedClosed: (payload: P) => void
+      ): Promise<boolean> => {
+        const stop = await listen(id, (payload) => {
+          if (disposed || generation !== transportGeneration) {
+            return;
+          }
+          // A closed event racing the connect promise must not tear down a
+          // registration still in flight; the connect epilogue rolls the
+          // attempt back once it sees the flag.
+          if (!attempt.established) {
+            attempt.closedEarly = true;
+            return;
+          }
+          onEstablishedClosed(payload);
+        });
+        if (disposed || generation !== transportGeneration) {
+          stop();
+          return false;
+        }
+        unlistenClosed = stop;
+        return true;
+      };
+
+      const attachInputOutput = (
+        instance: Terminal,
+        write: (data: string) => Promise<void>,
+        withResize: boolean
+      ): void => {
+        dataDisposable = instance.onData((data) => {
+          write(data).catch(() => reportWriteFailure(instance));
+          broadcastInput(sessionId, data);
+          recordKeystroke(data);
+        });
+        if (withResize) {
+          resizeDisposable = instance.onResize(({ cols, rows }) => {
+            void backendResize.send(cols, rows);
+          });
+        }
+      };
+
+      const focusIfActive = (instance: Terminal): void => {
+        // A background pane's connect must not steal focus from the pane the
+        // user is typing in.
+        if (useWorkspaceStore.getState().activeSessionId === sessionId) {
+          instance.focus();
+        }
+      };
+
+      const failAttempt = (
+        instance: Terminal,
+        generation: number,
+        messageKey: string,
+        error: unknown,
+        onFail?: () => void
+      ): void => {
+        if (disposed || generation !== transportGeneration) {
+          return;
+        }
+        clearTransportListeners();
+        useSessionStore.getState().setStatus(sessionId, 'error');
+        enqueueWrite(
+          `\r\n\x1b[31m${t(messageKey, {
+            message: localizeBackendError(errorMessage(error))
+          })}\x1b[0m\r\n`
+        );
+        onFail?.();
+      };
+
       const scheduleReconnect = (instance: Terminal, reason: string) => {
         if (disposed || manualDisconnect || reconnectTimer !== null) {
           return;
@@ -921,7 +1041,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           useSessionStore.getState().setStatus(sessionId, 'idle');
           return;
         }
-        if (reconnectAttempts >= 5) {
+        if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
           useSessionStore.getState().setStatus(sessionId, 'error');
           enqueueWrite(`\x1b[31m[${t('terminal.sshReconnectExhausted')}]\x1b[0m\r\n`);
           return;
@@ -929,7 +1049,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
         const attempt = reconnectAttempts + 1;
         reconnectAttempts = attempt;
-        const delay = Math.min(16_000, 1_000 * 2 ** (attempt - 1));
+        const delay = nextReconnectDelay(attempt);
         useSessionStore.getState().setStatus(sessionId, 'connecting');
         void writeScrollbackNotice(
           instance,
@@ -957,21 +1077,15 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         if (disposed) {
           return;
         }
-        clearTransportListeners();
-        const generation = ++transportGeneration;
-        if (backendId) {
+        const generation = beginTransportAttempt((staleId) => {
           // A previous attempt may have established a connection but failed
           // while registering listeners. Do not leak it on the next attempt.
-          useConnectionStore.getState().removeConnection(sessionId, backendId);
-          disconnectQuietly(disconnectSsh(backendId));
-          backendId = '';
-          backendIdRef.current = '';
-          resizeTarget = null;
-        }
+          useConnectionStore.getState().removeConnection(sessionId, staleId);
+          disconnectQuietly(disconnectSsh(staleId));
+        });
 
         const id = crypto.randomUUID();
-        let established = false;
-        let closedEarly = false;
+        const attempt: TransportAttempt = { established: false, closedEarly: false };
 
         try {
           if (!host || !username) {
@@ -1006,81 +1120,74 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           // Attach listeners before the backend opens the shell. The first
           // prompt can be emitted before connectSsh resolves, and events that
           // arrive without a listener are dropped by Tauri.
-          const stopOutput = await listenSshOutput(id, ({ data }) => {
-            if (generation === transportGeneration && !disposed) {
-              enqueueWrite(data);
-            }
-          });
-          if (disposed || generation !== transportGeneration) {
-            stopOutput();
+          if (!(await attachOutputListener(listenSshOutput, id, generation))) {
             return;
           }
-          unlistenOutput = stopOutput;
 
-          const stopClosed = await listenSshClosed(id, (closed) => {
-            if (disposed || generation !== transportGeneration) {
-              return;
-            }
-            if (!established) {
-              closedEarly = true;
-              return;
-            }
-            const uptime = connectedAt > 0 ? Date.now() - connectedAt : 0;
-            clearTransportListeners();
-            backendId = '';
-            backendIdRef.current = '';
-            resizeTarget = null;
-            useConnectionStore.getState().removeConnection(sessionId, id);
-            // Another split pane of this session may still be connected;
-            // only reset the status once no connection remains.
-            if (useConnectionStore.getState().connections[sessionId] === undefined) {
-              useSessionStore.getState().setStatus(sessionId, 'idle');
-            }
-            useTransferStore.getState().markSessionDisconnected(sessionId);
+          const closedHandled = await attachClosedListener<SshClosedPayload>(
+            listenSshClosed,
+            id,
+            generation,
+            attempt,
+            (closed) => {
+              const uptime = connectedAt > 0 ? Date.now() - connectedAt : 0;
+              clearTransportListeners();
+              backendId = '';
+              backendIdRef.current = '';
+              resizeTarget = null;
+              useConnectionStore.getState().removeConnection(sessionId, id);
+              // Another split pane of this session may still be connected;
+              // only reset the status once no connection remains.
+              if (useConnectionStore.getState().connections[sessionId] === undefined) {
+                useSessionStore.getState().setStatus(sessionId, 'idle');
+              }
+              useTransferStore.getState().markSessionDisconnected(sessionId);
 
-            // The remote shell ended on its own (`exit`, logout, a killed
-            // login shell). Re-opening a shell the user just closed is wrong,
-            // so show the exit and stop here instead of scheduling a retry.
-            if (closed.reason === 'exit') {
-              const code = typeof closed.exit_status === 'number' ? closed.exit_status : undefined;
-              const message =
-                code === undefined
-                  ? t('terminal.sshSessionEnded')
-                  : t('terminal.sshSessionEndedWithCode', { code });
-              // No `\x1b[?1049l` here: the shell already restored the normal
-              // buffer, and re-issuing the switch rewinds the viewport (the
-              // notice landed above the login banner). Just append the line.
-              enqueueWrite(`\r\n\x1b[33m[${message}]\x1b[0m\r\n`);
-              return;
-            }
+              // The remote shell ended on its own (`exit`, logout, a killed
+              // login shell). Re-opening a shell the user just closed is wrong,
+              // so show the exit and stop here instead of scheduling a retry.
+              if (closed.reason === 'exit') {
+                const code =
+                  typeof closed.exit_status === 'number' ? closed.exit_status : undefined;
+                const message =
+                  code === undefined
+                    ? t('terminal.sshSessionEnded')
+                    : t('terminal.sshSessionEndedWithCode', { code });
+                // No `\x1b[?1049l` here: the shell already restored the normal
+                // buffer, and re-issuing the switch rewinds the viewport (the
+                // notice landed above the login banner). Just append the line.
+                enqueueWrite(`\r\n\x1b[33m[${message}]\x1b[0m\r\n`);
+                return;
+              }
 
-            // Only treat a connection as healthy once it survived a while;
-            // otherwise a server that accepts and immediately drops would
-            // reset the backoff and reconnect forever.
-            if (uptime > 10_000) {
-              reconnectAttempts = 0;
-            }
+              // Only treat a connection as healthy once it survived a while;
+              // otherwise a server that accepts and immediately drops would
+              // reset the backoff and reconnect forever.
+              if (shouldResetBackoff(uptime)) {
+                reconnectAttempts = 0;
+              }
 
-            if (useSettingsStore.getState().sshAutoReconnect) {
-              void writeScrollbackNotice(
-                instance,
-                `\x1b[33m[${t('terminal.sshDisconnected')}]\x1b[0m`,
-                true
-              ).then(() => {
-                if (disposed || generation !== transportGeneration) {
-                  return;
-                }
-                scheduleReconnect(instance, t('terminal.sshDisconnected'));
-              });
-            } else {
-              enqueueWrite(`\x1b[?1049l\r\n\x1b[33m[${t('terminal.sshDisconnected')}]\x1b[0m\r\n`);
+              if (useSettingsStore.getState().sshAutoReconnect) {
+                void writeScrollbackNotice(
+                  instance,
+                  `\x1b[33m[${t('terminal.sshDisconnected')}]\x1b[0m`,
+                  true
+                ).then(() => {
+                  if (disposed || generation !== transportGeneration) {
+                    return;
+                  }
+                  scheduleReconnect(instance, t('terminal.sshDisconnected'));
+                });
+              } else {
+                enqueueWrite(
+                  `\x1b[?1049l\r\n\x1b[33m[${t('terminal.sshDisconnected')}]\x1b[0m\r\n`
+                );
+              }
             }
-          });
-          if (disposed || generation !== transportGeneration) {
-            stopClosed();
+          );
+          if (!closedHandled) {
             return;
           }
-          unlistenClosed = stopClosed;
 
           pendingConnectId = id;
           const connectedId = await connectSsh({
@@ -1113,9 +1220,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             pendingConnectId = null;
           }
 
-          if (disposed || generation !== transportGeneration || closedEarly) {
+          if (disposed || generation !== transportGeneration || attempt.closedEarly) {
             disconnectQuietly(disconnectSsh(connectedId));
-            if (closedEarly && !disposed && generation === transportGeneration) {
+            if (attempt.closedEarly && !disposed && generation === transportGeneration) {
               clearTransportListeners();
               useSessionStore.getState().setStatus(sessionId, 'error');
               useConnectionStore.getState().removeConnection(sessionId, connectedId);
@@ -1124,7 +1231,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             return;
           }
 
-          established = true;
+          attempt.established = true;
           everEstablished = true;
           backendId = connectedId;
           backendIdRef.current = connectedId;
@@ -1143,32 +1250,16 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           // queued request if one arrived before the target existed.
           flushQueuedBackendResize(instance);
 
-          dataDisposable = instance.onData((data) => {
-            writeSsh(connectedId, data).catch(() => reportWriteFailure(instance));
-            broadcastInput(sessionId, data);
-            recordKeystroke(data);
-          });
-          resizeDisposable = instance.onResize(({ cols, rows }) => {
-            void backendResize.send(cols, rows);
-          });
+          attachInputOutput(instance, (data) => writeSsh(connectedId, data), true);
 
-          // A background pane's auto-reconnect must not steal keyboard focus
-          // from the pane the user is typing in.
-          if (useWorkspaceStore.getState().activeSessionId === sessionId) {
-            instance.focus();
-          }
+          focusIfActive(instance);
         } catch (error) {
           if (pendingConnectId === id) {
             pendingConnectId = null;
           }
-          if (!disposed && generation === transportGeneration) {
-            clearTransportListeners();
-            useSessionStore.getState().setStatus(sessionId, 'error');
+          failAttempt(instance, generation, 'terminal.sshConnectFailed', error, () => {
             useConnectionStore.getState().removeConnection(sessionId, id);
-            enqueueWrite(
-              `\r\n\x1b[31m${t('terminal.sshConnectFailed', { message: localizeBackendError(errorMessage(error)) })}\x1b[0m\r\n`
-            );
-            // Retry whenever this session had a working connection before —
+            // Retry whenever this session had a working connection before:
             // either the attempt that just dropped, or a previous one whose
             // scheduled retry itself failed (e.g. the network is still down).
             // Never-connected sessions (auth/host-key failures) surface
@@ -1176,7 +1267,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             if (everEstablished) {
               scheduleReconnect(instance, t('terminal.sshConnectFailedReason'));
             }
-          }
+          });
         }
       };
 
@@ -1184,64 +1275,46 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         if (disposed) {
           return;
         }
-        clearTransportListeners();
-        const generation = ++transportGeneration;
-        if (backendId) {
-          void closePtySession(backendId);
-          backendId = '';
-          backendIdRef.current = '';
-          resizeTarget = null;
-        }
+        const generation = beginTransportAttempt((staleId) => {
+          void closePtySession(staleId);
+        });
 
         const id = crypto.randomUUID();
-        let established = false;
-        let closedEarly = false;
+        const attempt: TransportAttempt = { established: false, closedEarly: false };
 
         try {
           useSessionStore.getState().setStatus(sessionId, 'connecting');
 
-          // Attach listeners before the PTY is created. Shells print their
-          // prompt immediately, and Tauri drops events with no listener.
-          const stopOutput = await listenPtyOutput(id, ({ data }) => {
-            if (generation === transportGeneration && !disposed) {
-              enqueueWrite(data);
-            }
-          });
-          if (disposed || generation !== transportGeneration) {
-            stopOutput();
+          if (!(await attachOutputListener(listenPtyOutput, id, generation))) {
             return;
           }
-          unlistenOutput = stopOutput;
 
-          const stopClosed = await listenPtyClosed(id, () => {
-            if (disposed || generation !== transportGeneration) {
-              return;
+          const closedHandled = await attachClosedListener<void>(
+            listenPtyClosed,
+            id,
+            generation,
+            attempt,
+            () => {
+              clearTransportListeners();
+              useConnectionStore.getState().removeTransport(sessionId, 'pty', id);
+              backendId = '';
+              backendIdRef.current = '';
+              resizeTarget = null;
+              // Another split pane of this session may still hold its own PTY;
+              // only the last one going away marks the session idle.
+              if (useConnectionStore.getState().connections[sessionId] === undefined) {
+                useSessionStore.getState().setStatus(sessionId, 'idle');
+              }
+              void writeScrollbackNotice(
+                instance,
+                `\x1b[33m[${t('terminal.localShellExited')}]\x1b[0m`,
+                true
+              );
             }
-            if (!established) {
-              closedEarly = true;
-              return;
-            }
-            clearTransportListeners();
-            useConnectionStore.getState().removeTransport(sessionId, 'pty', id);
-            backendId = '';
-            backendIdRef.current = '';
-            resizeTarget = null;
-            // Another split pane of this session may still hold its own PTY;
-            // only the last one going away marks the session idle.
-            if (useConnectionStore.getState().connections[sessionId] === undefined) {
-              useSessionStore.getState().setStatus(sessionId, 'idle');
-            }
-            void writeScrollbackNotice(
-              instance,
-              `\x1b[33m[${t('terminal.localShellExited')}]\x1b[0m`,
-              true
-            );
-          });
-          if (disposed || generation !== transportGeneration) {
-            stopClosed();
+          );
+          if (!closedHandled) {
             return;
           }
-          unlistenClosed = stopClosed;
 
           // Read the shell override from the store at connect time so an edit
           // applied after the session list rendered still takes effect.
@@ -1257,10 +1330,10 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             sessionLogTarget() || undefined,
             localShell
           );
-          if (disposed || generation !== transportGeneration || closedEarly) {
+          if (disposed || generation !== transportGeneration || attempt.closedEarly) {
             useConnectionStore.getState().removeTransport(sessionId, 'pty', createdId);
             void closePtySession(createdId);
-            if (closedEarly && !disposed && generation === transportGeneration) {
+            if (attempt.closedEarly && !disposed && generation === transportGeneration) {
               clearTransportListeners();
               useSessionStore.getState().setStatus(sessionId, 'idle');
               void writeScrollbackNotice(
@@ -1272,7 +1345,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             return;
           }
 
-          established = true;
+          attempt.established = true;
           backendId = createdId;
           backendIdRef.current = createdId;
           resizeTarget = { id: createdId, transport: 'local' };
@@ -1285,28 +1358,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           // a resize that arrived before the target existed takes precedence.
           flushQueuedBackendResize(instance);
 
-          dataDisposable = instance.onData((data) => {
-            writePty(createdId, data).catch(() => reportWriteFailure(instance));
-            broadcastInput(sessionId, data);
-            recordKeystroke(data);
-          });
-          resizeDisposable = instance.onResize(({ cols, rows }) => {
-            void backendResize.send(cols, rows);
-          });
+          attachInputOutput(instance, (data) => writePty(createdId, data), true);
 
-          // A background pane's connect must not steal focus from the pane
-          // the user is typing in (same rule as the SSH path).
-          if (useWorkspaceStore.getState().activeSessionId === sessionId) {
-            instance.focus();
-          }
+          focusIfActive(instance);
         } catch (error) {
-          if (!disposed && generation === transportGeneration) {
-            clearTransportListeners();
-            useSessionStore.getState().setStatus(sessionId, 'error');
-            enqueueWrite(
-              `\r\n\x1b[31m${t('terminal.ptyCreateFailed', { message: errorMessage(error) })}\x1b[0m\r\n`
-            );
-          }
+          failAttempt(instance, generation, 'terminal.ptyCreateFailed', error);
         }
       };
 
@@ -1314,18 +1370,12 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         if (disposed) {
           return;
         }
-        clearTransportListeners();
-        const generation = ++transportGeneration;
-        if (backendId) {
-          disconnectQuietly(disconnectTelnet(backendId));
-          backendId = '';
-          backendIdRef.current = '';
-          resizeTarget = null;
-        }
+        const generation = beginTransportAttempt((staleId) => {
+          disconnectQuietly(disconnectTelnet(staleId));
+        });
 
         const id = crypto.randomUUID();
-        let established = false;
-        let closedEarly = false;
+        const attempt: TransportAttempt = { established: false, closedEarly: false };
 
         try {
           if (!host) {
@@ -1333,47 +1383,36 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           }
           useSessionStore.getState().setStatus(sessionId, 'connecting');
 
-          // Attach listeners before connecting; the banner may arrive first.
-          const stopOutput = await listenTelnetOutput(id, ({ data }) => {
-            if (generation === transportGeneration && !disposed) {
-              enqueueWrite(data);
-            }
-          });
-          if (disposed || generation !== transportGeneration) {
-            stopOutput();
+          if (!(await attachOutputListener(listenTelnetOutput, id, generation))) {
             return;
           }
-          unlistenOutput = stopOutput;
 
-          const stopClosed = await listenTelnetClosed(id, () => {
-            if (disposed || generation !== transportGeneration) {
-              return;
+          const closedHandled = await attachClosedListener<void>(
+            listenTelnetClosed,
+            id,
+            generation,
+            attempt,
+            () => {
+              clearTransportListeners();
+              useConnectionStore.getState().removeTransport(sessionId, 'telnet', id);
+              backendId = '';
+              backendIdRef.current = '';
+              resizeTarget = null;
+              // Same rule as the local path: keep the status when a sibling
+              // split pane still has a live Telnet transport.
+              if (useConnectionStore.getState().connections[sessionId] === undefined) {
+                useSessionStore.getState().setStatus(sessionId, 'idle');
+              }
+              void writeScrollbackNotice(
+                instance,
+                `\x1b[33m[${t('terminal.telnetDisconnected')}]\x1b[0m`,
+                true
+              );
             }
-            if (!established) {
-              closedEarly = true;
-              return;
-            }
-            clearTransportListeners();
-            useConnectionStore.getState().removeTransport(sessionId, 'telnet', id);
-            backendId = '';
-            backendIdRef.current = '';
-            resizeTarget = null;
-            // Same rule as the local path: keep the status when a sibling
-            // split pane still has a live Telnet transport.
-            if (useConnectionStore.getState().connections[sessionId] === undefined) {
-              useSessionStore.getState().setStatus(sessionId, 'idle');
-            }
-            void writeScrollbackNotice(
-              instance,
-              `\x1b[33m[${t('terminal.telnetDisconnected')}]\x1b[0m`,
-              true
-            );
-          });
-          if (disposed || generation !== transportGeneration) {
-            stopClosed();
+          );
+          if (!closedHandled) {
             return;
           }
-          unlistenClosed = stopClosed;
 
           const connectedId = await connectTelnet({
             id,
@@ -1381,10 +1420,10 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             port,
             logPath: sessionLogTarget() || undefined
           });
-          if (disposed || generation !== transportGeneration || closedEarly) {
+          if (disposed || generation !== transportGeneration || attempt.closedEarly) {
             useConnectionStore.getState().removeTransport(sessionId, 'telnet', connectedId);
             disconnectQuietly(disconnectTelnet(connectedId));
-            if (closedEarly && !disposed && generation === transportGeneration) {
+            if (attempt.closedEarly && !disposed && generation === transportGeneration) {
               clearTransportListeners();
               useSessionStore.getState().setStatus(sessionId, 'idle');
               void writeScrollbackNotice(
@@ -1396,7 +1435,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             return;
           }
 
-          established = true;
+          attempt.established = true;
           backendId = connectedId;
           backendIdRef.current = connectedId;
           resizeTarget = { id: connectedId, transport: 'telnet' };
@@ -1408,28 +1447,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           flushQueuedBackendResize(instance);
           resizeTelnet(connectedId, instance.cols, instance.rows).catch(() => undefined);
 
-          dataDisposable = instance.onData((data) => {
-            writeTelnet(connectedId, data).catch(() => reportWriteFailure(instance));
-            broadcastInput(sessionId, data);
-            recordKeystroke(data);
-          });
-          resizeDisposable = instance.onResize(({ cols, rows }) => {
-            void backendResize.send(cols, rows);
-          });
+          attachInputOutput(instance, (data) => writeTelnet(connectedId, data), true);
 
-          // Same rule as the SSH/local paths: do not steal focus from the
-          // pane the user is typing in.
-          if (useWorkspaceStore.getState().activeSessionId === sessionId) {
-            instance.focus();
-          }
+          focusIfActive(instance);
         } catch (error) {
-          if (!disposed && generation === transportGeneration) {
-            clearTransportListeners();
-            useSessionStore.getState().setStatus(sessionId, 'error');
-            enqueueWrite(
-              `\r\n\x1b[31m${t('terminal.telnetConnectFailed', { message: errorMessage(error) })}\x1b[0m\r\n`
-            );
-          }
+          failAttempt(instance, generation, 'terminal.telnetConnectFailed', error);
         }
       };
 
@@ -1437,18 +1459,12 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         if (disposed) {
           return;
         }
-        clearTransportListeners();
-        const generation = ++transportGeneration;
-        if (backendId) {
-          disconnectQuietly(disconnectSerial(backendId));
-          backendId = '';
-          backendIdRef.current = '';
-          resizeTarget = null;
-        }
+        const generation = beginTransportAttempt((staleId) => {
+          disconnectQuietly(disconnectSerial(staleId));
+        });
 
         const id = crypto.randomUUID();
-        let established = false;
-        let closedEarly = false;
+        const attempt: TransportAttempt = { established: false, closedEarly: false };
 
         try {
           // Read the port config at connect time so an edit applied after
@@ -1460,43 +1476,33 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           }
           useSessionStore.getState().setStatus(sessionId, 'connecting');
 
-          const stopOutput = await listenSerialOutput(id, ({ data }) => {
-            if (generation === transportGeneration && !disposed) {
-              enqueueWrite(data);
-            }
-          });
-          if (disposed || generation !== transportGeneration) {
-            stopOutput();
+          if (!(await attachOutputListener(listenSerialOutput, id, generation))) {
             return;
           }
-          unlistenOutput = stopOutput;
 
-          const stopClosed = await listenSerialClosed(id, (payload) => {
-            if (disposed || generation !== transportGeneration) {
-              return;
+          const closedHandled = await attachClosedListener<SerialClosedPayload>(
+            listenSerialClosed,
+            id,
+            generation,
+            attempt,
+            (payload) => {
+              clearTransportListeners();
+              backendId = '';
+              backendIdRef.current = '';
+              resizeTarget = null;
+              // No auto-reconnect: unplugged adapters stay unplugged until the
+              // user explicitly reconnects.
+              useSessionStore.getState().setStatus(sessionId, 'idle');
+              void writeScrollbackNotice(
+                instance,
+                `\x1b[33m[${serialCloseNotice(payload)}]\x1b[0m`,
+                true
+              );
             }
-            if (!established) {
-              closedEarly = true;
-              return;
-            }
-            clearTransportListeners();
-            backendId = '';
-            backendIdRef.current = '';
-            resizeTarget = null;
-            // No auto-reconnect: unplugged adapters stay unplugged until the
-            // user explicitly reconnects.
-            useSessionStore.getState().setStatus(sessionId, 'idle');
-            void writeScrollbackNotice(
-              instance,
-              `\x1b[33m[${serialCloseNotice(payload)}]\x1b[0m`,
-              true
-            );
-          });
-          if (disposed || generation !== transportGeneration) {
-            stopClosed();
+          );
+          if (!closedHandled) {
             return;
           }
-          unlistenClosed = stopClosed;
 
           const connectedId = await connectSerial({
             id,
@@ -1504,9 +1510,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             baud: sessionRecord?.serialBaud ?? 115200,
             logPath: sessionLogTarget() || undefined
           });
-          if (disposed || generation !== transportGeneration || closedEarly) {
+          if (disposed || generation !== transportGeneration || attempt.closedEarly) {
             disconnectQuietly(disconnectSerial(connectedId));
-            if (closedEarly && !disposed && generation === transportGeneration) {
+            if (attempt.closedEarly && !disposed && generation === transportGeneration) {
               clearTransportListeners();
               useSessionStore.getState().setStatus(sessionId, 'idle');
               void writeScrollbackNotice(
@@ -1518,29 +1524,17 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             return;
           }
 
-          established = true;
+          attempt.established = true;
           backendId = connectedId;
           backendIdRef.current = connectedId;
           // Serial has no window-size negotiation: no resizeTarget.
           useSessionStore.getState().setStatus(sessionId, 'connected');
 
-          dataDisposable = instance.onData((data) => {
-            writeSerial(connectedId, data).catch(() => reportWriteFailure(instance));
-            broadcastInput(sessionId, data);
-            recordKeystroke(data);
-          });
+          attachInputOutput(instance, (data) => writeSerial(connectedId, data), false);
 
-          if (useWorkspaceStore.getState().activeSessionId === sessionId) {
-            instance.focus();
-          }
+          focusIfActive(instance);
         } catch (error) {
-          if (!disposed && generation === transportGeneration) {
-            clearTransportListeners();
-            useSessionStore.getState().setStatus(sessionId, 'error');
-            enqueueWrite(
-              `\r\n\x1b[31m${t('terminal.serialConnectFailed', { message: errorMessage(error) })}\x1b[0m\r\n`
-            );
-          }
+          failAttempt(instance, generation, 'terminal.serialConnectFailed', error);
         }
       };
 
