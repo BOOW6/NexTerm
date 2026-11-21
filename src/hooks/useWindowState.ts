@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { swallowListenError } from '../lib/eventListener';
 import { availableMonitors, getCurrentWindow, primaryMonitor } from '@tauri-apps/api/window';
 import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi';
 
@@ -125,7 +126,7 @@ export function useWindowState(storageKey = 'nexterm.window.main.v1'): void {
           disposers.push(unlisten);
         }
       })
-      .catch(() => undefined);
+      .catch(swallowListenError);
     void appWindow
       .onMoved(schedulePersist)
       .then((unlisten) => {
@@ -135,7 +136,7 @@ export function useWindowState(storageKey = 'nexterm.window.main.v1'): void {
           disposers.push(unlisten);
         }
       })
-      .catch(() => undefined);
+      .catch(swallowListenError);
 
     return () => {
       disposed = true;

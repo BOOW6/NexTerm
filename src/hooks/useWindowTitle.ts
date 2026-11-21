@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { swallowListenError } from '../lib/eventListener';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useSessionStore } from '../stores/sessionStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -12,6 +13,6 @@ export function useWindowTitle(): void {
   useEffect(() => {
     void getCurrentWindow()
       .setTitle(title ? `${title} - NexTerm` : 'NexTerm')
-      .catch(() => undefined);
+      .catch(swallowListenError);
   }, [title]);
 }

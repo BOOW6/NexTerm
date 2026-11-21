@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { swallowListenError } from '../lib/eventListener';
 import { openModalWindow } from '../lib/appWindows';
 import { toast } from '../components/ui/toastStore';
 import { tStatic } from '../i18n';
@@ -22,8 +23,27 @@ export function useSshHostKeyEvents(): void {
           width: 520,
           height: 520,
           data: { mode: 'prompt', prompt: payload }
-        }).then((accepted) => {
-          void respondHostKey(payload.request_id, accepted === true).catch(() => undefined);
+        }).then((outcome) => {
+          if (!outcome.ok) {
+            // Without a dialog there is nothing for the user to decide; the
+            // connection must be rejected, but the real failure must be
+            // visible instead of looking like the server refused the key.
+            toast({
+              title: tStatic('hostKey.windowOpenFailed'),
+              description: outcome.message,
+              variant: 'error'
+            });
+          }
+          void respondHostKey(payload.request_id, outcome.ok && outcome.value === true).catch(
+            () => {
+              // The backend keeps waiting for this answer; the user must know
+              // the decision never arrived instead of watching a hung connect.
+              toast({
+                title: tStatic('hostKey.respondFailedToast'),
+                variant: 'warning'
+              });
+            }
+          );
         });
       }),
       listenHostKeyMismatch((payload) => {
@@ -62,7 +82,7 @@ export function useSshHostKeyEvents(): void {
           disposers = [disposePrompt, disposeMismatch, disposeTimeout, disposePersistFailed];
         }
       })
-      .catch(() => undefined);
+      .catch(swallowListenError);
 
     return () => {
       cancelled = true;

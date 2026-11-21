@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { swallowListenError } from '../lib/eventListener';
 import { listen } from '@tauri-apps/api/event';
 import { tStatic } from '../i18n';
 import { toast } from '../components/ui/toastStore';
@@ -33,7 +34,7 @@ export function useRemoteEditEvents(): void {
           unlisteners.push(unlisten);
         }
       })
-      .catch(() => undefined);
+      .catch(swallowListenError);
 
     void listen<RemoteEditEvent>('remote-edit-error', (event) => {
       if (disposed) {
@@ -52,7 +53,7 @@ export function useRemoteEditEvents(): void {
           unlisteners.push(unlisten);
         }
       })
-      .catch(() => undefined);
+      .catch(swallowListenError);
 
     return () => {
       disposed = true;

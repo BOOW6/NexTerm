@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { tStatic } from '../../i18n';
 import { openModalWindow } from '../../lib/appWindows';
+import { localizeBackendError } from '../../lib/backendErrors';
 import { useCredentialStore } from '../../stores/credentialStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -88,7 +89,7 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
         ? (sessionState.sessions.find((item) => item.id === options.sessionId) ?? null)
         : null;
 
-      const result = await openModalWindow<QuickConnectResult>('quick-connect', {
+      const outcome = await openModalWindow<QuickConnectResult>('quick-connect', {
         title: session
           ? tStatic('quickConnect.windowTitleEdit')
           : tStatic('quickConnect.windowTitleNew'),
@@ -106,103 +107,147 @@ export function useQuickConnectLauncher(): (options?: QuickConnectOptions) => Pr
         } satisfies QuickConnectPayload
       });
 
-      if (!result) {
+      if (!outcome.ok) {
+        // "Nothing happens" when clicking new connection is worse than an
+        // error: the window creation failure must be visible.
+        toast({
+          title: tStatic('quickConnect.windowOpenFailed'),
+          description: outcome.message,
+          variant: 'error'
+        });
+        return;
+      }
+      const result = outcome.value;
+      if (result === null) {
         return;
       }
 
-      const isRemote = result.draft.kind !== 'local';
-      // Telnet authenticates in-band; only SSH/SFTP carry NexTerm credentials.
-      const hasAuth = result.draft.kind === 'ssh' || result.draft.kind === 'sftp';
-
-      if (hasAuth && result.draft.jumpSessionId) {
-        const jumpId = result.draft.jumpSessionId;
-        const selfReferenced = jumpId === session?.id;
-        const cycled =
-          !selfReferenced &&
-          sessionState.sessions.some(
-            (item) =>
-              item.id === jumpId && jumpChainReaches(item.id, session?.id, sessionState.sessions)
-          );
-        if (selfReferenced || cycled) {
-          toast({ title: tStatic('quickConnect.toastJumpCycle'), variant: 'error' });
-          return;
-        }
+      try {
+        await applyQuickConnectResult(sessionState, openSession, session, result);
+      } catch (error) {
+        toast({
+          title: tStatic('quickConnect.toastApplyFailed'),
+          description: localizeBackendError(String(error)),
+          variant: 'error'
+        });
       }
-
-      if (session) {
-        const previousAuthMethod = session.authMethod ?? 'password';
-        const previousKind = session.kind;
-        sessionState.updateSession(session.id, result.draft);
-        if (isRemote && previousAuthMethod !== result.draft.authMethod) {
-          await forgetSessionCredentials(session.id);
-        }
-        if (previousKind !== 'local' && !isRemote) {
-          // The session stopped being remote: leaving its stored credentials
-          // behind would silently reconnect with them if it is switched back.
-          await forgetSessionCredentials(session.id);
-        }
-        if (hasAuth) {
-          if (result.password?.trim()) {
-            useCredentialStore.getState().setPassword(session.id, result.password);
-          }
-          if (result.draft.authMethod === 'key' || result.draft.authMethod === 'certificate') {
-            // An empty passphrase means "keep the stored one" (same guard as
-            // the password field) — overwriting it with '' would lose the
-            // vault entry for good.
-            if (result.passphrase?.trim()) {
-              useCredentialStore.getState().setPassphrase(session.id, result.passphrase);
-            }
-            useCredentialStore.getState().authorize(session.id);
-          } else if (result.draft.authMethod === 'agent') {
-            useCredentialStore.getState().authorize(session.id);
-          }
-          const updated = sessionState.getSession(session.id);
-          if (updated) {
-            await rememberSessionCredentials(updated);
-          }
-        }
-        toast({ title: tStatic('quickConnect.toastUpdated'), variant: 'success' });
-        openSession(session.id);
-        return;
-      }
-
-      const created = sessionState.addSession(result.draft);
-      if (hasAuth) {
-        if (result.draft.authMethod === 'password') {
-          if (result.password?.trim()) {
-            useCredentialStore.getState().setPassword(created.id, result.password);
-          }
-        } else if (result.draft.authMethod === 'key' || result.draft.authMethod === 'certificate') {
-          useCredentialStore.getState().setPassphrase(created.id, result.passphrase ?? '');
-          useCredentialStore.getState().authorize(created.id);
-        } else {
-          useCredentialStore.getState().authorize(created.id);
-        }
-        const stored = sessionState.getSession(created.id);
-        if (stored) {
-          await rememberSessionCredentials(stored);
-        }
-      }
-
-      toast({
-        title: tStatic('quickConnect.toastCreated', { name: created.title }),
-        description: isRemote
-          ? result.draft.kind === 'telnet'
-            ? tStatic('quickConnect.toastConnectingTelnet')
-            : result.draft.authMethod === 'key'
-              ? tStatic('quickConnect.toastConnectingKey')
-              : result.draft.authMethod === 'certificate'
-                ? tStatic('quickConnect.toastConnectingCert')
-                : result.draft.authMethod === 'agent'
-                  ? tStatic('quickConnect.toastConnectingAgent')
-                  : result.password?.trim()
-                    ? tStatic('quickConnect.toastConnectingPassword')
-                    : tStatic('quickConnect.toastWillPromptPassword')
-          : undefined,
-        variant: 'success'
-      });
-      openSession(created.id);
     },
     [openSession]
   );
+}
+
+/** Everything that happens after the quick-connect window closes: apply the
+ * draft, migrate stored credentials, save the new ones and open the session.
+ * Runs inside the launcher's try/catch so a failure surfaces as a toast
+ * instead of an unhandled rejection in one of the fire-and-forget callers. */
+async function applyQuickConnectResult(
+  sessionState: ReturnType<typeof useSessionStore.getState>,
+  openSession: (id: string) => void,
+  session: Session | null,
+  result: QuickConnectResult
+): Promise<void> {
+  const isRemote = result.draft.kind !== 'local';
+  // Telnet authenticates in-band; only SSH/SFTP carry NexTerm credentials.
+  const hasAuth = result.draft.kind === 'ssh' || result.draft.kind === 'sftp';
+
+  if (hasAuth && result.draft.jumpSessionId) {
+    const jumpId = result.draft.jumpSessionId;
+    const selfReferenced = jumpId === session?.id;
+    const cycled =
+      !selfReferenced &&
+      sessionState.sessions.some(
+        (item) =>
+          item.id === jumpId && jumpChainReaches(item.id, session?.id, sessionState.sessions)
+      );
+    if (selfReferenced || cycled) {
+      toast({ title: tStatic('quickConnect.toastJumpCycle'), variant: 'error' });
+      return;
+    }
+  }
+
+  const saveFailureToast = (): void => {
+    toast({ title: tStatic('quickConnect.toastCredentialsSaveFailed'), variant: 'warning' });
+  };
+
+  if (session) {
+    const previousAuthMethod = session.authMethod ?? 'password';
+    const previousKind = session.kind;
+    sessionState.updateSession(session.id, result.draft);
+    if (isRemote && previousAuthMethod !== result.draft.authMethod) {
+      await forgetSessionCredentials(session.id);
+    }
+    if (previousKind !== 'local' && !isRemote) {
+      // The session stopped being remote: leaving its stored credentials
+      // behind would silently reconnect with them if it is switched back.
+      await forgetSessionCredentials(session.id);
+    }
+    if (hasAuth) {
+      if (result.password?.trim()) {
+        useCredentialStore.getState().setPassword(session.id, result.password);
+      }
+      if (result.draft.authMethod === 'key' || result.draft.authMethod === 'certificate') {
+        // An empty passphrase means "keep the stored one" (same guard as
+        // the password field). Overwriting it with '' would lose the
+        // vault entry for good.
+        if (result.passphrase?.trim()) {
+          useCredentialStore.getState().setPassphrase(session.id, result.passphrase);
+        }
+        useCredentialStore.getState().authorize(session.id);
+      } else if (result.draft.authMethod === 'agent') {
+        useCredentialStore.getState().authorize(session.id);
+      }
+      const updated = sessionState.getSession(session.id);
+      if (updated) {
+        const saved = await rememberSessionCredentials(updated);
+        if (saved.includes('failed')) {
+          // The session itself is fine; the user must know the credentials
+          // will not survive a restart.
+          saveFailureToast();
+        }
+      }
+    }
+    toast({ title: tStatic('quickConnect.toastUpdated'), variant: 'success' });
+    openSession(session.id);
+    return;
+  }
+
+  const created = sessionState.addSession(result.draft);
+  if (hasAuth) {
+    if (result.draft.authMethod === 'password') {
+      if (result.password?.trim()) {
+        useCredentialStore.getState().setPassword(created.id, result.password);
+      }
+    } else if (result.draft.authMethod === 'key' || result.draft.authMethod === 'certificate') {
+      useCredentialStore.getState().setPassphrase(created.id, result.passphrase ?? '');
+      useCredentialStore.getState().authorize(created.id);
+    } else {
+      useCredentialStore.getState().authorize(created.id);
+    }
+    const stored = sessionState.getSession(created.id);
+    if (stored) {
+      const saved = await rememberSessionCredentials(stored);
+      if (saved.includes('failed')) {
+        saveFailureToast();
+      }
+    }
+  }
+
+  toast({
+    title: tStatic('quickConnect.toastCreated', { name: created.title }),
+    description: isRemote
+      ? result.draft.kind === 'telnet'
+        ? tStatic('quickConnect.toastConnectingTelnet')
+        : result.draft.authMethod === 'key'
+          ? tStatic('quickConnect.toastConnectingKey')
+          : result.draft.authMethod === 'certificate'
+            ? tStatic('quickConnect.toastConnectingCert')
+            : result.draft.authMethod === 'agent'
+              ? tStatic('quickConnect.toastConnectingAgent')
+              : result.password?.trim()
+                ? tStatic('quickConnect.toastConnectingPassword')
+                : tStatic('quickConnect.toastWillPromptPassword')
+      : undefined,
+    variant: 'success'
+  });
+  openSession(created.id);
 }

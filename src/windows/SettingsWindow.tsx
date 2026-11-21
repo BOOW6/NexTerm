@@ -59,7 +59,7 @@ import { TERMINAL_COLOR_SCHEMES } from '../theme/terminalColorSchemes';
 import { useCustomThemesStore } from '../theme/customThemesStore';
 import { customThemeSpecimenStyle } from '../theme/applyCustomTheme';
 import type { CustomThemeDefinition } from '../theme/customThemes';
-import { confirmAction, openModalWindow } from '../lib/appWindows';
+import { confirmAction, promptText } from '../lib/appWindows';
 import {
   changeVaultPassword,
   clearVault,
@@ -280,6 +280,7 @@ export default function SettingsWindow() {
   const [applying, setApplying] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [vaultStatus, setVaultStatus] = useState<VaultStatus | null>(null);
+  const [vaultStatusUnknown, setVaultStatusUnknown] = useState(false);
   const [vaultBusy, setVaultBusy] = useState(false);
   // What this window last believed the store holds. External changes (e.g. a
   // theme cycle in the main window) are merged into the draft per-field so
@@ -506,32 +507,28 @@ export default function SettingsWindow() {
       .then((status) => {
         if (!cancelled) {
           setVaultStatus(status);
+          setVaultStatusUnknown(false);
         }
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (!cancelled) {
+          // An IPC hiccup must not render as "no vault": that shows a setup
+          // button whose click fails with "already exists".
+          setVaultStatusUnknown(true);
+        }
+      });
     return () => {
       cancelled = true;
     };
   }, []);
 
   const promptSecret = (label: string, confirmLabel: string): Promise<string | null> =>
-    openModalWindow<string>('prompt', {
-      title: label,
-      width: 420,
-      height: 200,
-      data: {
-        title: label,
-        label,
-        initialValue: '',
-        placeholder: label,
-        confirmLabel,
-        password: true
-      }
-    });
+    promptText(label, confirmLabel, { password: true });
 
   const refreshVaultStatus = async () => {
     const status = await getVaultStatus();
     setVaultStatus(status);
+    setVaultStatusUnknown(false);
     return status;
   };
 
@@ -1231,7 +1228,15 @@ export default function SettingsWindow() {
                 <Button
                   size="xs"
                   variant="secondary"
-                  onClick={() => void invoke('themes_open_folder').catch(() => undefined)}
+                  onClick={() =>
+                    void invoke('themes_open_folder').catch((reason) =>
+                      toast({
+                        title: t('settings.appearance.openThemesFolderFailed'),
+                        description: localizeBackendError(String(reason)),
+                        variant: 'error'
+                      })
+                    )
+                  }
                 >
                   <FolderOpen className="h-3 w-3" />
                   {t('settings.appearance.openThemesFolder')}
@@ -1713,25 +1718,33 @@ export default function SettingsWindow() {
             <span
               className={cn(
                 'rounded-sm border px-1.5 py-0.5 text-tiny',
-                vaultUnlocked
-                  ? 'border-success/40 text-success'
-                  : vaultInitialized
-                    ? 'border-warning/40 text-warning'
-                    : 'border-border text-muted'
+                vaultStatusUnknown
+                  ? 'border-error/40 text-error'
+                  : vaultUnlocked
+                    ? 'border-success/40 text-success'
+                    : vaultInitialized
+                      ? 'border-warning/40 text-warning'
+                      : 'border-border text-muted'
               )}
             >
-              {vaultInitialized
-                ? vaultUnlocked
-                  ? t('settings.security.vault.unlocked')
-                  : t('settings.security.vault.locked')
-                : t('settings.security.vault.missing')}
+              {vaultStatusUnknown
+                ? t('settings.security.vault.statusUnknown')
+                : vaultInitialized
+                  ? vaultUnlocked
+                    ? t('settings.security.vault.unlocked')
+                    : t('settings.security.vault.locked')
+                  : t('settings.security.vault.missing')}
             </span>
           </div>
           <p className="text-tiny text-muted-foreground">
             {t('settings.security.vault.description')}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {!vaultInitialized ? (
+            {vaultStatusUnknown ? (
+              <Button size="xs" variant="secondary" onClick={() => void refreshVaultStatus()}>
+                {t('settings.security.vault.retryStatus')}
+              </Button>
+            ) : !vaultInitialized ? (
               <Button
                 size="xs"
                 variant="primary"

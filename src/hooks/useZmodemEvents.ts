@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { swallowListenError } from '../lib/eventListener';
 import { listen } from '@tauri-apps/api/event';
 import { tStatic } from '../i18n';
 import { toast } from '../components/ui/toastStore';
@@ -31,7 +32,7 @@ export function useZmodemEvents(): void {
           unlisteners.push(unlisten);
         }
       })
-      .catch(() => undefined);
+      .catch(swallowListenError);
 
     return () => {
       disposed = true;

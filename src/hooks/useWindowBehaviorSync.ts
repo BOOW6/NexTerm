@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { swallowListenError } from '../lib/eventListener';
 import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore } from '../stores/settingsStore';
 
@@ -12,6 +13,6 @@ export function useWindowBehaviorSync(): void {
     void invoke('set_window_behavior', {
       closeToTray,
       globalShowHotkey: globalShowHotkey || null
-    }).catch(() => undefined);
+    }).catch(swallowListenError);
   }, [closeToTray, globalShowHotkey]);
 }

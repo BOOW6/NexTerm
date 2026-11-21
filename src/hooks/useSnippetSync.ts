@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { swallowListenError } from '../lib/eventListener';
 import { listen } from '@tauri-apps/api/event';
 import { useSnippetStore } from '../stores/snippetStore';
 
@@ -25,7 +26,7 @@ export function useSnippetSync(): void {
           dispose = unlisten;
         }
       })
-      .catch(() => undefined);
+      .catch(swallowListenError);
 
     return () => {
       cancelled = true;

@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { swallowListenError } from '../lib/eventListener';
 import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore } from '../stores/settingsStore';
 
@@ -14,6 +15,6 @@ export function useSessionLogRootSync(): void {
   useEffect(() => {
     void invoke('set_session_log_root', {
       dir: sessionLogEnabled ? sessionLogDir : null
-    }).catch(() => undefined);
+    }).catch(swallowListenError);
   }, [sessionLogEnabled, sessionLogDir]);
 }

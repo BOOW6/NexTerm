@@ -1,3 +1,4 @@
+import { swallowListenError } from '../../lib/eventListener';
 import {
   useCallback,
   useEffect,
@@ -44,8 +45,7 @@ import { Tooltip } from '../ui/tooltip';
 import { toast } from '../ui/toastStore';
 import { cn } from '../../lib/cn';
 import { formatBytes } from '../../lib/format';
-import { confirmAction, openModalWindow, showNativeContextMenu } from '../../lib/appWindows';
-import type { PromptPayload } from '../../windows/PromptWindow';
+import { confirmAction, promptText, showNativeContextMenu } from '../../lib/appWindows';
 import { localizeBackendError } from '../../lib/backendErrors';
 
 function formatTime(mtime: number, locale: string): string {
@@ -197,7 +197,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
           dispose = unlisten;
         }
       })
-      .catch(() => undefined);
+      .catch(swallowListenError);
 
     return () => {
       cancelled = true;
@@ -320,7 +320,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
           unlisten = dispose;
         }
       })
-      .catch(() => undefined);
+      .catch(swallowListenError);
     return () => {
       cancelled = true;
       unlisten?.();
@@ -598,19 +598,16 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
   };
 
   const promptName = async (mode: 'mkdir' | 'rename', entry?: SftpEntry) => {
-    const payload: PromptPayload = {
-      title: mode === 'rename' ? t('sftp.rename.promptTitle') : t('sftp.folder.promptTitle'),
-      label: mode === 'rename' ? t('sftp.rename.promptLabel') : t('sftp.folder.promptLabel'),
-      initialValue: mode === 'rename' ? (entry?.name ?? '') : '',
-      confirmLabel:
-        mode === 'rename' ? t('sftp.rename.confirmLabel') : t('sftp.folder.confirmLabel')
-    };
-    const value = await openModalWindow<string>('prompt', {
-      title: payload.title,
-      width: 440,
-      height: 230,
-      data: payload
-    });
+    const value = await promptText(
+      mode === 'rename' ? t('sftp.rename.promptLabel') : t('sftp.folder.promptLabel'),
+      mode === 'rename' ? t('sftp.rename.confirmLabel') : t('sftp.folder.confirmLabel'),
+      {
+        title: mode === 'rename' ? t('sftp.rename.promptTitle') : t('sftp.folder.promptTitle'),
+        initialValue: mode === 'rename' ? (entry?.name ?? '') : '',
+        width: 440,
+        height: 230
+      }
+    );
     if (!value) {
       return;
     }
@@ -649,8 +646,12 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         label: t('sftp.menu.copyPath'),
         separatorBefore: true,
         run: () => {
-          void writeClipboardText(entry.path);
-          toast({ title: t('sftp.menu.copiedToast') });
+          // The success toast must wait for the write: clipboard access can
+          // fail (permissions, non-Tauri context) and "copied" would be a lie.
+          void writeClipboardText(entry.path).then(
+            () => toast({ title: t('sftp.menu.copiedToast') }),
+            () => toast({ title: t('sftp.menu.copyFailedToast'), variant: 'error' })
+          );
         }
       }
     );

@@ -5,7 +5,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useVaultStore } from '../../stores/vaultStore';
 import { useQuickConnectLauncher } from '../../features/workspace/useQuickConnectLauncher';
 import { rememberSessionCredentials } from '../../lib/credentialVault';
-import { openModalWindow } from '../../lib/appWindows';
+import { promptText } from '../../lib/appWindows';
 import { toast } from '../ui/toastStore';
 import { sessionSubtitle, type Session } from '../../types/session';
 import { useI18n } from '../../i18n';
@@ -79,18 +79,10 @@ export default function SshConnectForm({ session }: { session: Session }) {
     }
     setUnlocking(true);
     try {
-      const masterPassword = await openModalWindow<string>('prompt', {
+      const masterPassword = await promptText(t('ssh.vaultMasterPassword'), t('ssh.vaultUnlock'), {
         title: t('ssh.vaultUnlockTitle'),
-        width: 420,
-        height: 200,
-        data: {
-          title: t('ssh.vaultUnlockTitle'),
-          label: t('ssh.vaultMasterPassword'),
-          initialValue: '',
-          placeholder: t('ssh.vaultMasterPlaceholder'),
-          confirmLabel: t('ssh.vaultUnlock'),
-          password: true
-        }
+        placeholder: t('ssh.vaultMasterPlaceholder'),
+        password: true
       });
       if (!masterPassword) {
         return;

@@ -38,6 +38,8 @@ import {
 } from '../../hooks/useTauriTelnet';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { broadcastInput } from '../../stores/broadcastStore';
+import { toast } from '../ui/toastStore';
+import { Button } from '../ui/button';
 import { recordKeystroke } from '../../stores/macroStore';
 import {
   connectSerial,
@@ -256,6 +258,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
     // resize results, not by ResizeObserver intents, so it never shows a size
     // the PTY has not been told about yet.
     const [resizeHud, setResizeHud] = useState<{ cols: number; rows: number } | null>(null);
+    const [initError, setInitError] = useState<string | null>(null);
     const resizeHudTimerRef = useRef<number | null>(null);
     const resizeHudValueRef = useRef<{ cols: number; rows: number } | null>(null);
     const { themeId } = useTheme();
@@ -1680,7 +1683,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             try {
               const webLinks = new WebLinksAddon((event, uri) => {
                 event.preventDefault();
-                void openUrl(uri).catch(() => undefined);
+                void openUrl(uri).catch(() =>
+                  toast({ title: t('terminal.openUrlFailed'), description: uri, variant: 'error' })
+                );
               });
               instance.loadAddon(webLinks);
               webLinksAddon = webLinks;
@@ -1784,6 +1789,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             }
 
             terminalRef.current = instance;
+            setInitError(null);
 
             let restored = Promise.resolve();
             if (settings.terminalRestoreScrollback) {
@@ -1826,6 +1832,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           } catch (error) {
             if (!disposed) {
               console.error('[terminal] initialization failed', error);
+              // A blank pane with no explanation is the worst outcome: give
+              // the user the error and a way back into the session.
+              setInitError(String(error));
             }
           } finally {
             initializing = false;
@@ -2621,6 +2630,24 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-border bg-surface-elevated px-2 py-1 text-meta tabular-nums text-foreground shadow-panel"
           >
             {resizeHud.cols} × {resizeHud.rows}
+          </div>
+        ) : null}
+        {initError ? (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background px-4 text-center">
+            <p className="text-meta font-emphasis text-foreground">{t('terminal.initFailed')}</p>
+            <p className="max-w-md select-text break-all text-tiny text-muted-foreground">
+              {initError}
+            </p>
+            <Button
+              size="xs"
+              variant="secondary"
+              onClick={() => {
+                setInitError(null);
+                startRef.current?.();
+              }}
+            >
+              {t('terminal.initRetry')}
+            </Button>
           </div>
         ) : null}
       </div>

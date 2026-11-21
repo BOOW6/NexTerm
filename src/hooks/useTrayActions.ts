@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { swallowListenError } from '../lib/eventListener';
 import { listen } from '@tauri-apps/api/event';
 import { useQuickConnectLauncher } from '../features/workspace/useQuickConnectLauncher';
 
@@ -20,7 +21,7 @@ export function useTrayActions(): void {
           unlisten = dispose;
         }
       })
-      .catch(() => undefined);
+      .catch(swallowListenError);
 
     return () => {
       disposed = true;

@@ -74,6 +74,9 @@ export const ZH: Dictionary = {
   'quickConnect.toastConnectingAgent': '正在使用 SSH Agent 建立连接。',
   'quickConnect.toastConnectingPassword': '正在建立 SSH 连接。',
   'quickConnect.toastWillPromptPassword': '连接时将请求输入密码。',
+  'quickConnect.windowOpenFailed': '连接窗口打开失败',
+  'quickConnect.toastApplyFailed': '连接已提交，但保存或启动失败',
+  'quickConnect.toastCredentialsSaveFailed': '连接已保存，但凭据写入保险库失败',
   // sessionActions
   'sessionAction.duplicateTitle': '{name} 副本',
   'sessionAction.sftpPanelTitle': 'SFTP · {name}',
@@ -183,6 +186,9 @@ export const ZH: Dictionary = {
   'terminal.serialConnectFailed': '串口连接失败：{message}',
   'terminal.writeFailed': '写入失败，输入未送达会话',
   'terminal.sessionLogFailed': '会话日志写入失败，本次录制已停止',
+  'terminal.openUrlFailed': '链接打开失败',
+  'terminal.initFailed': '终端初始化失败',
+  'terminal.initRetry': '重试',
   'palette.macro.start': '开始录制宏',
   'palette.macro.stop': '停止录制并保存宏',
   'palette.group.macros': '宏',
@@ -202,6 +208,7 @@ export const ZH: Dictionary = {
   'appWindow.confirmTitle': '确认',
   'appWindow.ok': '确定',
   'appWindow.cancel': '取消',
+  'appWindow.promptOpenFailed': '输入窗口打开失败',
   'appWindow.aboutTitle': '关于 NexTerm'
 };
 
@@ -281,6 +288,10 @@ export const EN: Dictionary = {
   'quickConnect.toastConnectingAgent': 'Connecting via SSH Agent.',
   'quickConnect.toastConnectingPassword': 'Establishing SSH connection.',
   'quickConnect.toastWillPromptPassword': 'Password will be requested on connect.',
+  'quickConnect.windowOpenFailed': 'Failed to open the connection window',
+  'quickConnect.toastApplyFailed': 'The session was submitted, but saving or launching failed',
+  'quickConnect.toastCredentialsSaveFailed':
+    'Session saved, but storing credentials in the vault failed',
   // sessionActions
   'sessionAction.duplicateTitle': '{name} copy',
   'sessionAction.sftpPanelTitle': 'SFTP · {name}',
@@ -390,6 +401,9 @@ export const EN: Dictionary = {
   'terminal.serialConnectFailed': 'Serial connection failed: {message}',
   'terminal.writeFailed': 'Write failed. Input was not delivered to the session',
   'terminal.sessionLogFailed': 'Session log write failed. Recording has stopped',
+  'terminal.openUrlFailed': 'Failed to open the link',
+  'terminal.initFailed': 'Terminal initialization failed',
+  'terminal.initRetry': 'Retry',
   'palette.macro.start': 'Start recording a macro',
   'palette.macro.stop': 'Stop recording and save the macro',
   'palette.group.macros': 'Macros',
@@ -409,5 +423,6 @@ export const EN: Dictionary = {
   'appWindow.confirmTitle': 'Confirm',
   'appWindow.ok': 'OK',
   'appWindow.cancel': 'Cancel',
+  'appWindow.promptOpenFailed': 'Failed to open the input window',
   'appWindow.aboutTitle': 'About NexTerm'
 };

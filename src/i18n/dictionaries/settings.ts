@@ -86,6 +86,7 @@ export const ZH: Dictionary = {
   'settings.appearance.customThemesHint':
     '把主题 JSON 放入主题文件夹即可使用（支持 Windows Terminal 配色与 iTerm2 .itermcolors 导入），文件名即主题 id。',
   'settings.appearance.openThemesFolder': '打开主题文件夹',
+  'settings.appearance.openThemesFolderFailed': '打开主题文件夹失败',
   'settings.appearance.refreshThemes': '刷新',
   'settings.appearance.customThemesEmpty': '还没有自定义主题，点击「打开主题文件夹」添加。',
   'settings.appearance.customThemeLoadFailed': '以下主题文件加载失败：',
@@ -174,6 +175,8 @@ export const ZH: Dictionary = {
   'settings.security.vault.unlocked': '已解锁',
   'settings.security.vault.locked': '已锁定',
   'settings.security.vault.missing': '未创建',
+  'settings.security.vault.statusUnknown': '状态未知',
+  'settings.security.vault.retryStatus': '重新查询',
   'settings.security.vault.description':
     '记住的 SSH 密码与私钥口令使用 Argon2id 派生密钥并通过 AES-256-GCM 加密，保存在应用配置目录。应用重启后保险库默认锁定。',
   'settings.security.vault.setupMaster': '设置主密码',
@@ -383,6 +386,7 @@ export const EN: Dictionary = {
   'settings.appearance.customThemesHint':
     'Drop theme JSON files into the themes folder (Windows Terminal schemes and iTerm2 .itermcolors palettes are imported too); the file name becomes the theme id.',
   'settings.appearance.openThemesFolder': 'Open themes folder',
+  'settings.appearance.openThemesFolderFailed': 'Failed to open the themes folder',
   'settings.appearance.refreshThemes': 'Refresh',
   'settings.appearance.customThemesEmpty':
     'No custom themes yet. Open the themes folder to add some.',
@@ -473,6 +477,8 @@ export const EN: Dictionary = {
   'settings.security.vault.unlocked': 'Unlocked',
   'settings.security.vault.locked': 'Locked',
   'settings.security.vault.missing': 'Not created',
+  'settings.security.vault.statusUnknown': 'Status unknown',
+  'settings.security.vault.retryStatus': 'Retry',
   'settings.security.vault.description':
     'Remembered SSH passwords and key passphrases are encrypted with AES-256-GCM using an Argon2id-derived key and stored in the app config directory. The vault is locked by default after the app restarts.',
   'settings.security.vault.setupMaster': 'Set master password',

@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { swallowListenError } from '../lib/eventListener';
 import { listenSftpProgress, listenSftpTransferDone } from './useTauriSsh';
 import { useTransferStore } from '../stores/transferStore';
 
@@ -23,7 +24,7 @@ export function useSftpTransferEvents(): void {
           disposers = [disposeProgress, disposeDone];
         }
       })
-      .catch(() => undefined);
+      .catch(swallowListenError);
 
     return () => {
       cancelled = true;

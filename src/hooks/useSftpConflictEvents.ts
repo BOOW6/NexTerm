@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
+import { swallowListenError } from '../lib/eventListener';
 import { tStatic } from '../i18n';
+import { toast } from '../components/ui/toastStore';
 import { listenSftpConflict, respondSftpConflict, type SftpConflictPayload } from './useTauriSsh';
 import { openModalWindow } from '../lib/appWindows';
 
@@ -26,7 +28,7 @@ export function useSftpConflictEvents(): void {
           break;
         }
 
-        const response = await openModalWindow<string>('sftp-conflict', {
+        const outcome = await openModalWindow<string>('sftp-conflict', {
           title: tStatic('conflict.existsToast'),
           width: 440,
           height: 320,
@@ -45,11 +47,21 @@ export function useSftpConflictEvents(): void {
           void respondSftpConflict(payload.request_id, 'cancel', false).catch(() => undefined);
           break;
         }
+        if (!outcome.ok) {
+          // A dialog that never opened would otherwise leave the transfer
+          // waiting on an answer nobody can give: cancel it, visibly.
+          toast({
+            title: tStatic('conflict.dialogOpenFailed'),
+            description: outcome.message,
+            variant: 'error'
+          });
+        }
 
         // A failed/unanswered dialog cancels the transfer instead of leaving
         // the backend task waiting forever.
         let action: 'overwrite' | 'skip' | 'rename' | 'cancel' = 'cancel';
         let applyToAll = false;
+        const response = outcome.ok ? outcome.value : null;
         if (response) {
           try {
             const parsed = JSON.parse(response) as { action?: string; applyToAll?: boolean };
@@ -87,7 +99,7 @@ export function useSftpConflictEvents(): void {
           unlisten = dispose;
         }
       })
-      .catch(() => undefined);
+      .catch(swallowListenError);
 
     return () => {
       cancelled = true;

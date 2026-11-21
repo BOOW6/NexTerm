@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { swallowListenError } from '../../lib/eventListener';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { Network, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import {
@@ -79,7 +80,7 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
           dispose = unlisten;
         }
       })
-      .catch(() => undefined);
+      .catch(swallowListenError);
 
     return () => {
       cancelled = true;

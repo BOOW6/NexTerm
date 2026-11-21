@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { swallowListenError } from '../lib/eventListener';
 import { listen } from '@tauri-apps/api/event';
 import { useSettingsStore, type SettingsSnapshot } from '../stores/settingsStore';
 
@@ -21,7 +22,7 @@ export function useSettingsSync(): void {
           dispose = unlisten;
         }
       })
-      .catch(() => undefined);
+      .catch(swallowListenError);
 
     return () => {
       cancelled = true;

@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { swallowListenError } from '../lib/eventListener';
 import { listen } from '@tauri-apps/api/event';
 import { hydrateCredentialsFromVault } from '../lib/credentialVault';
 import { useCredentialStore } from '../stores/credentialStore';
@@ -15,14 +16,14 @@ export function useVaultEvents(): void {
     const subscriptions = [
       listen('nexterm-vault-unlocked', () => {
         void hydrateCredentialsFromVault().then(() => useVaultStore.getState().refresh());
-      }).catch(() => null),
+      }).catch(swallowListenError),
       listen('nexterm-vault-locked', () => {
         void useVaultStore.getState().refresh();
-      }).catch(() => null),
+      }).catch(swallowListenError),
       listen('nexterm-vault-cleared', () => {
         useCredentialStore.getState().clearAllCredentials();
         void useVaultStore.getState().refresh();
-      }).catch(() => null)
+      }).catch(swallowListenError)
     ];
 
     return () => {
