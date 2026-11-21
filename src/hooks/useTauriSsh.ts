@@ -378,3 +378,7 @@ export interface RemoteEditSession {
 export async function remoteEditOpen(id: string, remotePath: string): Promise<RemoteEditSession> {
   return invoke<RemoteEditSession>('remote_edit_open', { id, remotePath });
 }
+
+export async function remoteEditStop(id: string, remotePath: string): Promise<void> {
+  return invoke<void>('remote_edit_stop', { id, remotePath });
+}

@@ -40,6 +40,9 @@ export function useSftpConflictEvents(): void {
           }
         });
         if (cancelled) {
+          // Teardown raced with an open dialog: cancel this request too, or
+          // the transfer waits on a hook that is already unmounted.
+          void respondSftpConflict(payload.request_id, 'cancel', false).catch(() => undefined);
           break;
         }
 
@@ -89,6 +92,11 @@ export function useSftpConflictEvents(): void {
     return () => {
       cancelled = true;
       unlisten?.();
+      // Requests queued but never dialogued still have a backend task
+      // waiting on them: cancel each one so it does not sit in the queue.
+      for (const leftover of queue.splice(0)) {
+        void respondSftpConflict(leftover.request_id, 'cancel', false).catch(() => undefined);
+      }
     };
   }, []);
 }

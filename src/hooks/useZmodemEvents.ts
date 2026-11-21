@@ -23,13 +23,15 @@ export function useZmodemEvents(): void {
         title: tStatic('zmodem.startToast', { name: event.payload.name }),
         variant: 'success'
       });
-    }).then((unlisten) => {
-      if (disposed) {
-        unlisten();
-      } else {
-        unlisteners.push(unlisten);
-      }
-    });
+    })
+      .then((unlisten) => {
+        if (disposed) {
+          unlisten();
+        } else {
+          unlisteners.push(unlisten);
+        }
+      })
+      .catch(() => undefined);
 
     return () => {
       disposed = true;

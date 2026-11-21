@@ -116,20 +116,26 @@ export function useWindowState(storageKey = 'nexterm.window.main.v1'): void {
 
     void restore();
 
-    void appWindow.onResized(schedulePersist).then((unlisten) => {
-      if (disposed) {
-        unlisten();
-      } else {
-        disposers.push(unlisten);
-      }
-    });
-    void appWindow.onMoved(schedulePersist).then((unlisten) => {
-      if (disposed) {
-        unlisten();
-      } else {
-        disposers.push(unlisten);
-      }
-    });
+    void appWindow
+      .onResized(schedulePersist)
+      .then((unlisten) => {
+        if (disposed) {
+          unlisten();
+        } else {
+          disposers.push(unlisten);
+        }
+      })
+      .catch(() => undefined);
+    void appWindow
+      .onMoved(schedulePersist)
+      .then((unlisten) => {
+        if (disposed) {
+          unlisten();
+        } else {
+          disposers.push(unlisten);
+        }
+      })
+      .catch(() => undefined);
 
     return () => {
       disposed = true;

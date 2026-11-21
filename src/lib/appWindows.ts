@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask, message } from '@tauri-apps/plugin-dialog';
 import { tStatic } from '../i18n';
 
@@ -66,7 +67,13 @@ export async function submitModal(value: unknown): Promise<void> {
   if (!id) {
     return;
   }
-  await invoke('submit_modal', { id, value });
+  try {
+    await invoke('submit_modal', { id, value });
+  } catch {
+    // The backend already dropped this modal (timeout/cancel): a stale window
+    // with dead buttons is worse than closing it, so dismiss instead of retry.
+    await dismissStaleModal();
+  }
 }
 
 export async function cancelModal(): Promise<void> {
@@ -74,7 +81,19 @@ export async function cancelModal(): Promise<void> {
   if (!id) {
     return;
   }
-  await invoke('cancel_modal', { id });
+  try {
+    await invoke('cancel_modal', { id });
+  } catch {
+    await dismissStaleModal();
+  }
+}
+
+async function dismissStaleModal(): Promise<void> {
+  try {
+    await getCurrentWindow().close();
+  } catch {
+    /* window already gone */
+  }
 }
 
 export async function openSettingsWindow(tab?: string): Promise<void> {
@@ -96,18 +115,26 @@ interface ContextMenuSelection {
   index: number;
 }
 
-let contextMenuListener: Promise<UnlistenFn> | null = null;
+let contextMenuListener: Promise<UnlistenFn | null> | null = null;
 const pendingContextMenus = new Map<string, (index: number | null) => void>();
 
-function ensureContextMenuListener(): Promise<UnlistenFn> {
+function ensureContextMenuListener(): Promise<UnlistenFn | null> {
   if (!contextMenuListener) {
-    contextMenuListener = listen<ContextMenuSelection>('nexterm-context-menu', (event) => {
+    const created = listen<ContextMenuSelection>('nexterm-context-menu', (event) => {
       const resolve = pendingContextMenus.get(event.payload.requestId);
       if (resolve) {
         pendingContextMenus.delete(event.payload.requestId);
         resolve(event.payload.index);
       }
     });
+    const cached = created.catch(() => {
+      // A rejected listen must not poison the cache: drop it so the next call retries.
+      if (contextMenuListener === cached) {
+        contextMenuListener = null;
+      }
+      return null;
+    });
+    contextMenuListener = cached;
   }
   return contextMenuListener;
 }
@@ -115,7 +142,9 @@ function ensureContextMenuListener(): Promise<UnlistenFn> {
 export async function showNativeContextMenu(
   items: NativeContextMenuItem[]
 ): Promise<number | null> {
-  await ensureContextMenuListener();
+  if (!(await ensureContextMenuListener())) {
+    return null;
+  }
 
   const requestId = crypto.randomUUID();
   const selection = new Promise<number | null>((resolve) => {

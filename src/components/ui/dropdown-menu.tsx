@@ -1,5 +1,5 @@
 import { useI18n } from '../../i18n';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { MoreHorizontal, type LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
@@ -25,11 +25,21 @@ export function DropdownMenu({ items, align = 'end', className, label }: Dropdow
   const [open, setOpen] = useState(false);
   const resolvedLabel = label ?? t('ui.moreActions');
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) {
       return;
     }
+
+    const enabledItems = () =>
+      Array.from(
+        menuRef.current?.querySelectorAll<HTMLButtonElement>(
+          'button[role="menuitem"]:not([disabled])'
+        ) ?? []
+      );
+    enabledItems()[0]?.focus();
 
     const onPointerDown = (event: MouseEvent) => {
       if (!containerRef.current?.contains(event.target as Node)) {
@@ -39,6 +49,7 @@ export function DropdownMenu({ items, align = 'end', className, label }: Dropdow
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setOpen(false);
+        triggerRef.current?.focus();
       }
     };
 
@@ -50,9 +61,40 @@ export function DropdownMenu({ items, align = 'end', className, label }: Dropdow
     };
   }, [open]);
 
+  const onMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(
+      menuRef.current?.querySelectorAll<HTMLButtonElement>(
+        'button[role="menuitem"]:not([disabled])'
+      ) ?? []
+    );
+    if (items.length === 0) {
+      return;
+    }
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      items[(current + 1) % items.length]?.focus();
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      items[(current - 1 + items.length) % items.length]?.focus();
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      items[0]?.focus();
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      items[items.length - 1]?.focus();
+    } else if (event.key === 'Tab') {
+      // Keep the menu's Tab inside the popup instead of escaping behind it.
+      event.preventDefault();
+      const next = (current + (event.shiftKey ? -1 : 1) + items.length) % items.length;
+      items[next]?.focus();
+    }
+  };
+
   return (
     <div ref={containerRef} className="relative inline-flex">
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -73,7 +115,10 @@ export function DropdownMenu({ items, align = 'end', className, label }: Dropdow
 
       {open ? (
         <div
+          ref={menuRef}
           role="menu"
+          onKeyDown={onMenuKeyDown}
+          tabIndex={-1}
           className={cn(
             'app-popup animate-zoom-in absolute top-full z-40 mt-0.5 min-w-40 border border-border-strong bg-surface-elevated',
             align === 'end' ? 'right-0' : 'left-0'

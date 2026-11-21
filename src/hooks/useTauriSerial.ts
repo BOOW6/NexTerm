@@ -51,8 +51,17 @@ export async function listenSerialOutput(
   });
 }
 
-export async function listenSerialClosed(id: string, onClosed: () => void): Promise<() => void> {
-  return listen(`serial-closed-${id}`, () => {
-    onClosed();
+export interface SerialClosedPayload {
+  /** `closed` (user disconnect), `eof`, or `error` (device lost). */
+  reason: 'closed' | 'eof' | 'error';
+  message?: string | null;
+}
+
+export async function listenSerialClosed(
+  id: string,
+  onClosed: (payload: SerialClosedPayload) => void
+): Promise<() => void> {
+  return listen<SerialClosedPayload>(`serial-closed-${id}`, (event) => {
+    onClosed(event.payload ?? { reason: 'closed' });
   });
 }

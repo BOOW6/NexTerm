@@ -299,12 +299,13 @@ pub async fn remote_edit_open(
         .watchers
         .lock()
         .unwrap_or_else(|poison| poison.into_inner())
-        .insert(key, cancel.clone());
+        .insert(key.clone(), cancel.clone());
 
     let baseline = stat_baseline(&scratch)
         .await
         .ok_or_else(|| "临时文件创建失败".to_string())?;
-    tokio::spawn(watch_task(
+    let watch_cancel = cancel.clone();
+    let watch_task_handle = tokio::spawn(watch_task(
         app.clone(),
         id.clone(),
         remote_path.clone(),
@@ -312,6 +313,19 @@ pub async fn remote_edit_open(
         cancel,
         baseline,
     ));
+
+    // A panicking watcher never reaches its own `stop_if_current`, which would
+    // leave the key pointing at a dead task and let `remote_edit_stop` be a
+    // no-op for every later open of the same file.
+    let watchdog_app = app.clone();
+    tokio::spawn(async move {
+        if let Err(join_error) = watch_task_handle.await {
+            eprintln!("[remote-edit] watcher aborted: {join_error}");
+            if let Some(manager) = watchdog_app.try_state::<RemoteEditManager>() {
+                manager.stop_if_current(&key, &watch_cancel);
+            }
+        }
+    });
 
     Ok(RemoteEditSession {
         temp_path: scratch.to_string_lossy().into_owned(),

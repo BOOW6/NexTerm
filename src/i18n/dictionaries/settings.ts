@@ -4,6 +4,7 @@ import type { Dictionary } from './types';
 // labels (themes.ts, ThemeProvider.tsx).
 export const ZH: Dictionary = {
   // Tabs
+  'settings.tabsAria': '设置分区',
   'settings.tab.appearance': '外观',
   'settings.tab.terminal': '终端',
   'settings.tab.snippets': '片段',
@@ -297,6 +298,7 @@ export const ZH: Dictionary = {
 
 export const EN: Dictionary = {
   // Tabs
+  'settings.tabsAria': 'Settings sections',
   'settings.tab.appearance': 'Appearance',
   'settings.tab.terminal': 'Terminal',
   'settings.tab.snippets': 'Snippets',

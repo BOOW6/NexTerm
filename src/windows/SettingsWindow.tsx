@@ -1,4 +1,12 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent
+} from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { emit, listen } from '@tauri-apps/api/event';
@@ -2052,15 +2060,54 @@ export default function SettingsWindow() {
     about: renderAbout
   }[tab];
 
+  const tabRefs = useRef(new Map<SettingsTab, HTMLButtonElement>());
+  const onTabStripKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const index = TABS.findIndex((item) => item.id === tab);
+    let next = -1;
+    if (event.key === 'ArrowRight') {
+      next = (index + 1) % TABS.length;
+    } else if (event.key === 'ArrowLeft') {
+      next = (index - 1 + TABS.length) % TABS.length;
+    } else if (event.key === 'Home') {
+      next = 0;
+    } else if (event.key === 'End') {
+      next = TABS.length - 1;
+    }
+    if (next < 0) {
+      return;
+    }
+    event.preventDefault();
+    const target = TABS[next];
+    selectTab(target.id);
+    tabRefs.current.get(target.id)?.focus();
+  };
+
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
-      <div className="app-tab-strip flex h-10 shrink-0 items-end gap-0.5 border-b border-border bg-surface-header px-2">
+      <div
+        role="tablist"
+        aria-label={t('settings.tabsAria')}
+        onKeyDown={onTabStripKeyDown}
+        className="app-tab-strip flex h-10 shrink-0 items-end gap-0.5 border-b border-border bg-surface-header px-2"
+      >
         {TABS.map((item) => {
           const Icon = item.icon;
           return (
             <button
               key={item.id}
+              ref={(element) => {
+                if (element) {
+                  tabRefs.current.set(item.id, element);
+                } else {
+                  tabRefs.current.delete(item.id);
+                }
+              }}
               type="button"
+              role="tab"
+              id={`settings-tab-${item.id}`}
+              aria-selected={tab === item.id}
+              aria-controls="settings-tabpanel"
+              tabIndex={tab === item.id ? 0 : -1}
               data-active={tab === item.id}
               onClick={() => selectTab(item.id)}
               className={cn(
@@ -2077,7 +2124,13 @@ export default function SettingsWindow() {
         })}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+      <div
+        role="tabpanel"
+        id="settings-tabpanel"
+        aria-labelledby={`settings-tab-${tab}`}
+        tabIndex={-1}
+        className="min-h-0 flex-1 overflow-y-auto px-5 py-4"
+      >
         {tab === 'terminal' ? null : content()}
         {previewActivated ? (
           <div className={tab === 'terminal' ? '' : 'hidden'}>{renderTerminal()}</div>

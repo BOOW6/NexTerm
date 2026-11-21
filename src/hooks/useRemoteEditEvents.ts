@@ -24,13 +24,15 @@ export function useRemoteEditEvents(): void {
         title: tStatic('remoteEdit.syncedToast', { name: event.payload.name }),
         variant: 'success'
       });
-    }).then((unlisten) => {
-      if (disposed) {
-        unlisten();
-      } else {
-        unlisteners.push(unlisten);
-      }
-    });
+    })
+      .then((unlisten) => {
+        if (disposed) {
+          unlisten();
+        } else {
+          unlisteners.push(unlisten);
+        }
+      })
+      .catch(() => undefined);
 
     void listen<RemoteEditEvent>('remote-edit-error', (event) => {
       if (disposed) {
@@ -41,13 +43,15 @@ export function useRemoteEditEvents(): void {
         description: event.payload.error,
         variant: 'error'
       });
-    }).then((unlisten) => {
-      if (disposed) {
-        unlisten();
-      } else {
-        unlisteners.push(unlisten);
-      }
-    });
+    })
+      .then((unlisten) => {
+        if (disposed) {
+          unlisten();
+        } else {
+          unlisteners.push(unlisten);
+        }
+      })
+      .catch(() => undefined);
 
     return () => {
       disposed = true;

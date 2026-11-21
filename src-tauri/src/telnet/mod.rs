@@ -1,12 +1,17 @@
 //! Minimal Telnet transport (RFC 854) for plain-text hosts and BBSes.
 //!
-//! The client refuses every option negotiation, keeping the stream a
-//! transparent 8-bit NVT channel, and feeds the payload to the same decoded
-//! event/log pipeline as the PTY and SSH transports.
+//! Options are refused by default; only the handful that real telnetd and
+//! console servers rely on are accepted: ECHO and SUPPRESS-GO-AHEAD (server
+//! side), NAWS (window size), and TERMINAL-TYPE (answers `VT100`). The
+//! displayable payload still feeds the same decoded event/log pipeline as the
+//! PTY and SSH transports.
 
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 
@@ -28,11 +33,39 @@ const WILL: u8 = 251;
 const SB: u8 = 250;
 const SE: u8 = 240;
 
+const OPT_ECHO: u8 = 1;
+const OPT_SGA: u8 = 3;
+const OPT_TTYPE: u8 = 24;
+const OPT_NAWS: u8 = 31;
+
+const TTYPE_IS: u8 = 0;
+const TTYPE_SEND: u8 = 1;
+const TTYPE_NAME: &[u8] = b"VT100";
+
+const DEFAULT_COLS: u16 = 80;
+const DEFAULT_ROWS: u16 = 24;
+
 /// A negotiation may legally split across TCP reads; a peer streaming an
 /// unterminated subnegotiation must not grow the carry buffer unboundedly.
 const MAX_PENDING_ESCAPE_BYTES: usize = 16 * 1024;
 
 type SharedWriter = Arc<tokio::sync::Mutex<Option<tokio::net::tcp::OwnedWriteHalf>>>;
+
+/// `IAC SB NAWS <cols hi> <cols lo> <rows hi> <rows lo> IAC SE`.
+pub fn encode_naws(cols: u16, rows: u16) -> Vec<u8> {
+    let cols = cols.max(1).to_be_bytes();
+    let rows = rows.max(1).to_be_bytes();
+    vec![
+        IAC, SB, OPT_NAWS, cols[0], cols[1], rows[0], rows[1], IAC, SE,
+    ]
+}
+
+fn encode_ttype_is() -> Vec<u8> {
+    let mut out = vec![IAC, SB, OPT_TTYPE, TTYPE_IS];
+    out.extend_from_slice(TTYPE_NAME);
+    out.extend_from_slice(&[IAC, SE]);
+    out
+}
 
 /// Remove `session` from `sessions` only when the entry still points at that
 /// exact session — a recycled id must never be torn down by a stale closer.
@@ -59,6 +92,11 @@ pub struct TelnetSessionManager {
 struct TelnetSession {
     writer: SharedWriter,
     log: Arc<LogSink>,
+    /// Latest client grid; echoed to peers that negotiate NAWS.
+    size: Mutex<(u16, u16)>,
+    /// Set once the peer accepted NAWS: SB NAWS updates are only legal after
+    /// negotiation, so resizes stay silent on hosts that never asked.
+    naws_accepted: AtomicBool,
     /// Signalled by `disconnect` to break the read loop out of its blocking
     /// read: a peer that keeps sending after our write half shuts down must
     /// not keep `telnet-output-{id}` events flowing for a closed session.
@@ -72,11 +110,12 @@ struct TelnetOutputPayload {
 }
 
 /// Decode one buffer of Telnet data: returns the displayable payload bytes
-/// plus, appended to `responses`, the refusal answers for every negotiation
-/// command found. Returns the number of input bytes consumed; a trailing
-/// incomplete escape (command or subnegotiation split across reads) is left
-/// unconsumed so the caller can carry it over.
-pub fn decode_telnet(input: &[u8], responses: &mut Vec<u8>) -> (Vec<u8>, usize) {
+/// plus, appended to `responses`, the answers for every negotiation command
+/// found. `size` is the client grid reported when NAWS is negotiated. Returns
+/// the number of input bytes consumed; a trailing incomplete escape (command
+/// or subnegotiation split across reads) is left unconsumed so the caller can
+/// carry it over.
+pub fn decode_telnet(input: &[u8], responses: &mut Vec<u8>, size: (u16, u16)) -> (Vec<u8>, usize) {
     let mut out = Vec::with_capacity(input.len());
     let mut i = 0;
 
@@ -97,28 +136,45 @@ pub fn decode_telnet(input: &[u8], responses: &mut Vec<u8>) -> (Vec<u8>, usize) 
                 out.push(IAC);
                 i += 2;
             }
-            // DO/DONT/WILL/WONT + option: refuse everything so no further
-            // subnegotiations are expected on this connection.
             DO | DONT | WILL | WONT => {
                 let Some(option) = input.get(i + 2).copied() else {
                     break;
                 };
-                // RFC 854: answer an offer (WILL) with a refusal (DONT),
-                // answer a request (DO) or a demand (DONT) with WONT, and
-                // stay silent on WONT — the peer only announced that it will
-                // not enable the option; answering it is protocol noise that
-                // strict peers treat as an error.
-                match command {
-                    WILL => responses.extend_from_slice(&[IAC, DONT, option]),
-                    DO | DONT => responses.extend_from_slice(&[IAC, WONT, option]),
+                match (command, option) {
+                    // The server echoes our keystrokes.
+                    (WILL, OPT_ECHO) => responses.extend_from_slice(&[IAC, DO, OPT_ECHO]),
+                    // Suppress-go-ahead in either direction is safe for us.
+                    (WILL, OPT_SGA) => responses.extend_from_slice(&[IAC, DO, OPT_SGA]),
+                    (DO, OPT_SGA) => responses.extend_from_slice(&[IAC, WILL, OPT_SGA]),
+                    // Window size: accept and report the current grid.
+                    (WILL, OPT_NAWS) => {
+                        responses.extend_from_slice(&[IAC, DO, OPT_NAWS]);
+                        responses.extend_from_slice(&encode_naws(size.0, size.1));
+                    }
+                    (DO, OPT_NAWS) => {
+                        responses.extend_from_slice(&[IAC, WILL, OPT_NAWS]);
+                        responses.extend_from_slice(&encode_naws(size.0, size.1));
+                    }
+                    // Terminal type: we will send it once the peer asks.
+                    (DO, OPT_TTYPE) => responses.extend_from_slice(&[IAC, WILL, OPT_TTYPE]),
+                    // RFC 854: answer an offer (WILL) with a refusal (DONT),
+                    // a request (DO) or a demand (DONT) with WONT, and stay
+                    // silent on WONT — the peer only announced that it will
+                    // not enable the option; answering is protocol noise that
+                    // strict peers treat as an error.
+                    (WILL, _) => responses.extend_from_slice(&[IAC, DONT, option]),
+                    (DO | DONT, _) => responses.extend_from_slice(&[IAC, WONT, option]),
                     _ => {}
                 }
                 i += 3;
             }
             SB => {
-                // Skip the subnegotiation body to its IAC SE (0xFF bytes
-                // inside are escaped data).
-                let mut j = i + 2;
+                let Some(option) = input.get(i + 2).copied() else {
+                    break;
+                };
+                // Collect the body (unescaping IAC IAC) up to IAC SE.
+                let mut body = Vec::new();
+                let mut j = i + 3;
                 let mut closed = false;
                 while j < input.len() {
                     if input[j] == IAC {
@@ -129,6 +185,7 @@ pub fn decode_telnet(input: &[u8], responses: &mut Vec<u8>) -> (Vec<u8>, usize) 
                                 break;
                             }
                             Some(&IAC) => {
+                                body.push(IAC);
                                 j += 2;
                                 continue;
                             }
@@ -143,10 +200,15 @@ pub fn decode_telnet(input: &[u8], responses: &mut Vec<u8>) -> (Vec<u8>, usize) 
                             None => break,
                         }
                     }
+                    body.push(input[j]);
                     j += 1;
                 }
                 if !closed {
                     break;
+                }
+                // A peer asking for the terminal type gets a VT100 answer.
+                if option == OPT_TTYPE && body.first() == Some(&TTYPE_SEND) {
+                    responses.extend_from_slice(&encode_ttype_is());
                 }
                 i = j;
             }
@@ -181,6 +243,8 @@ impl TelnetSessionManager {
         let session = Arc::new(TelnetSession {
             writer: Arc::new(tokio::sync::Mutex::new(None)),
             log,
+            size: Mutex::new((DEFAULT_COLS, DEFAULT_ROWS)),
+            naws_accepted: AtomicBool::new(false),
             close_signal,
         });
         {
@@ -222,7 +286,7 @@ impl TelnetSessionManager {
         let read_log = Arc::clone(&session.log);
         let read_close = Arc::clone(&session.close_signal);
         let read_session = Arc::clone(&session);
-        tokio::spawn(async move {
+        let reader_task = tokio::spawn(async move {
             let mut buffer = [0_u8; 32 * 1024];
             let mut pending: Vec<u8> = Vec::new();
             let mut decoder = crate::text_stream::Utf8StreamDecoder::new();
@@ -236,13 +300,24 @@ impl TelnetSessionManager {
                     Ok(size) => {
                         pending.extend_from_slice(&buffer[..size]);
                         let mut responses = Vec::new();
-                        let (raw, consumed) = decode_telnet(&pending, &mut responses);
+                        let grid = *read_session
+                            .size
+                            .lock()
+                            .unwrap_or_else(|poison| poison.into_inner());
+                        let (raw, consumed) = decode_telnet(&pending, &mut responses, grid);
                         pending.drain(..consumed);
                         if pending.len() > MAX_PENDING_ESCAPE_BYTES {
                             // A peer must never split commands this far; drop
                             // the garbage instead of growing the buffer.
                             eprintln!("[telnet] {event_id}: dropping {0} bytes of unterminated escape garbage", pending.len());
                             pending.clear();
+                        }
+                        if responses.windows(3).any(|pair| {
+                            pair[0] == IAC
+                                && (pair[1] == DO || pair[1] == WILL)
+                                && pair[2] == OPT_NAWS
+                        }) {
+                            read_session.naws_accepted.store(true, Ordering::Relaxed);
                         }
                         if !responses.is_empty() {
                             if let Some(writer) = read_writer.lock().await.as_mut() {
@@ -277,6 +352,21 @@ impl TelnetSessionManager {
             remove_reserved_session(&sessions, &event_id, &read_session);
         });
 
+        // A panicking read loop (third-party IO internals) would leave the
+        // session listed with no reader and no closed event, so treat an
+        // abnormal task end exactly like a normal shutdown.
+        let watchdog_app = app.clone();
+        let watchdog_sessions = Arc::clone(&self.sessions);
+        let watchdog_session = Arc::clone(&session);
+        let watchdog_id = id.clone();
+        tokio::spawn(async move {
+            if let Err(join_error) = reader_task.await {
+                eprintln!("[telnet] {watchdog_id}: read loop aborted: {join_error}");
+                let _ = watchdog_app.emit(&format!("telnet-closed-{}", watchdog_id), ());
+                remove_reserved_session(&watchdog_sessions, &watchdog_id, &watchdog_session);
+            }
+        });
+
         Ok(id)
     }
 
@@ -297,9 +387,29 @@ impl TelnetSessionManager {
         Ok(())
     }
 
-    /// Every negotiation is refused, so there is no negotiated window size
-    /// to update; kept as a no-op for UI symmetry with the other transports.
-    pub fn resize(&self, _id: &str, _cols: u16, _rows: u16) -> anyhow::Result<()> {
+    /// Store the grid and, once the peer negotiated NAWS, push the new size
+    /// as a subnegotiation. Hosts that never asked stay on their own default
+    /// geometry; sending SB NAWS before negotiation would be a protocol error.
+    pub async fn resize(&self, id: &str, cols: u16, rows: u16) -> anyhow::Result<()> {
+        let session = self.session(id)?;
+        *session
+            .size
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner()) = (cols, rows);
+        if !session.naws_accepted.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        let mut guard = session.writer.lock().await;
+        if let Some(writer) = guard.as_mut() {
+            writer
+                .write_all(&encode_naws(cols, rows))
+                .await
+                .context("failed to send telnet window size")?;
+            writer
+                .flush()
+                .await
+                .context("failed to flush telnet window size")?;
+        }
         Ok(())
     }
 
@@ -341,7 +451,7 @@ mod tests {
 
     fn decode(input: &[u8]) -> (Vec<u8>, Vec<u8>, usize) {
         let mut responses = Vec::new();
-        let (out, consumed) = decode_telnet(input, &mut responses);
+        let (out, consumed) = decode_telnet(input, &mut responses, (100, 40));
         (out, responses, consumed)
     }
 
@@ -355,11 +465,49 @@ mod tests {
 
     #[test]
     fn negotiation_responses_follow_rfc_854_directions() {
-        // IAC DO ECHO(1) -> IAC WONT 1; IAC WILL SUPPRESS-GO-AHEAD(3) -> IAC DONT 3
+        // DO ECHO(1) asks us to echo remote output: refused with WONT.
+        // WILL SGA(3) is accepted with DO.
         let (out, responses, consumed) = decode(&[IAC, DO, 1, b'x', IAC, WILL, 3]);
         assert_eq!(out, b"x");
-        assert_eq!(responses, vec![IAC, WONT, 1, IAC, DONT, 3]);
+        assert_eq!(responses, vec![IAC, WONT, 1, IAC, DO, 3]);
         assert_eq!(consumed, 7);
+    }
+
+    #[test]
+    fn accepts_server_echo_and_client_sga() {
+        let (_out, responses, _consumed) = decode(&[IAC, WILL, OPT_ECHO, IAC, DO, OPT_SGA]);
+        assert_eq!(responses, vec![IAC, DO, OPT_ECHO, IAC, WILL, OPT_SGA]);
+    }
+
+    #[test]
+    fn naws_offer_is_accepted_and_reports_the_grid() {
+        let (_out, responses, _consumed) = decode(&[IAC, WILL, OPT_NAWS]);
+        assert_eq!(
+            responses,
+            vec![IAC, DO, OPT_NAWS, IAC, SB, OPT_NAWS, 0, 100, 0, 40, IAC, SE]
+        );
+    }
+
+    #[test]
+    fn naws_request_gets_will_and_the_grid() {
+        let (_out, responses, _consumed) = decode(&[IAC, DO, OPT_NAWS]);
+        assert_eq!(
+            responses,
+            vec![IAC, WILL, OPT_NAWS, IAC, SB, OPT_NAWS, 0, 100, 0, 40, IAC, SE]
+        );
+    }
+
+    #[test]
+    fn ttype_send_is_answered_with_vt100() {
+        let (out, responses, consumed) = decode(&[
+            IAC, DO, OPT_TTYPE, b'a', IAC, SB, OPT_TTYPE, TTYPE_SEND, IAC, SE, b'b',
+        ]);
+        assert_eq!(out, b"ab");
+        let mut expected = vec![IAC, WILL, OPT_TTYPE, IAC, SB, OPT_TTYPE, TTYPE_IS];
+        expected.extend_from_slice(TTYPE_NAME);
+        expected.extend_from_slice(&[IAC, SE]);
+        assert_eq!(responses, expected);
+        assert_eq!(consumed, 11);
     }
 
     #[test]
@@ -373,10 +521,10 @@ mod tests {
     }
 
     #[test]
-    fn unescapes_iac_data_bytes_and_skips_subnegotiations() {
-        // IAC IAC is a literal 0xFF; an NAWS-style subnegotiation is skipped.
+    fn unescapes_iac_data_bytes_and_swallows_unknown_subnegotiations() {
+        // IAC IAC is a literal 0xFF; an unrelated SB (option 99) is skipped.
         let (out, responses, consumed) =
-            decode(&[b'a', IAC, IAC, IAC, SB, 31, 0, 80, 0, 24, IAC, SE, b'b']);
+            decode(&[b'a', IAC, IAC, IAC, SB, 99, 0, 80, 0, 24, IAC, SE, b'b']);
         assert_eq!(out, &[b'a', 255, b'b']);
         assert!(responses.is_empty());
         assert_eq!(consumed, 13);
@@ -394,11 +542,24 @@ mod tests {
 
     #[test]
     fn recovers_from_illegal_iac_inside_subnegotiation() {
-        // IAC SB 31 IAC <junk> 1 IAC SE: the violating pair is skipped and the
+        // IAC SB 99 IAC <junk> 1 IAC SE: the violating pair is skipped and the
         // subnegotiation still closes cleanly instead of stalling the stream.
-        let (out, responses, consumed) = decode(&[b'a', IAC, SB, 31, IAC, 200, 1, IAC, SE, b'b']);
+        let (out, responses, consumed) = decode(&[b'a', IAC, SB, 99, IAC, 200, 1, IAC, SE, b'b']);
         assert_eq!(out, b"ab");
         assert!(responses.is_empty());
         assert_eq!(consumed, 10);
+    }
+
+    #[test]
+    fn naws_encoding_is_big_endian_and_clamped() {
+        assert_eq!(
+            encode_naws(120, 30),
+            vec![IAC, SB, OPT_NAWS, 0, 120, 0, 30, IAC, SE]
+        );
+        // A zero grid would be "unknown size" to many servers.
+        assert_eq!(
+            encode_naws(0, 0),
+            vec![IAC, SB, OPT_NAWS, 0, 1, 0, 1, IAC, SE]
+        );
     }
 }

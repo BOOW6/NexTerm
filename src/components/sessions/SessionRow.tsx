@@ -29,7 +29,9 @@ export default function SessionRow({
 
   return (
     <div
-      role="button"
+      role="treeitem"
+      aria-selected={active}
+      data-tree-node
       tabIndex={0}
       data-native-context-menu
       onContextMenu={(event) => {

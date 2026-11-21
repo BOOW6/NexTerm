@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FocusEvent as ReactFocusEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent,
+  type ReactNode
+} from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -38,6 +47,7 @@ import { useQuickConnectLauncher } from '../../features/workspace/useQuickConnec
 
 interface GroupSectionProps {
   title: string;
+  nodeKey: string;
   count: number;
   collapsed: boolean;
   onToggle: () => void;
@@ -48,6 +58,7 @@ interface GroupSectionProps {
 
 function GroupSection({
   title,
+  nodeKey,
   count,
   collapsed,
   onToggle,
@@ -56,9 +67,20 @@ function GroupSection({
   children
 }: GroupSectionProps) {
   return (
-    <section className="mb-0.5">
+    <section
+      role="treeitem"
+      aria-expanded={!collapsed}
+      aria-level={depth + 1}
+      aria-selected={false}
+      tabIndex={0}
+      data-tree-node
+      data-group-node={nodeKey}
+      className="mb-0.5"
+    >
       <button
         type="button"
+        tabIndex={-1}
+        aria-expanded={!collapsed}
         onClick={onToggle}
         style={{ paddingLeft: 6 + depth * 10 }}
         className="app-group-header flex w-full items-center gap-1 py-1 pr-1.5 text-meta font-emphasis text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
@@ -68,7 +90,11 @@ function GroupSection({
         <span className="flex-1 truncate text-left">{title}</span>
         <span className="text-muted-foreground">{count}</span>
       </button>
-      {collapsed ? null : <div className="app-list space-y-px">{children}</div>}
+      {collapsed ? null : (
+        <div role="group" aria-label={title} className="app-list space-y-px">
+          {children}
+        </div>
+      )}
     </section>
   );
 }
@@ -192,6 +218,88 @@ export default function SessionSidebar() {
 
   const handleOpen = (sessionId: string) => openSession(sessionId);
 
+  const treeRef = useRef<HTMLDivElement>(null);
+
+  const treeNodes = () =>
+    Array.from(treeRef.current?.querySelectorAll<HTMLElement>('[data-tree-node]') ?? []);
+
+  const focusTreeNode = (node: HTMLElement) => {
+    for (const other of treeNodes()) {
+      other.tabIndex = other === node ? 0 : -1;
+    }
+    node.focus();
+  };
+
+  const onTreeFocusCapture = (event: ReactFocusEvent<HTMLDivElement>) => {
+    const node = event.target;
+    if (node instanceof HTMLElement && node.hasAttribute('data-tree-node')) {
+      for (const other of treeNodes()) {
+        other.tabIndex = other === node ? 0 : -1;
+      }
+    }
+  };
+
+  const onTreeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const nodes = treeNodes();
+    const current = nodes.indexOf(document.activeElement as HTMLElement);
+    if (current === -1) {
+      return;
+    }
+    const node = nodes[current];
+    const groupKey = node.dataset.groupNode;
+    const collapsedGroup = groupKey !== undefined && Boolean(collapsed[groupKey]);
+
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        focusTreeNode(nodes[Math.min(nodes.length - 1, current + 1)]);
+        break;
+      case 'ArrowUp':
+        event.preventDefault();
+        if (current > 0) {
+          focusTreeNode(nodes[current - 1]);
+        }
+        break;
+      case 'Home':
+        event.preventDefault();
+        focusTreeNode(nodes[0]);
+        break;
+      case 'End':
+        event.preventDefault();
+        focusTreeNode(nodes[nodes.length - 1]);
+        break;
+      case 'ArrowRight':
+        if (groupKey && collapsedGroup) {
+          event.preventDefault();
+          toggleGroup(groupKey);
+        }
+        break;
+      case 'ArrowLeft':
+        if (groupKey && !collapsedGroup) {
+          event.preventDefault();
+          toggleGroup(groupKey);
+        } else if (!groupKey) {
+          // Move to the owning group header (previous group node in DOM order).
+          for (let index = current - 1; index >= 0; index -= 1) {
+            if (nodes[index].dataset.groupNode !== undefined) {
+              focusTreeNode(nodes[index]);
+              break;
+            }
+          }
+        }
+        break;
+      case 'Enter':
+      case ' ':
+        if (groupKey) {
+          event.preventDefault();
+          toggleGroup(groupKey);
+        }
+        break;
+      default:
+        break;
+    }
+  };
+
   const handleEdit = (sessionId: string) => openQuickConnect({ sessionId });
 
   const handleRemove = async (sessionId: string) => {
@@ -294,6 +402,7 @@ export default function SessionSidebar() {
     <GroupSection
       key={node.path}
       title={node.name}
+      nodeKey={node.path}
       count={groupSessionCount(node)}
       collapsed={Boolean(collapsed[node.path])}
       onToggle={() => toggleGroup(node.path)}
@@ -395,7 +504,15 @@ export default function SessionSidebar() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
+      <div
+        ref={treeRef}
+        role="tree"
+        aria-label={t('sidebar.title')}
+        aria-multiselectable={false}
+        onKeyDown={onTreeKeyDown}
+        onFocusCapture={onTreeFocusCapture}
+        className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2"
+      >
         {sessions.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-3 py-10 text-center">
             <TerminalSquare className="h-7 w-7 text-muted-foreground" />
@@ -412,6 +529,7 @@ export default function SessionSidebar() {
             {favorites.length > 0 ? (
               <GroupSection
                 title={t('sidebar.favorites')}
+                nodeKey="__favorites"
                 count={favorites.length}
                 collapsed={Boolean(collapsed['__favorites'])}
                 onToggle={() => toggleGroup('__favorites')}
@@ -444,6 +562,23 @@ export default function SessionSidebar() {
         role="separator"
         aria-orientation="vertical"
         aria-label={t('ui.resizeSidebar')}
+        aria-valuenow={Math.round(width)}
+        aria-valuemin={190}
+        aria-valuemax={420}
+        tabIndex={0}
+        onKeyDown={(event) => {
+          const step = event.shiftKey ? 1 : 16;
+          if (event.key === 'ArrowLeft') {
+            event.preventDefault();
+            setWidth((current) => Math.max(190, current - step));
+          } else if (event.key === 'ArrowRight') {
+            event.preventDefault();
+            setWidth((current) => Math.min(420, current + step));
+          } else if (event.key === 'Home') {
+            event.preventDefault();
+            setWidth(240);
+          }
+        }}
         onPointerDown={(event) => {
           event.preventDefault();
           resizingRef.current = true;

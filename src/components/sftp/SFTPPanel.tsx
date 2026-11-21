@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent
+} from 'react';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { openPath } from '@tauri-apps/plugin-opener';
 import type { IDockviewPanelProps } from 'dockview-react';
@@ -17,6 +23,7 @@ import { writeText as writeClipboardText } from '@tauri-apps/plugin-clipboard-ma
 import {
   listSftp,
   remoteEditOpen,
+  remoteEditStop,
   listenSftpTransferDone,
   mkdirSftp,
   removeSftp,
@@ -311,7 +318,8 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         } else {
           unlisten = dispose;
         }
-      });
+      })
+      .catch(() => undefined);
     return () => {
       cancelled = true;
       unlisten?.();
@@ -397,13 +405,33 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
 
   // Download the file to a scratch copy and open it in the local editor;
   // the backend watcher syncs saves back automatically.
+  const activeRemoteEdits = useRef(new Set<{ sshId: string; remotePath: string }>());
+
+  const stopRemoteEditWatch = (sshIdForEdit: string, remotePath: string): void => {
+    for (const entryKey of activeRemoteEdits.current) {
+      if (entryKey.sshId === sshIdForEdit && entryKey.remotePath === remotePath) {
+        activeRemoteEdits.current.delete(entryKey);
+        break;
+      }
+    }
+    void remoteEditStop(sshIdForEdit, remotePath).catch(() => undefined);
+  };
+
   const handleRemoteEdit = async (entry: SftpEntry) => {
     if (!sshId) {
       return;
     }
     try {
       const session = await remoteEditOpen(sshId, entry.path);
-      await openPath(session.tempPath);
+      activeRemoteEdits.current.add({ sshId, remotePath: entry.path });
+      try {
+        await openPath(session.tempPath);
+      } catch (reason) {
+        // The editor never launched, so stop the watcher instead of polling a
+        // scratch file nobody will ever save.
+        stopRemoteEditWatch(sshId, entry.path);
+        throw reason;
+      }
       toast({ title: t('sftp.edit.openedToast', { name: entry.name }), variant: 'success' });
     } catch (reason) {
       toast({
@@ -413,6 +441,18 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
       });
     }
   };
+
+  // Closing the panel ends the editing session: watchers must not keep
+  // polling scratch copies for a pane that is gone.
+  useEffect(() => {
+    const edits = activeRemoteEdits;
+    return () => {
+      for (const openEdit of edits.current) {
+        void remoteEditStop(openEdit.sshId, openEdit.remotePath).catch(() => undefined);
+      }
+      edits.current.clear();
+    };
+  }, []);
 
   const handleDownload = async (entry: SftpEntry) => {
     if (!sshId || !boundSessionId) {
@@ -628,6 +668,56 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
 
   const canBrowse = Boolean(sshId);
 
+  // Roving tabindex for the file rows: one tab stop for the whole list,
+  // arrow keys move the highlighted row.
+  const rowRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const [rovingPath, setRovingPath] = useState<string | null>(null);
+  useEffect(() => {
+    setRovingPath(null);
+  }, [path]);
+
+  const focusRow = (index: number) => {
+    const clamped = Math.max(0, Math.min(entries.length - 1, index));
+    const element = rowRefs.current[clamped];
+    if (element) {
+      setRovingPath(entries[clamped]?.path ?? null);
+      element.focus();
+    }
+  };
+
+  const handleRowKeyDown = (
+    event: ReactKeyboardEvent<HTMLDivElement>,
+    entry: SftpEntry,
+    index: number
+  ) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      focusRow(index + 1);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      focusRow(index - 1);
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      focusRow(0);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      focusRow(entries.length - 1);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      if (entry.is_dir) {
+        openEntry(entry);
+      } else {
+        void handleDownload(entry);
+      }
+    } else if (event.key === 'F2') {
+      event.preventDefault();
+      void promptName('rename', entry);
+    } else if (event.key === 'Delete') {
+      event.preventDefault();
+      void handleDelete(entry);
+    }
+  };
+
   return (
     <div ref={panelRef} className="relative flex h-full flex-col bg-surface">
       <div className="flex h-7 shrink-0 items-center gap-1 border-b border-border px-1">
@@ -770,9 +860,15 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         ) : entries.length === 0 ? (
           <p className="px-3 py-6 text-center text-meta text-muted">{t('sftp.state.empty')}</p>
         ) : (
-          entries.map((entry) => (
+          entries.map((entry, index) => (
             <div
               key={entry.path}
+              ref={(element) => {
+                rowRefs.current[index] = element;
+              }}
+              tabIndex={(rovingPath === null ? index === 0 : rovingPath === entry.path) ? 0 : -1}
+              onFocus={() => setRovingPath(entry.path)}
+              onKeyDown={(event) => handleRowKeyDown(event, entry, index)}
               data-native-context-menu
               draggable
               onDragStart={(event) => {
@@ -825,6 +921,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
               className={cn(
                 'grid h-7 grid-cols-[1fr_62px_104px_42px] items-center border-b border-border-muted/60 px-2 text-meta',
                 'hover:bg-row-hover',
+                'focus-visible:outline-none focus-visible:bg-row-hover focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent',
                 entry.is_dir && 'cursor-pointer',
                 dragOverDir === entry.path && 'bg-accent/15 ring-1 ring-inset ring-accent'
               )}

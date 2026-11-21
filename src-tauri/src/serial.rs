@@ -49,6 +49,16 @@ struct SerialOutputPayload {
     data: String,
 }
 
+/// Why a session ended: `closed` (the user disconnected), `eof`, or `error`
+/// (the device was unplugged / the driver failed). Without the reason the UI
+/// cannot tell a deliberate close from an adapter that vanished.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SerialClosedPayload {
+    reason: &'static str,
+    message: Option<String>,
+}
+
 fn validate_session_id(id: &str) -> anyhow::Result<()> {
     if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
         return Err(anyhow!("invalid serial session id"));
@@ -186,6 +196,8 @@ impl SerialSessionManager {
             let mut port = port;
             let mut decoder = crate::text_stream::Utf8StreamDecoder::new();
             let mut buffer = [0u8; READ_BUFFER];
+            let mut close_reason: &'static str = "closed";
+            let mut close_message: Option<String> = None;
             loop {
                 if read_closed.load(Ordering::SeqCst) {
                     break;
@@ -210,10 +222,25 @@ impl SerialSessionManager {
                     {
                         continue;
                     }
-                    Err(_) => break,
+                    // The read only fails after the user disconnected (the
+                    // handle was dropped, so `closed` is already set) when the
+                    // device went away: report that distinct reason.
+                    Err(error) => {
+                        if !read_closed.load(Ordering::SeqCst) {
+                            close_reason = "error";
+                            close_message = Some(error.to_string());
+                        }
+                        break;
+                    }
                 }
             }
-            let _ = app_handle.emit(&format!("serial-closed-{}", event_id), ());
+            let _ = app_handle.emit(
+                &format!("serial-closed-{}", event_id),
+                SerialClosedPayload {
+                    reason: close_reason,
+                    message: close_message,
+                },
+            );
             // Only remove our own entry: the id may already have been
             // recycled by a newer session.
             let mut sessions = sessions.lock().unwrap_or_else(|p| p.into_inner());

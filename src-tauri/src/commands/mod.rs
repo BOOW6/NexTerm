@@ -597,13 +597,16 @@ pub async fn telnet_write(
 }
 
 #[tauri::command]
-pub fn telnet_resize(
+pub async fn telnet_resize(
     state: State<'_, TelnetSessionManager>,
     id: String,
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    state.resize(&id, cols, rows).map_err(|err| err.to_string())
+    state
+        .resize(&id, cols, rows)
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]

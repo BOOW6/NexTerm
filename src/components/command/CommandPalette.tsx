@@ -67,7 +67,12 @@ function CommandWindow({ children, onClose }: { children: ReactNode; onClose: ()
         onClick={onClose}
         aria-hidden="true"
       />
-      <div className="relative z-10 w-full max-w-lg animate-zoom-in overflow-hidden rounded-md border border-border-strong bg-surface-elevated shadow-popup">
+      <div
+        className="relative z-10 w-full max-w-lg animate-zoom-in overflow-hidden rounded-md border border-border-strong bg-surface-elevated shadow-popup"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="palette-title"
+      >
         {children}
       </div>
     </div>,
@@ -100,6 +105,7 @@ export default function CommandPalette() {
   } = useWorkspace();
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(0);
@@ -418,8 +424,19 @@ export default function CommandPalette() {
     if (open) {
       setQuery('');
       setSelected(0);
+      previouslyFocusedRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
       const timer = window.setTimeout(() => inputRef.current?.focus(), 0);
-      return () => window.clearTimeout(timer);
+      return () => {
+        window.clearTimeout(timer);
+        // Returning focus only on close; this cleanup also runs on unmount,
+        // when the app window itself is going away.
+        const previous = previouslyFocusedRef.current;
+        previouslyFocusedRef.current = null;
+        if (previous?.isConnected) {
+          previous.focus();
+        }
+      };
     }
   }, [open]);
 
@@ -448,7 +465,7 @@ export default function CommandPalette() {
   return (
     <CommandWindow onClose={closeCommandPalette}>
       <div className="app-dialog-header flex items-center justify-between border-b border-border bg-panel-title px-2 py-1">
-        <span className="app-dialog-title text-xs font-emphasis text-foreground">
+        <span id="palette-title" className="app-dialog-title text-xs font-emphasis text-foreground">
           {t('palette.title')}
         </span>
         <button
@@ -476,6 +493,14 @@ export default function CommandPalette() {
             } else if (event.key === 'ArrowUp') {
               event.preventDefault();
               setSelected((current) => Math.max(0, current - 1));
+            } else if (event.key === 'Home') {
+              event.preventDefault();
+              setSelected(0);
+            } else if (event.key === 'End') {
+              event.preventDefault();
+              if (filtered.length > 0) {
+                setSelected(filtered.length - 1);
+              }
             } else if (event.key === 'Enter') {
               event.preventDefault();
               const item = filtered[selected];
@@ -488,11 +513,21 @@ export default function CommandPalette() {
           }}
           placeholder={t('palette.searchPlaceholder')}
           aria-label={t('palette.searchLabel')}
+          role="combobox"
+          aria-expanded="true"
+          aria-controls="palette-listbox"
+          aria-autocomplete="list"
+          aria-activedescendant={filtered.length > 0 ? `palette-option-${selected}` : undefined}
           className="h-8 w-full bg-transparent pl-8 pr-3 text-xs text-foreground outline-none placeholder:text-muted-foreground"
         />
       </div>
 
-      <div className="max-h-80 overflow-y-auto p-1">
+      <div
+        id="palette-listbox"
+        role="listbox"
+        aria-label={t('palette.searchLabel')}
+        className="max-h-80 overflow-y-auto p-1"
+      >
         {filtered.length === 0 ? (
           <p className="px-2 py-6 text-center text-meta text-muted">{t('palette.noResults')}</p>
         ) : (
@@ -500,9 +535,12 @@ export default function CommandPalette() {
             const Icon = item.icon;
             const showGroup = index === 0 || filtered[index - 1].group !== item.group;
             return (
-              <div key={item.id}>
+              <div key={item.id} role="presentation">
                 {showGroup ? (
-                  <div className="px-2 pb-0.5 pt-1 text-tiny font-emphasis text-muted-foreground">
+                  <div
+                    role="presentation"
+                    className="px-2 pb-0.5 pt-1 text-tiny font-emphasis text-muted-foreground"
+                  >
                     {t(GROUP_LABEL_KEY[item.group])}
                   </div>
                 ) : null}
@@ -511,6 +549,10 @@ export default function CommandPalette() {
                     itemRefs.current[index] = element;
                   }}
                   type="button"
+                  id={`palette-option-${index}`}
+                  role="option"
+                  aria-selected={index === selected}
+                  tabIndex={-1}
                   onMouseEnter={() => setSelected(index)}
                   onClick={() => execute(item)}
                   className={cn(

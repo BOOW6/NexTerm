@@ -1321,7 +1321,14 @@ impl SshManager {
         let log = Arc::new(LogSink::new(log_path.as_deref()));
         let read_log = log.clone();
 
-        tokio::spawn(async move {
+        // Clones for the panic backstop: the read loop owns the originals.
+        let watchdog_app = app.clone();
+        let watchdog_id = id.clone();
+        let watchdog_forwards = self.forwards.clone();
+        let watchdog_sessions = self.sessions.clone();
+        let watchdog_zmodem = self.zmodem.clone();
+
+        let reader_task = tokio::spawn(async move {
             // Separate decoders per stream: a stderr packet must not complete
             // (or corrupt) a stdout sequence that is still missing bytes.
             let mut output_decoder = crate::text_stream::Utf8StreamDecoder::new();
@@ -1418,6 +1425,27 @@ impl SshManager {
             // local listeners are freed and the UI stops listing them.
             stop_session_forwards(&reap_forwards, &app_handle, &event_id).await;
             lock(&reap_sessions).remove(&event_id);
+        });
+
+        // A panicking read loop (typically a russh internal) would otherwise
+        // leave a dead session listed with no reader and no closed event:
+        // repeat the cleanup a normal shutdown performs.
+        tokio::spawn(async move {
+            if let Err(join_error) = reader_task.await {
+                eprintln!("[ssh] {watchdog_id}: read loop aborted: {join_error}");
+                if let Ok(mut map) = watchdog_zmodem.lock() {
+                    map.remove(&watchdog_id);
+                }
+                let _ = watchdog_app.emit(
+                    &format!("ssh-closed-{}", watchdog_id),
+                    SshClosedPayload {
+                        reason: "dropped",
+                        exit_status: None,
+                    },
+                );
+                stop_session_forwards(&watchdog_forwards, &watchdog_app, &watchdog_id).await;
+                lock(&watchdog_sessions).remove(&watchdog_id);
+            }
         });
 
         // A disconnect during the auth/handshake phases may have given up on

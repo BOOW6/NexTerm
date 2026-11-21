@@ -44,7 +44,8 @@ import {
   disconnectSerial,
   listenSerialClosed,
   listenSerialOutput,
-  writeSerial
+  writeSerial,
+  type SerialClosedPayload
 } from '../../hooks/useTauriSerial';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -213,6 +214,15 @@ function errorMessage(error: unknown): string {
     return error.message;
   }
   return String(error);
+}
+
+/**
+ * Fire-and-forget a disconnect. A rejection means the backend handle leaked
+ * (open COM port / stale session) after the pane is already gone, so there is
+ * no UI left to report it in; surface it on the developer console instead.
+ */
+function disconnectQuietly(promise: Promise<unknown>): void {
+  promise.catch((error) => console.warn('[terminal] disconnect failed', error));
 }
 
 const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
@@ -473,7 +483,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       const replyToLocalPty = (data: string): void => {
         const target = resizeTarget;
         if (target?.transport === 'local' && target.id) {
-          void writePty(target.id, data);
+          writePty(target.id, data).catch(() => undefined);
           return;
         }
         pendingPtyReplies.push(data);
@@ -486,7 +496,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         }
         const queued = pendingPtyReplies.splice(0, pendingPtyReplies.length);
         for (const data of queued) {
-          void writePty(target.id, data);
+          writePty(target.id, data).catch(() => undefined);
         }
       };
 
@@ -881,6 +891,24 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       };
       let connectSshTransport: (instance: Terminal) => Promise<void> = async () => {};
 
+      // A rejected keystroke write means the backend session is gone while no
+      // closed event reached this pane (zombie transport). Throttle to one
+      // notice per burst so continuous typing does not spam the buffer.
+      let lastWriteFailureAt = 0;
+      const reportWriteFailure = (instance: Terminal): void => {
+        const now = Date.now();
+        if (disposed || now - lastWriteFailureAt < 5_000) {
+          return;
+        }
+        lastWriteFailureAt = now;
+        void writeScrollbackNotice(instance, `\x1b[33m[${t('terminal.writeFailed')}]\x1b[0m`, true);
+      };
+
+      const serialCloseNotice = (payload: SerialClosedPayload): string =>
+        payload.reason === 'error' && payload.message
+          ? t('terminal.serialLost', { message: payload.message })
+          : t('terminal.serialDisconnected');
+
       const scheduleReconnect = (instance: Terminal, reason: string) => {
         if (disposed || manualDisconnect || reconnectTimer !== null) {
           return;
@@ -931,7 +959,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           // A previous attempt may have established a connection but failed
           // while registering listeners. Do not leak it on the next attempt.
           useConnectionStore.getState().removeConnection(sessionId, backendId);
-          void disconnectSsh(backendId);
+          disconnectQuietly(disconnectSsh(backendId));
           backendId = '';
           backendIdRef.current = '';
           resizeTarget = null;
@@ -1082,7 +1110,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           }
 
           if (disposed || generation !== transportGeneration || closedEarly) {
-            void disconnectSsh(connectedId);
+            disconnectQuietly(disconnectSsh(connectedId));
             if (closedEarly && !disposed && generation === transportGeneration) {
               clearTransportListeners();
               useSessionStore.getState().setStatus(sessionId, 'error');
@@ -1112,7 +1140,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           flushQueuedBackendResize(instance);
 
           dataDisposable = instance.onData((data) => {
-            void writeSsh(connectedId, data);
+            writeSsh(connectedId, data).catch(() => reportWriteFailure(instance));
             broadcastInput(sessionId, data);
             recordKeystroke(data);
           });
@@ -1254,7 +1282,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           flushQueuedBackendResize(instance);
 
           dataDisposable = instance.onData((data) => {
-            void writePty(createdId, data);
+            writePty(createdId, data).catch(() => reportWriteFailure(instance));
             broadcastInput(sessionId, data);
             recordKeystroke(data);
           });
@@ -1285,7 +1313,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         clearTransportListeners();
         const generation = ++transportGeneration;
         if (backendId) {
-          void disconnectTelnet(backendId);
+          disconnectQuietly(disconnectTelnet(backendId));
           backendId = '';
           backendIdRef.current = '';
           resizeTarget = null;
@@ -1351,7 +1379,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           });
           if (disposed || generation !== transportGeneration || closedEarly) {
             useConnectionStore.getState().removeTransport(sessionId, 'telnet', connectedId);
-            void disconnectTelnet(connectedId);
+            disconnectQuietly(disconnectTelnet(connectedId));
             if (closedEarly && !disposed && generation === transportGeneration) {
               clearTransportListeners();
               useSessionStore.getState().setStatus(sessionId, 'idle');
@@ -1370,13 +1398,14 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           resizeTarget = { id: connectedId, transport: 'telnet' };
           useConnectionStore.getState().addTransport(sessionId, 'telnet', connectedId);
           useSessionStore.getState().setStatus(sessionId, 'connected');
-          // Telnet does not negotiate window size (backend no-op), but keep
-          // the queue drained so a stale entry cannot leak into a later
-          // transport of this session.
+          // Drain a resize queued while connecting, then report the real grid
+          // once: the server assumes 80x24 until NAWS is negotiated, and the
+          // dedup in backendResize would skip an unchanged size.
           flushQueuedBackendResize(instance);
+          resizeTelnet(connectedId, instance.cols, instance.rows).catch(() => undefined);
 
           dataDisposable = instance.onData((data) => {
-            void writeTelnet(connectedId, data);
+            writeTelnet(connectedId, data).catch(() => reportWriteFailure(instance));
             broadcastInput(sessionId, data);
             recordKeystroke(data);
           });
@@ -1407,7 +1436,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         clearTransportListeners();
         const generation = ++transportGeneration;
         if (backendId) {
-          void disconnectSerial(backendId);
+          disconnectQuietly(disconnectSerial(backendId));
           backendId = '';
           backendIdRef.current = '';
           resizeTarget = null;
@@ -1438,7 +1467,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           }
           unlistenOutput = stopOutput;
 
-          const stopClosed = await listenSerialClosed(id, () => {
+          const stopClosed = await listenSerialClosed(id, (payload) => {
             if (disposed || generation !== transportGeneration) {
               return;
             }
@@ -1455,7 +1484,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             useSessionStore.getState().setStatus(sessionId, 'idle');
             void writeScrollbackNotice(
               instance,
-              `\x1b[33m[${t('terminal.serialDisconnected')}][0m`,
+              `\x1b[33m[${serialCloseNotice(payload)}][0m`,
               true
             );
           });
@@ -1472,7 +1501,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             logPath: sessionLogTarget() || undefined
           });
           if (disposed || generation !== transportGeneration || closedEarly) {
-            void disconnectSerial(connectedId);
+            disconnectQuietly(disconnectSerial(connectedId));
             if (closedEarly && !disposed && generation === transportGeneration) {
               clearTransportListeners();
               useSessionStore.getState().setStatus(sessionId, 'idle');
@@ -1492,7 +1521,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           useSessionStore.getState().setStatus(sessionId, 'connected');
 
           dataDisposable = instance.onData((data) => {
-            void writeSerial(connectedId, data);
+            writeSerial(connectedId, data).catch(() => reportWriteFailure(instance));
             broadcastInput(sessionId, data);
             recordKeystroke(data);
           });
@@ -2397,13 +2426,13 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         if (backendId) {
           if (isSsh) {
             useConnectionStore.getState().removeConnection(sessionId, backendId);
-            void disconnectSsh(backendId);
+            disconnectQuietly(disconnectSsh(backendId));
           } else if (transport === 'telnet') {
-            void disconnectTelnet(backendId);
+            disconnectQuietly(disconnectTelnet(backendId));
           } else if (transport === 'serial') {
             // Serial has its own manager: closePtySession would report
             // "session not found" and leave the COM port open forever.
-            void disconnectSerial(backendId);
+            disconnectQuietly(disconnectSerial(backendId));
           } else {
             void closePtySession(backendId);
           }
@@ -2411,7 +2440,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           // The attempt is still in its handshake (typically waiting for a
           // host-key decision); tell the backend to cancel it so it can't
           // finish into an unwatched session.
-          void disconnectSsh(pendingConnectId);
+          disconnectQuietly(disconnectSsh(pendingConnectId));
         }
 
         // Closing the last terminal panel of a session clears its status
