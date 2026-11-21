@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { isSshBackedSession } from '../../lib/sessionVisuals';
 import { tStatic } from '../../i18n';
 import { openModalWindow } from '../../lib/appWindows';
 import { localizeBackendError } from '../../lib/backendErrors';
@@ -60,7 +61,7 @@ function buildJumpCandidates(
   editingId?: string
 ): Array<{ id: string; title: string }> {
   const candidates = sessions
-    .filter((item) => (item.kind === 'ssh' || item.kind === 'sftp') && item.id !== editingId)
+    .filter((item) => isSshBackedSession(item.kind) && item.id !== editingId)
     .filter((item) => !jumpChainReaches(item.id, editingId, sessions))
     .map((item) => ({ id: item.id, title: item.title }));
 
@@ -148,7 +149,7 @@ async function applyQuickConnectResult(
 ): Promise<void> {
   const isRemote = result.draft.kind !== 'local';
   // Telnet authenticates in-band; only SSH/SFTP carry NexTerm credentials.
-  const hasAuth = result.draft.kind === 'ssh' || result.draft.kind === 'sftp';
+  const hasAuth = isSshBackedSession(result.draft.kind);
 
   if (hasAuth && result.draft.jumpSessionId) {
     const jumpId = result.draft.jumpSessionId;

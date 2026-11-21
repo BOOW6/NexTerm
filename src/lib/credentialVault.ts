@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { isSshBackedSession } from './sessionVisuals';
 import { useCredentialStore } from '../stores/credentialStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -130,7 +131,9 @@ export async function hydrateCredentialsFromVault(): Promise<number> {
   let restored = 0;
 
   for (const session of sessions) {
-    if (session.kind === 'local') {
+    // Strict SSH-backed check: telnet/serial never store vault entries,
+    // so hydrating them would only produce guaranteed misses.
+    if (!isSshBackedSession(session.kind)) {
       continue;
     }
     try {

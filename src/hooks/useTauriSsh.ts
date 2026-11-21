@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import type { SftpConflictPolicy } from '../types/session';
 import { listen } from '@tauri-apps/api/event';
 
 export interface SshOutputPayload {
@@ -111,7 +112,7 @@ export interface SftpEntry {
   permissions: number | null;
 }
 
-export type SftpConflictPolicy = 'ask' | 'overwrite' | 'skip' | 'rename' | 'newer';
+export type { SftpConflictPolicy } from '../types/session';
 
 export interface SftpTransferOptions {
   recursive: boolean;

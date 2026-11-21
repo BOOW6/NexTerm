@@ -17,6 +17,7 @@ import { useSettingsSync } from './hooks/useSettingsSync';
 import { useSessionLogRootSync } from './hooks/useSessionLogRootSync';
 import { useSessionLogEvents } from './hooks/useSessionLogEvents';
 import { useSnippetSync } from './hooks/useSnippetSync';
+import { useMacroSync } from './hooks/useMacroSync';
 import { useWindowState } from './hooks/useWindowState';
 import { useWindowTitle } from './hooks/useWindowTitle';
 import { useVaultEvents } from './hooks/useVaultEvents';
@@ -33,6 +34,7 @@ function AppShell() {
   useGlobalShortcuts();
   useSettingsSync();
   useSnippetSync();
+  useMacroSync();
   useSessionLogRootSync();
   useSessionLogEvents();
   useVaultEvents();

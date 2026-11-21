@@ -16,6 +16,13 @@ const SESSION_STATUS_COLOR: Record<SessionStatus, string> = {
   error: 'bg-error'
 };
 
+/** Sessions whose transport is backed by the SSH connection manager: SSH
+ * and SFTP share one backend connection per session, which the port-forward
+ * entry, SFTP panel and credential vault all key off. */
+export function isSshBackedSession(kind: SessionKind): boolean {
+  return kind === 'ssh' || kind === 'sftp';
+}
+
 export function sessionStatusDot(status: SessionStatus, pulse = false): string {
   const color = SESSION_STATUS_COLOR[status];
   return pulse && status === 'connecting' ? `${color} animate-pulse` : color;

@@ -1,4 +1,5 @@
 import { swallowListenError } from '../../lib/eventListener';
+import { isSshBackedSession } from '../../lib/sessionVisuals';
 import {
   useCallback,
   useEffect,
@@ -35,6 +36,7 @@ import {
 import { startSftpTransfer } from '../../lib/sftpTransfer';
 import { currentSshId, useConnectionStore } from '../../stores/connectionStore';
 import { useSessionStore } from '../../stores/sessionStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { useTransferStore } from '../../stores/transferStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useWorkspace } from '../../features/workspace/useWorkspace';
@@ -47,6 +49,7 @@ import { cn } from '../../lib/cn';
 import { formatBytes } from '../../lib/format';
 import { confirmAction, promptText, showNativeContextMenu } from '../../lib/appWindows';
 import { localizeBackendError } from '../../lib/backendErrors';
+import { joinRemotePath, remoteBaseName, remoteParentPath } from '../../lib/remotePath';
 
 function formatTime(mtime: number, locale: string): string {
   if (!mtime) {
@@ -60,34 +63,6 @@ function formatPermissions(permissions: number | null): string {
     return '-';
   }
   return (permissions & 0o777).toString(8).padStart(3, '0');
-}
-
-function joinRemote(path: string, name: string): string {
-  return path.endsWith('/') ? `${path}${name}` : `${path}/${name}`;
-}
-
-function baseName(path: string): string {
-  return path.split(/[\\/]/).pop() ?? 'file';
-}
-
-const CONFLICT_KEY = 'nexterm.sftp.conflict.v1';
-
-function readConflict(): SftpConflictPolicy {
-  try {
-    const value = window.localStorage.getItem(CONFLICT_KEY);
-    if (
-      value === 'ask' ||
-      value === 'overwrite' ||
-      value === 'skip' ||
-      value === 'rename' ||
-      value === 'newer'
-    ) {
-      return value;
-    }
-    return 'ask';
-  } catch {
-    return 'ask';
-  }
 }
 
 export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
@@ -110,26 +85,38 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
   const sshId = currentSshId(connection);
   const sessionTitle = session?.title;
   // SFTP rides an SSH subsystem: only SSH/SFTP sessions can ever provide one.
-  const remoteSessions = sessions.filter((item) => item.kind === 'ssh' || item.kind === 'sftp');
+  const remoteSessions = sessions.filter((item) => isSshBackedSession(item.kind));
 
   const [path, setPath] = useState('/');
   const [entries, setEntries] = useState<SftpEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
-  const [conflict, setConflict] = useState<SftpConflictPolicy>(readConflict);
+  // Shared setting: several panels of one session must agree on the policy.
+  const conflict = useSettingsStore((state) => state.sftpConflictPolicy);
+  const setConflict = (policy: SftpConflictPolicy) =>
+    useSettingsStore.getState().setSftpConflictPolicy(policy);
   const panelRef = useRef<HTMLDivElement>(null);
   const [dropActive, setDropActive] = useState(false);
   const dragRemoteRef = useRef<string | null>(null);
   const [dragOverDir, setDragOverDir] = useState<string | null>(null);
 
   useEffect(() => {
+    // One-time migration: the policy used to live in a panel-local
+    // localStorage key; pull it into the shared settings store and drop it.
     try {
-      window.localStorage.setItem(CONFLICT_KEY, conflict);
+      const legacy = window.localStorage.getItem('nexterm.sftp.conflict.v1');
+      if (legacy) {
+        window.localStorage.removeItem('nexterm.sftp.conflict.v1');
+        const store = useSettingsStore.getState();
+        if (store.sftpConflictPolicy === 'ask' && legacy !== 'ask') {
+          store.setSftpConflictPolicy(legacy as SftpConflictPolicy);
+        }
+      }
     } catch {
       /* storage unavailable */
     }
-  }, [conflict]);
+  }, []);
 
   useEffect(() => {
     setPath('/');
@@ -209,13 +196,12 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
     if (path === '/') {
       return;
     }
-    const parent = path.replace(/\/+$/, '').split('/').slice(0, -1).join('/');
-    setPath(parent || '/');
+    setPath(remoteParentPath(path));
   };
 
   const openEntry = (entry: SftpEntry) => {
     if (entry.is_dir) {
-      setPath(entry.path.startsWith('/') ? entry.path : `${path}/${entry.name}`);
+      setPath(entry.path.startsWith('/') ? entry.path : joinRemotePath(path, entry.name));
     }
   };
 
@@ -232,9 +218,9 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
           await startSftpTransfer({
             sessionId: boundSessionId,
             direction: 'upload',
-            name: baseName(localPath),
+            name: remoteBaseName(localPath),
             localPath,
-            remotePath: joinRemote(path, baseName(localPath)),
+            remotePath: joinRemotePath(path, remoteBaseName(localPath)),
             recursive: true,
             conflict
           });
@@ -265,7 +251,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
       if (!name) {
         return;
       }
-      const target = joinRemote(targetDir, name);
+      const target = joinRemotePath(targetDir, name);
       if (target === sourcePath) {
         return;
       }
@@ -346,9 +332,9 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         await startSftpTransfer({
           sessionId: boundSessionId,
           direction: 'upload',
-          name: baseName(localPath),
+          name: remoteBaseName(localPath),
           localPath,
-          remotePath: joinRemote(path, baseName(localPath)),
+          remotePath: joinRemotePath(path, remoteBaseName(localPath)),
           conflict
         });
       }
@@ -382,13 +368,13 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         return;
       }
 
-      const name = baseName(selected);
+      const name = remoteBaseName(selected);
       await startSftpTransfer({
         sessionId: boundSessionId,
         direction: 'upload',
         name,
         localPath: selected,
-        remotePath: joinRemote(path, name),
+        remotePath: joinRemotePath(path, name),
         recursive: true,
         conflict
       });
@@ -518,7 +504,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
     }
 
     try {
-      await mkdirSftp(sshId, joinRemote(path, name));
+      await mkdirSftp(sshId, joinRemotePath(path, name));
       refresh();
       toast({ title: t('sftp.folder.createdToast', { name }), variant: 'success' });
     } catch (reason) {
@@ -536,7 +522,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
     }
 
     try {
-      await renameSftp(sshId, entry.path, joinRemote(path, name));
+      await renameSftp(sshId, entry.path, joinRemotePath(path, name));
       refresh();
       toast({ title: t('sftp.rename.successToast'), variant: 'success' });
     } catch (reason) {

@@ -179,13 +179,23 @@ export default function SessionSidebar() {
   const [query, setQuery] = useState('');
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [width, setWidth] = useState(() => {
-    const saved = Number(window.localStorage.getItem('nexterm.sidebar.width'));
-    return Number.isFinite(saved) && saved >= 190 && saved <= 420 ? saved : 240;
+    // localStorage can throw (disabled/storage full): degrade to the default
+    // width instead of crashing the whole sidebar.
+    try {
+      const saved = Number(window.localStorage.getItem('nexterm.sidebar.width'));
+      return Number.isFinite(saved) && saved >= 190 && saved <= 420 ? saved : 240;
+    } catch {
+      return 240;
+    }
   });
   const resizingRef = useRef(false);
 
   useEffect(() => {
-    window.localStorage.setItem('nexterm.sidebar.width', String(Math.round(width)));
+    try {
+      window.localStorage.setItem('nexterm.sidebar.width', String(Math.round(width)));
+    } catch {
+      /* storage unavailable */
+    }
   }, [width]);
 
   const handleResizeMove = (event: PointerEvent<HTMLDivElement>) => {

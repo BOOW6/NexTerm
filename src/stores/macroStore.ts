@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { emit } from '@tauri-apps/api/event';
 
 export interface MacroStep {
   /** Keystroke chunk exactly as the terminal delivered it. */
@@ -19,13 +20,26 @@ interface MacroState {
   macros: Macro[];
   save: (name: string, steps: MacroStep[]) => Macro;
   remove: (id: string) => void;
+  /** Mirror another window's list; never broadcasts (the sender already did). */
+  replaceMacros: (incoming: unknown) => void;
 }
 
 export const MACRO_DELAY_CAP_MS = 3000;
 
+/**
+ * Macros are edited from both windows (command palette records, settings
+ * removes) while each window keeps its own zustand instance over the shared
+ * localStorage key. Every mutation broadcasts so the other side mirrors it
+ * instead of serving stale macros until a restart (same mechanism as
+ * snippets).
+ */
+function broadcastMacrosChanged(macros: Macro[]): void {
+  void emit('nexterm-macros-changed', { macros }).catch(() => undefined);
+}
+
 export const useMacroStore = create<MacroState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       macros: [],
 
       save: (name, steps) => {
@@ -36,11 +50,20 @@ export const useMacroStore = create<MacroState>()(
           createdAt: Date.now()
         };
         set((state) => ({ macros: [...state.macros, macro] }));
+        broadcastMacrosChanged(get().macros);
         return macro;
       },
 
       remove: (id) => {
         set((state) => ({ macros: state.macros.filter((macro) => macro.id !== id) }));
+        broadcastMacrosChanged(get().macros);
+      },
+
+      replaceMacros: (incoming) => {
+        if (!Array.isArray(incoming)) {
+          return;
+        }
+        set({ macros: incoming as Macro[] });
       }
     }),
     { name: 'nexterm.macros.v1' }

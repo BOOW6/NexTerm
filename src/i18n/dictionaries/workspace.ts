@@ -21,6 +21,7 @@ export const ZH: Dictionary = {
   'quickConnect.shellHint':
     '本地会话启动的 Shell；「系统默认」在 Windows 上为 cmd.exe，其他平台跟随登录 Shell。',
   'quickConnect.shellExecutableLabel': '可执行文件',
+  'quickConnect.shellLabel': 'Shell 类型',
   'quickConnect.shellCommandPlaceholder': 'pwsh.exe 或 C:\\Program Files\\Git\\bin\\bash.exe',
   'quickConnect.shellArgsLabel': '启动参数（可选）',
   'quickConnect.shellArgsPlaceholder': '--cd ~（空格分隔，双引号包裹含空格的参数）',
@@ -232,6 +233,7 @@ export const EN: Dictionary = {
   'quickConnect.shellHint':
     'Shell started for local sessions; "System default" is cmd.exe on Windows and the login shell on other platforms.',
   'quickConnect.shellExecutableLabel': 'Executable',
+  'quickConnect.shellLabel': 'Shell',
   'quickConnect.shellCommandPlaceholder': 'pwsh.exe or C:\\Program Files\\Git\\bin\\bash.exe',
   'quickConnect.shellArgsLabel': 'Launch arguments (optional)',
   'quickConnect.shellArgsPlaceholder':

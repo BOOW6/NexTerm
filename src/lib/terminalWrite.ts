@@ -1,4 +1,5 @@
 import { currentSshId, transportIds, useConnectionStore } from '../stores/connectionStore';
+import { isSshBackedSession } from './sessionVisuals';
 import { writePty } from '../hooks/useTauriPty';
 import { writeSsh } from '../hooks/useTauriSsh';
 import { writeTelnet } from '../hooks/useTauriTelnet';
@@ -21,7 +22,7 @@ export function writeToSession(sessionId: string, data: string): boolean {
     void promise.catch(() => {});
   };
 
-  if (session.kind === 'ssh' || session.kind === 'sftp') {
+  if (isSshBackedSession(session.kind)) {
     const sshId = currentSshId(entry);
     if (sshId) {
       tryWrite(writeSsh(sshId, data));

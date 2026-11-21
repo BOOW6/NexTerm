@@ -77,6 +77,7 @@ import { useFontCatalogStore } from '../stores/fontCatalogStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useSnippetStore, type Snippet } from '../stores/snippetStore';
 import { useMacroStore } from '../stores/macroStore';
+import { useMacroSync } from '../hooks/useMacroSync';
 import {
   exportKnownHosts,
   importKnownHosts,
@@ -84,7 +85,7 @@ import {
   removeKnownHost,
   type KnownHost
 } from '../hooks/useTauriSsh';
-import type { SessionAuthMethod } from '../types/session';
+import type { SessionAuthMethod, SftpConflictPolicy } from '../types/session';
 import { localizeBackendError } from '../lib/backendErrors';
 
 type SettingsTab =
@@ -310,6 +311,9 @@ export default function SettingsWindow() {
   const snippets = useSnippetStore((state) => state.snippets);
   const macros = useMacroStore((state) => state.macros);
   const removeMacro = useMacroStore((state) => state.remove);
+
+  // Macros are also recorded from the main window's command palette.
+  useMacroSync();
 
   const handleMacroDelete = async (id: string, name: string) => {
     const ok = await confirmAction(t('settings.macros.deleteConfirm', { name }), {
@@ -1318,7 +1322,7 @@ export default function SettingsWindow() {
           </h3>
           <div className="grid items-end gap-3 md:grid-cols-[1fr_auto]">
             <div>
-              <Label htmlFor="ui-font">Font Family</Label>
+              <Label htmlFor="ui-font">{t('settings.fonts.familyLabel')}</Label>
               <EditableSelect
                 id="ui-font"
                 value={draft.uiFontFamily}
@@ -1351,14 +1355,14 @@ export default function SettingsWindow() {
                 checked={draft.uiFontLigatures}
                 onChange={(event) => update('uiFontLigatures', event.target.checked)}
               />
-              Font Ligatures
+              {t('settings.fonts.ligaturesLabel')}
             </label>
           </div>
           <p className="mt-1 text-tiny text-muted-foreground">
             {t('settings.fonts.ligaturesHint')}
           </p>
           <div className="mt-2">
-            <Label htmlFor="ui-font-feature-settings">Font Feature Settings</Label>
+            <Label htmlFor="ui-font-feature-settings">{t('settings.fonts.featuresLabel')}</Label>
             <Input
               id="ui-font-feature-settings"
               value={draft.uiFontFeatureSettings}
@@ -1397,7 +1401,7 @@ export default function SettingsWindow() {
     <section className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <Label htmlFor="terminal-font">Font Family</Label>
+          <Label htmlFor="terminal-font">{t('settings.fonts.familyLabel')}</Label>
           <EditableSelect
             id="terminal-font"
             value={draft.terminalFontFamily}
@@ -1543,7 +1547,7 @@ export default function SettingsWindow() {
             checked={draft.terminalFontLigatures}
             onChange={(event) => update('terminalFontLigatures', event.target.checked)}
           />
-          Font Ligatures
+          {t('settings.fonts.ligaturesLabel')}
         </label>
         <label className="flex items-center gap-2 text-meta text-muted">
           <input
@@ -1600,7 +1604,7 @@ export default function SettingsWindow() {
       </div>
 
       <div>
-        <Label htmlFor="terminal-font-feature-settings">Font Feature Settings</Label>
+        <Label htmlFor="terminal-font-feature-settings">{t('settings.fonts.featuresLabel')}</Label>
         <Input
           id="terminal-font-feature-settings"
           value={draft.terminalFontFeatureSettings}
@@ -1650,7 +1654,7 @@ export default function SettingsWindow() {
           <option value="password">{t('settings.ssh.auth.password')}</option>
           <option value="key">{t('settings.ssh.auth.key')}</option>
           <option value="certificate">{t('settings.ssh.auth.certificate')}</option>
-          <option value="agent">SSH Agent</option>
+          <option value="agent">{t('settings.ssh.auth.agent')}</option>
         </Select>
       </div>
       <div>
@@ -1672,6 +1676,23 @@ export default function SettingsWindow() {
           onChange={(event) => update('defaultUsername', event.target.value)}
           placeholder={t('settings.ssh.usernamePlaceholder')}
         />
+      </div>
+      <div className="col-span-2">
+        <Label htmlFor="sftp-conflict">{t('settings.ssh.sftpConflict')}</Label>
+        <Select
+          id="sftp-conflict"
+          value={draft.sftpConflictPolicy}
+          onChange={(event) =>
+            update('sftpConflictPolicy', event.target.value as SftpConflictPolicy)
+          }
+        >
+          <option value="ask">{t('sftp.conflict.ask')}</option>
+          <option value="overwrite">{t('sftp.conflict.overwrite')}</option>
+          <option value="skip">{t('sftp.conflict.skip')}</option>
+          <option value="rename">{t('sftp.conflict.rename')}</option>
+          <option value="newer">{t('sftp.conflict.newer')}</option>
+        </Select>
+        <p className="mt-1 text-tiny text-muted-foreground">{t('settings.ssh.sftpConflictHint')}</p>
       </div>
       <div className="col-span-2 space-y-2 rounded-sm border border-border bg-background-alt px-2 py-2">
         <label className="flex items-center gap-2 text-meta text-muted">

@@ -93,6 +93,9 @@ export const ZH: Dictionary = {
 
   // Fonts
   'settings.fonts.uiTitle': '界面字体',
+  'settings.fonts.familyLabel': '字体族',
+  'settings.fonts.ligaturesLabel': '连字',
+  'settings.fonts.featuresLabel': '字体特性',
   'settings.fonts.terminalAria': '终端字体',
   'settings.fonts.loading': '正在加载系统字体…',
   'settings.fonts.loadFailed': '系统字体加载失败：{error}',
@@ -153,8 +156,11 @@ export const ZH: Dictionary = {
   'settings.ssh.auth.password': '密码',
   'settings.ssh.auth.key': '私钥',
   'settings.ssh.auth.certificate': 'OpenSSH 证书',
+  'settings.ssh.auth.agent': 'SSH Agent',
   'settings.ssh.defaultPort': '默认端口',
   'settings.ssh.defaultUsername': '默认用户名',
+  'settings.ssh.sftpConflict': 'SFTP 冲突策略',
+  'settings.ssh.sftpConflictHint': '传输目标文件已存在时的处理方式，作用于全部 SFTP 面板。',
   'settings.ssh.usernamePlaceholder': '例如 root',
   'settings.ssh.autoReconnect': '连接意外断开时自动重连',
   'settings.ssh.keepaliveNote':
@@ -394,6 +400,9 @@ export const EN: Dictionary = {
 
   // Fonts
   'settings.fonts.uiTitle': 'Interface font',
+  'settings.fonts.familyLabel': 'Font Family',
+  'settings.fonts.ligaturesLabel': 'Font Ligatures',
+  'settings.fonts.featuresLabel': 'Font Feature Settings',
   'settings.fonts.terminalAria': 'Terminal font',
   'settings.fonts.loading': 'Loading system fonts…',
   'settings.fonts.loadFailed': 'Failed to load system fonts: {error}',
@@ -455,8 +464,12 @@ export const EN: Dictionary = {
   'settings.ssh.auth.password': 'Password',
   'settings.ssh.auth.key': 'Private key',
   'settings.ssh.auth.certificate': 'OpenSSH certificate',
+  'settings.ssh.auth.agent': 'SSH Agent',
   'settings.ssh.defaultPort': 'Default port',
   'settings.ssh.defaultUsername': 'Default username',
+  'settings.ssh.sftpConflict': 'SFTP conflict policy',
+  'settings.ssh.sftpConflictHint':
+    'How transfers handle an existing target file, applied to every SFTP panel.',
   'settings.ssh.usernamePlaceholder': 'e.g. root',
   'settings.ssh.autoReconnect': 'Reconnect automatically when a connection drops unexpectedly',
   'settings.ssh.keepaliveNote':

@@ -12,7 +12,7 @@ import {
 import { showNativeContextMenu } from '../../lib/appWindows';
 import { useBroadcastStore, broadcastCount } from '../../stores/broadcastStore';
 import { toast } from '../ui/toastStore';
-import { SESSION_KIND_ICON, sessionStatusDot } from '../../lib/sessionVisuals';
+import { SESSION_KIND_ICON, isSshBackedSession, sessionStatusDot } from '../../lib/sessionVisuals';
 import { useI18n } from '../../i18n';
 
 export default function SessionTab({ api, params, containerApi }: IDockviewPanelHeaderProps) {
@@ -50,7 +50,7 @@ export default function SessionTab({ api, params, containerApi }: IDockviewPanel
 
       // Port forwarding needs an SSH transport; serial/telnet sessions have
       // none, so the entry would only ever open an idle panel.
-      if (session && (session.kind === 'ssh' || session.kind === 'sftp')) {
+      if (session && isSshBackedSession(session.kind)) {
         actions.push({
           label: t('tab.portForward'),
           run: () => openPortForwardPanel(containerApi, sessionId)

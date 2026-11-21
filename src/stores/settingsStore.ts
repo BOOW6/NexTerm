@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { SftpConflictPolicy } from '../types/session';
 import { persist } from 'zustand/middleware';
 import { emit } from '@tauri-apps/api/event';
 import type { SessionAuthMethod } from '../types/session';
@@ -52,6 +53,8 @@ export interface SettingsSnapshot {
   sshAutoReconnect: boolean;
   sshRememberCredentials: boolean;
   defaultAuthMethod: SessionAuthMethod;
+  /** How SFTP transfers resolve an existing target file (panel toolbar + settings). */
+  sftpConflictPolicy: SftpConflictPolicy;
   defaultPort: number;
   defaultUsername: string;
   sessionLogEnabled: boolean;
@@ -90,6 +93,7 @@ export const DEFAULT_SETTINGS: SettingsSnapshot = {
   sshAutoReconnect: true,
   sshRememberCredentials: false,
   defaultAuthMethod: 'password',
+  sftpConflictPolicy: 'ask',
   defaultPort: 22,
   defaultUsername: '',
   sessionLogEnabled: false,
@@ -175,6 +179,13 @@ function normalizeSettings(input: SettingsSnapshot): SettingsSnapshot {
           : input.defaultAuthMethod === 'certificate'
             ? 'certificate'
             : 'password',
+    sftpConflictPolicy:
+      input.sftpConflictPolicy === 'overwrite' ||
+      input.sftpConflictPolicy === 'skip' ||
+      input.sftpConflictPolicy === 'rename' ||
+      input.sftpConflictPolicy === 'newer'
+        ? input.sftpConflictPolicy
+        : 'ask',
     defaultPort: Math.min(65535, Math.max(1, Math.round(input.defaultPort) || 22)),
     defaultUsername: input.defaultUsername.trim(),
     sessionLogEnabled: Boolean(input.sessionLogEnabled),
@@ -195,6 +206,7 @@ interface SettingsState extends SettingsSnapshot {
   setLightTheme: (theme: ThemeId) => void;
   setDarkTheme: (theme: ThemeId) => void;
   setThemeAccent: (accent: string) => void;
+  setSftpConflictPolicy: (policy: SftpConflictPolicy) => void;
 }
 
 /**
@@ -227,6 +239,13 @@ export const useSettingsStore = create<SettingsState>()(
       },
       setThemeAccent: (themeAccent) => {
         set({ themeAccent: normalizeThemeAccent(themeAccent) });
+        broadcastSettingsApplied();
+      },
+      setSftpConflictPolicy: (sftpConflictPolicy) => {
+        set({
+          sftpConflictPolicy: normalizeSettings({ ...DEFAULT_SETTINGS, sftpConflictPolicy })
+            .sftpConflictPolicy
+        });
         broadcastSettingsApplied();
       }
     }),
@@ -282,6 +301,7 @@ export function settingsSnapshot(): SettingsSnapshot {
     sshAutoReconnect: state.sshAutoReconnect,
     sshRememberCredentials: state.sshRememberCredentials,
     defaultAuthMethod: state.defaultAuthMethod,
+    sftpConflictPolicy: state.sftpConflictPolicy,
     defaultPort: state.defaultPort,
     defaultUsername: state.defaultUsername,
     sessionLogEnabled: state.sessionLogEnabled,

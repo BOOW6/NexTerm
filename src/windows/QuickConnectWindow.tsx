@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { isSshBackedSession } from '../lib/sessionVisuals';
 import { FolderOpen } from 'lucide-react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { Button } from '../components/ui/button';
@@ -187,7 +188,7 @@ export default function QuickConnectWindow() {
   const isSerial = form.kind === 'serial';
   // Telnet authenticates in-band after connecting; only SSH/SFTP sessions
   // carry NexTerm-side credentials and jump hosts.
-  const hasAuth = form.kind === 'ssh' || form.kind === 'sftp';
+  const hasAuth = isSshBackedSession(form.kind);
 
   const browseKey = async () => {
     try {
@@ -339,7 +340,7 @@ export default function QuickConnectWindow() {
           {!isRemote ? (
             <>
               <div>
-                <Label htmlFor="session-shell">Shell</Label>
+                <Label htmlFor="session-shell">{t('quickConnect.shellLabel')}</Label>
                 <Select
                   id="session-shell"
                   value={form.shellPreset}

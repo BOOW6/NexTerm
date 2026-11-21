@@ -2,6 +2,9 @@ export type SessionKind = 'local' | 'ssh' | 'sftp' | 'telnet' | 'serial';
 
 export type SessionStatus = 'idle' | 'connecting' | 'connected' | 'error';
 
+/** How an SFTP transfer resolves an existing target file. */
+export type SftpConflictPolicy = 'ask' | 'overwrite' | 'skip' | 'rename' | 'newer';
+
 export type SessionAuthMethod = 'password' | 'key' | 'agent' | 'certificate';
 
 export interface Session {
