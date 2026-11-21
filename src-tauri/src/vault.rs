@@ -156,14 +156,17 @@ impl VaultManager {
         let params = KdfParams::default();
         let key = derive_key_async(master_password.to_string(), salt, params).await?;
 
-        let mut state = lock(&self.state);
-        let previous = state.clone();
-        state.salt = Some(salt);
-        state.key = Some(key);
-        state.kdf_params = params;
-        state.entries.clear();
-        if let Err(err) = self.persist(&state) {
-            *state = previous;
+        let (snapshot, previous) = {
+            let mut state = lock(&self.state);
+            let previous = state.clone();
+            state.salt = Some(salt);
+            state.key = Some(key);
+            state.kdf_params = params;
+            state.entries.clear();
+            (state.clone(), previous)
+        };
+        if let Err(err) = self.persist(&snapshot).await {
+            *lock(&self.state) = previous;
             return Err(err);
         }
 
@@ -200,8 +203,13 @@ impl VaultManager {
     }
 
     async fn unlock_attempt(&self, master_password: &str) -> anyhow::Result<bool> {
-        let path = self.vault_path()?;
-        let text = std::fs::read_to_string(path).context("failed to read credential vault")?;
+        let path = self.vault_path()?.to_path_buf();
+        // The file is small but read on a user-facing path; keep the blocking
+        // read off the async runtime workers, same policy as the KDF.
+        let text = tokio::task::spawn_blocking(move || std::fs::read_to_string(&path))
+            .await
+            .map_err(|err| anyhow!("vault read task failed: {err}"))?
+            .context("failed to read credential vault")?;
         let file: VaultFile =
             serde_json::from_str(&text).context("failed to parse credential vault")?;
         if file.version != VAULT_VERSION {
@@ -250,10 +258,14 @@ impl VaultManager {
             return Err(anyhow!("凭据名称不能为空"));
         }
         let _io = self.io.lock().await;
-        let mut state = lock(&self.state);
-        require_unlocked(&state)?;
-        let previous = state.entries.insert(name.to_string(), secret.to_string());
-        if let Err(err) = self.persist(&state) {
+        let (snapshot, previous) = {
+            let mut state = lock(&self.state);
+            require_unlocked(&state)?;
+            let previous = state.entries.insert(name.to_string(), secret.to_string());
+            (state.clone(), previous)
+        };
+        if let Err(err) = self.persist(&snapshot).await {
+            let mut state = lock(&self.state);
             match previous {
                 Some(value) => {
                     state.entries.insert(name.to_string(), value);
@@ -275,13 +287,17 @@ impl VaultManager {
 
     pub async fn delete(&self, name: &str) -> anyhow::Result<()> {
         let _io = self.io.lock().await;
-        let mut state = lock(&self.state);
-        require_unlocked(&state)?;
-        let Some(removed) = state.entries.remove(name) else {
+        let (snapshot, removed) = {
+            let mut state = lock(&self.state);
+            require_unlocked(&state)?;
+            let removed = state.entries.remove(name);
+            (state.clone(), removed)
+        };
+        let Some(removed) = removed else {
             return Ok(());
         };
-        if let Err(err) = self.persist(&state) {
-            state.entries.insert(name.to_string(), removed);
+        if let Err(err) = self.persist(&snapshot).await {
+            lock(&self.state).entries.insert(name.to_string(), removed);
             return Err(err);
         }
         Ok(())
@@ -289,12 +305,15 @@ impl VaultManager {
 
     pub async fn clear(&self) -> anyhow::Result<()> {
         let _io = self.io.lock().await;
-        let mut state = lock(&self.state);
-        require_unlocked(&state)?;
-        let previous = state.entries.clone();
-        state.entries.clear();
-        if let Err(err) = self.persist(&state) {
-            state.entries = previous;
+        let (snapshot, previous) = {
+            let mut state = lock(&self.state);
+            require_unlocked(&state)?;
+            let previous = state.entries.clone();
+            state.entries.clear();
+            (state.clone(), previous)
+        };
+        if let Err(err) = self.persist(&snapshot).await {
+            lock(&self.state).entries = previous;
             return Err(err);
         }
         Ok(())
@@ -319,12 +338,16 @@ impl VaultManager {
         OsRng.fill_bytes(&mut salt);
         let key = derive_key_async(new_password.to_string(), salt, params).await?;
 
-        let mut state = lock(&self.state);
-        let previous_salt = state.salt;
-        let previous_key = state.key;
-        state.salt = Some(salt);
-        state.key = Some(key);
-        if let Err(err) = self.persist(&state) {
+        let (snapshot, previous_salt, previous_key) = {
+            let mut state = lock(&self.state);
+            let previous_salt = state.salt;
+            let previous_key = state.key;
+            state.salt = Some(salt);
+            state.key = Some(key);
+            (state.clone(), previous_salt, previous_key)
+        };
+        if let Err(err) = self.persist(&snapshot).await {
+            let mut state = lock(&self.state);
             state.salt = previous_salt;
             state.key = previous_key;
             return Err(err);
@@ -333,7 +356,7 @@ impl VaultManager {
         Ok(VaultStatus {
             initialized: true,
             unlocked: true,
-            entry_count: state.entries.len(),
+            entry_count: snapshot.entries.len(),
         })
     }
 
@@ -361,10 +384,19 @@ impl VaultManager {
         Ok(())
     }
 
-    fn persist(&self, state: &VaultState) -> anyhow::Result<()> {
+    async fn persist(&self, state: &VaultState) -> anyhow::Result<()> {
+        let path = self.vault_path()?.to_path_buf();
+        let state = state.clone();
+        // write + fsync + rename are the most expensive vault IO; keep them
+        // off the async runtime workers, same policy as the Argon2 derivation.
+        tokio::task::spawn_blocking(move || Self::persist_sync(&state, &path))
+            .await
+            .map_err(|err| anyhow!("vault persist task failed: {err}"))?
+    }
+
+    fn persist_sync(state: &VaultState, path: &Path) -> anyhow::Result<()> {
         let salt = state.salt.ok_or_else(|| anyhow!("凭据保险库尚未解锁"))?;
         let key = state.key.ok_or_else(|| anyhow!("凭据保险库尚未解锁"))?;
-        let path = self.vault_path()?;
 
         let plaintext =
             serde_json::to_vec(&state.entries).context("failed to serialize vault entries")?;

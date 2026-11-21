@@ -15,6 +15,7 @@ import { useTrayActions } from './hooks/useTrayActions';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
 import { useSettingsSync } from './hooks/useSettingsSync';
 import { useSessionLogRootSync } from './hooks/useSessionLogRootSync';
+import { useSessionLogEvents } from './hooks/useSessionLogEvents';
 import { useSnippetSync } from './hooks/useSnippetSync';
 import { useWindowState } from './hooks/useWindowState';
 import { useWindowTitle } from './hooks/useWindowTitle';
@@ -33,6 +34,7 @@ function AppShell() {
   useSettingsSync();
   useSnippetSync();
   useSessionLogRootSync();
+  useSessionLogEvents();
   useVaultEvents();
   useWindowState();
   useWindowTitle();

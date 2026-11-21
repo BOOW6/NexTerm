@@ -18,7 +18,7 @@ use serde::Serialize;
 use serialport::{DataBits, FlowControl, Parity, StopBits};
 use tauri::{AppHandle, Emitter};
 
-use crate::log_sink::LogSink;
+use crate::log_sink::{LogSink, SessionLogErrorPayload};
 
 /// Reader poll interval; short enough to feel responsive to the close flag,
 /// long enough to keep idle CPU negligible.
@@ -141,7 +141,20 @@ impl SerialSessionManager {
             return Err(anyhow!("串口名称为空"));
         }
 
-        let log = Arc::new(LogSink::new(log_path.as_deref()));
+        let log_app = app.clone();
+        let log_session = id.clone();
+        let log = Arc::new(LogSink::with_error_callback(
+            log_path.as_deref(),
+            Some(Arc::new(move |error: &str| {
+                let _ = log_app.emit(
+                    "session-log-error",
+                    SessionLogErrorPayload {
+                        session_id: log_session.clone(),
+                        error: error.to_string(),
+                    },
+                );
+            })),
+        ));
         let session = Arc::new(SerialSession {
             port: Mutex::new(None),
             log,

@@ -40,7 +40,7 @@ use tokio::{
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::log_sink::LogSink;
+use crate::log_sink::{LogSink, SessionLogErrorPayload};
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|poison| poison.into_inner())
@@ -1335,7 +1335,20 @@ impl SshManager {
         let reap_forwards = self.forwards.clone();
         let reap_sessions = self.sessions.clone();
         let zmodem_map = self.zmodem.clone();
-        let log = Arc::new(LogSink::new(log_path.as_deref()));
+        let log_app = app.clone();
+        let log_session = id.clone();
+        let log = Arc::new(LogSink::with_error_callback(
+            log_path.as_deref(),
+            Some(Arc::new(move |error: &str| {
+                let _ = log_app.emit(
+                    "session-log-error",
+                    SessionLogErrorPayload {
+                        session_id: log_session.clone(),
+                        error: error.to_string(),
+                    },
+                );
+            })),
+        ));
         let read_log = log.clone();
 
         // Clones for the panic backstop: the read loop owns the originals.

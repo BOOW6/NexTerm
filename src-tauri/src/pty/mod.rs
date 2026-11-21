@@ -12,7 +12,7 @@ use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, Pt
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-use crate::log_sink::LogSink;
+use crate::log_sink::{LogSink, SessionLogErrorPayload};
 
 pub(crate) mod conpty_bundle;
 #[cfg(test)]
@@ -286,7 +286,20 @@ fn create_session_blocking(
         }
     };
 
-    let log = Arc::new(LogSink::new(log_path.as_deref()));
+    let log_app = app.clone();
+    let log_session = id.clone();
+    let log = Arc::new(LogSink::with_error_callback(
+        log_path.as_deref(),
+        Some(Arc::new(move |error: &str| {
+            let _ = log_app.emit(
+                "session-log-error",
+                SessionLogErrorPayload {
+                    session_id: log_session.clone(),
+                    error: error.to_string(),
+                },
+            );
+        })),
+    ));
     let read_log = log.clone();
     let session = Arc::new(PtySession {
         master: Mutex::new(Some(pair.master)),

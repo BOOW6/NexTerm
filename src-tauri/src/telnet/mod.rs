@@ -23,7 +23,7 @@ use tokio::{
     net::TcpStream,
 };
 
-use crate::log_sink::LogSink;
+use crate::log_sink::{LogSink, SessionLogErrorPayload};
 
 const IAC: u8 = 255;
 const DONT: u8 = 254;
@@ -238,7 +238,20 @@ impl TelnetSessionManager {
         // Reserve the id before the (up to 8s) TCP connect so a concurrent
         // duplicate create is rejected outright instead of racing the insert;
         // on connect failure the reservation is removed again (by identity).
-        let log = Arc::new(LogSink::new(log_path.as_deref()));
+        let log_app = app.clone();
+        let log_session = id.clone();
+        let log = Arc::new(LogSink::with_error_callback(
+            log_path.as_deref(),
+            Some(Arc::new(move |error: &str| {
+                let _ = log_app.emit(
+                    "session-log-error",
+                    SessionLogErrorPayload {
+                        session_id: log_session.clone(),
+                        error: error.to_string(),
+                    },
+                );
+            })),
+        ));
         let close_signal = Arc::new(tokio::sync::Notify::new());
         let session = Arc::new(TelnetSession {
             writer: Arc::new(tokio::sync::Mutex::new(None)),
@@ -326,16 +339,9 @@ impl TelnetSessionManager {
                             }
                         }
                         let decoded = decoder.feed(&raw);
-                        // LogSink performs synchronous file IO; keep it off
-                        // the async runtime worker (order preserved by the
-                        // await).
-                        tokio::task::spawn_blocking({
-                            let log = Arc::clone(&read_log);
-                            let decoded = decoded.clone();
-                            move || log.write(&decoded)
-                        })
-                        .await
-                        .ok();
+                        // LogSink hands the data to its writer thread; this
+                        // call never blocks on disk IO.
+                        read_log.write(&decoded);
                         let payload = TelnetOutputPayload {
                             id: event_id.clone(),
                             data: decoded,
