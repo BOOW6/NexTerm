@@ -11,6 +11,7 @@ import { sessionSubtitle, type Session } from '../../types/session';
 import { useI18n } from '../../i18n';
 import { Button } from '../ui/button';
 import { Input, Label } from '../ui/input';
+import { localizeBackendError } from '../../lib/backendErrors';
 
 export default function SshConnectForm({ session }: { session: Session }) {
   const setPassword = useCredentialStore((state) => state.setPassword);
@@ -105,7 +106,7 @@ export default function SshConnectForm({ session }: { session: Session }) {
         setError(t('ssh.wrongMasterPassword'));
       }
     } catch (reason) {
-      setError(String(reason));
+      setError(localizeBackendError(String(reason)));
     } finally {
       setUnlocking(false);
     }

@@ -46,6 +46,7 @@ import { cn } from '../../lib/cn';
 import { formatBytes } from '../../lib/format';
 import { confirmAction, openModalWindow, showNativeContextMenu } from '../../lib/appWindows';
 import type { PromptPayload } from '../../windows/PromptWindow';
+import { localizeBackendError } from '../../lib/backendErrors';
 
 function formatTime(mtime: number, locale: string): string {
   if (!mtime) {
@@ -168,7 +169,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
       .catch((reason) => {
         if (!cancelled) {
           setEntries([]);
-          setError(String(reason));
+          setError(localizeBackendError(String(reason)));
         }
       })
       .finally(() => {
@@ -246,7 +247,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
       } catch (reason) {
         toast({
           title: t('sftp.upload.failedToast'),
-          description: String(reason),
+          description: localizeBackendError(String(reason)),
           variant: 'error'
         });
       }
@@ -275,7 +276,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
       } catch (reason) {
         toast({
           title: t('sftp.drop.moveFailedToast'),
-          description: String(reason),
+          description: localizeBackendError(String(reason)),
           variant: 'error'
         });
       }
@@ -360,7 +361,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
     } catch (reason) {
       toast({
         title: t('sftp.upload.failedToast'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     }
@@ -397,7 +398,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
     } catch (reason) {
       toast({
         title: t('sftp.upload.failedToast'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     }
@@ -436,7 +437,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
     } catch (reason) {
       toast({
         title: t('sftp.edit.failedToast'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     }
@@ -503,7 +504,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
     } catch (reason) {
       toast({
         title: t('sftp.download.failedToast'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     }
@@ -523,7 +524,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
     } catch (reason) {
       toast({
         title: t('sftp.folder.createFailedToast'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     }
@@ -541,7 +542,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
     } catch (reason) {
       toast({
         title: t('sftp.rename.failedToast'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     }
@@ -590,7 +591,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
     } catch (reason) {
       toast({
         title: t('sftp.delete.failedToast'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     }

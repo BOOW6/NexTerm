@@ -85,6 +85,7 @@ import {
   type KnownHost
 } from '../hooks/useTauriSsh';
 import type { SessionAuthMethod } from '../types/session';
+import { localizeBackendError } from '../lib/backendErrors';
 
 type SettingsTab =
   'appearance' | 'terminal' | 'snippets' | 'ssh' | 'shortcuts' | 'security' | 'about';
@@ -350,7 +351,7 @@ export default function SettingsWindow() {
         setUpdateState('latest');
       }
     } catch (reason) {
-      setUpdateError(String(reason));
+      setUpdateError(localizeBackendError(String(reason)));
       setUpdateState('idle');
     }
   };
@@ -486,7 +487,7 @@ export default function SettingsWindow() {
       })
       .catch((reason) => {
         if (!cancelled) {
-          setHostsError(String(reason));
+          setHostsError(localizeBackendError(String(reason)));
         }
       })
       .finally(() => {
@@ -563,7 +564,7 @@ export default function SettingsWindow() {
     } catch (reason) {
       toast({
         title: t('settings.security.vault.createFailedToast'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     } finally {
@@ -594,7 +595,7 @@ export default function SettingsWindow() {
     } catch (reason) {
       toast({
         title: t('settings.security.vault.unlockFailedToast'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     } finally {
@@ -614,7 +615,7 @@ export default function SettingsWindow() {
     } catch (reason) {
       toast({
         title: t('settings.security.vault.lockFailedToast'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     } finally {
@@ -658,7 +659,7 @@ export default function SettingsWindow() {
     } catch (reason) {
       toast({
         title: t('settings.security.vault.changeFailedToast'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     } finally {
@@ -691,7 +692,7 @@ export default function SettingsWindow() {
     } catch (reason) {
       toast({
         title: t('settings.security.vault.clearFailedToast'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     } finally {
@@ -729,7 +730,7 @@ export default function SettingsWindow() {
     } catch (reason) {
       toast({
         title: t('settings.security.vault.resetFailedToast'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     } finally {
@@ -806,7 +807,7 @@ export default function SettingsWindow() {
     } catch (reason) {
       toast({
         title: t('settings.security.knownHosts.importFailedToast'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     }
@@ -834,7 +835,7 @@ export default function SettingsWindow() {
     } catch (reason) {
       toast({
         title: t('settings.security.knownHosts.exportFailedToast'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     }
@@ -886,7 +887,7 @@ export default function SettingsWindow() {
     } catch (reason) {
       toast({
         title: t('settings.footer.applyFailedToast'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
       return false;

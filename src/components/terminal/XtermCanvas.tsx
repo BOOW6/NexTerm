@@ -72,6 +72,7 @@ import {
   resolveCursorLineResizeMode,
   type CursorLineResizeMode
 } from '../../lib/terminalResizePolicy';
+import { localizeBackendError } from '../../lib/backendErrors';
 import {
   NOTICE_RESET_PLACE_AT_BOTTOM,
   buildNoticeScrollSequence,
@@ -1162,7 +1163,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             useSessionStore.getState().setStatus(sessionId, 'error');
             useConnectionStore.getState().removeConnection(sessionId, id);
             enqueueWrite(
-              `\r\n\x1b[31m${t('terminal.sshConnectFailed', { message: errorMessage(error) })}\x1b[0m\r\n`
+              `\r\n\x1b[31m${t('terminal.sshConnectFailed', { message: localizeBackendError(errorMessage(error)) })}\x1b[0m\r\n`
             );
             // Retry whenever this session had a working connection before —
             // either the attempt that just dropped, or a previous one whose

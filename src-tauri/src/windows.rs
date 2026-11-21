@@ -147,7 +147,7 @@ pub async fn show_input_context_menu(window: WebviewWindow) -> Result<(), String
 pub async fn get_modal_payload(app: AppHandle, id: String) -> Result<Value, String> {
     app.state::<ModalManager>()
         .payload(&id)
-        .ok_or_else(|| "窗口数据不存在".to_string())
+        .ok_or_else(|| "window payload not found".to_string())
 }
 
 #[tauri::command]
@@ -182,7 +182,7 @@ pub async fn open_modal_window(
         .filter(|value| value.is_ascii_alphanumeric() || *value == '-')
         .collect();
     if kind.is_empty() {
-        return Err("无效的窗口类型".to_string());
+        return Err("invalid window kind".to_string());
     }
 
     let id = Uuid::new_v4().to_string();
@@ -236,7 +236,9 @@ pub async fn open_modal_window(
     install_context_menu_listener(&window);
     crate::windows_ext::disable_webview_autofill(&window);
 
-    let result = receiver.await.map_err(|_| "窗口已关闭".to_string())?;
+    let result = receiver
+        .await
+        .map_err(|_| "window already closed".to_string())?;
     app.state::<ModalManager>().remove(&id);
     Ok(result)
 }

@@ -286,7 +286,7 @@ impl TelnetSessionManager {
             }
             Err(_) => {
                 remove_reserved_session(&sessions, &id, &session);
-                return Err(anyhow!("连接超时：{host}:{port}"));
+                return Err(anyhow!("connection timed out: {host}:{port}"));
             }
         };
 

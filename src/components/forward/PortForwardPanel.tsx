@@ -17,6 +17,7 @@ import { Input, Label } from '../ui/input';
 import { Select } from '../ui/select';
 import { toast } from '../ui/toastStore';
 import { useI18n } from '../../i18n';
+import { localizeBackendError } from '../../lib/backendErrors';
 
 const KIND_LABEL: Record<PortForwardKind, string> = {
   local: 'forward.kind.local',
@@ -145,7 +146,7 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
     } catch (reason) {
       toast({
         title: t('forward.toast.startFailed'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     } finally {
@@ -161,7 +162,7 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
     } catch (reason) {
       toast({
         title: t('forward.toast.stopFailed'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     }

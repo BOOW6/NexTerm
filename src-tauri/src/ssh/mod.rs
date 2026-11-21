@@ -719,7 +719,7 @@ impl ZmodemFile {
             .path()
             .download_dir()
             .or_else(|_| app.path().home_dir())
-            .context("无法确定下载目录")?;
+            .context("failed to resolve download directory")?;
         let safe = sanitize_filename(&name);
         let stem = PathBuf::from(&safe);
         let file_stem = stem
@@ -887,7 +887,7 @@ async fn handle_zmodem_action(
                 let error = if success || cancelled {
                     None
                 } else {
-                    Some("ZMODEM 传输中断".to_string())
+                    Some("ZMODEM transfer interrupted".to_string())
                 };
                 file.finish(app, success, cancelled, false, error).await;
             }
@@ -933,7 +933,7 @@ fn spawn_transfer_task(
                     success: false,
                     cancelled: false,
                     disconnected: false,
-                    error: Some("传输任务异常终止".to_string()),
+                    error: Some("transfer task terminated abnormally".to_string()),
                     transferred: 0,
                     total: 0,
                     files_done: 0,
@@ -1010,7 +1010,7 @@ async fn authenticate(
 ) -> anyhow::Result<()> {
     match auth_method {
         "key" => {
-            let key_path = private_key_path.ok_or_else(|| anyhow!("请选择私钥文件"))?;
+            let key_path = private_key_path.ok_or_else(|| anyhow!("select a private key file"))?;
             let key_path = expand_path(key_path);
             let key_pair = russh::keys::load_secret_key(&key_path, passphrase)
                 .with_context(|| format!("failed to load private key: {}", key_path.display()))?;
@@ -1029,15 +1029,17 @@ async fn authenticate(
                 .context("SSH key authentication failed")?;
 
             if !auth.success() {
-                return Err(anyhow!("SSH 密钥认证失败，请检查私钥或用户名"));
+                return Err(anyhow!(
+                    "SSH key authentication failed, check the private key or username"
+                ));
             }
         }
         // OpenSSH user certificate: the certified private key signs, the
         // `*-cert.pub` blob proves the CA endorsement.
         "certificate" => {
-            let key_path = private_key_path.ok_or_else(|| anyhow!("请选择私钥文件"))?;
+            let key_path = private_key_path.ok_or_else(|| anyhow!("select a private key file"))?;
             let key_path = expand_path(key_path);
-            let cert_path = cert_path.ok_or_else(|| anyhow!("请选择证书文件"))?;
+            let cert_path = cert_path.ok_or_else(|| anyhow!("select a certificate file"))?;
             let cert_path = expand_path(cert_path);
             let key_pair = russh::keys::load_secret_key(&key_path, passphrase)
                 .with_context(|| format!("failed to load private key: {}", key_path.display()))?;
@@ -1050,7 +1052,7 @@ async fn authenticate(
                 .context("SSH certificate authentication failed")?;
 
             if !auth.success() {
-                return Err(anyhow!("SSH 证书认证失败，请检查证书、私钥或用户名"));
+                return Err(anyhow!("SSH certificate authentication failed, check the certificate, private key or username"));
             }
         }
         "agent" => {
@@ -1063,7 +1065,9 @@ async fn authenticate(
                 .context("SSH authentication failed")?;
 
             if !auth.success() {
-                return Err(anyhow!("SSH 认证失败，请检查用户名或密码"));
+                return Err(anyhow!(
+                    "SSH authentication failed, check the username or password"
+                ));
             }
         }
     }
@@ -1140,7 +1144,7 @@ impl SshManager {
         // Fail fast instead of waiting for the server to reject an empty
         // password; agent / key / certificate auth never reads this field.
         if auth_method_uses_password(&auth_method) && password.is_empty() {
-            return Err(anyhow!("请输入登录密码"));
+            return Err(anyhow!("password required"));
         }
         if self
             .sessions
@@ -1155,7 +1159,7 @@ impl SshManager {
         {
             let mut connecting = lock(&self.connecting);
             if connecting.contains_key(&id) {
-                return Err(anyhow!("SSH 会话正在连接中"));
+                return Err(anyhow!("SSH session is already connecting"));
             }
             connecting.insert(
                 id.clone(),
@@ -1493,7 +1497,7 @@ impl SshManager {
                 .map(|handle| handle.cancelled.load(Ordering::SeqCst))
                 .unwrap_or(true)
             {
-                return Err(anyhow!("SSH 连接已取消"));
+                return Err(anyhow!("SSH connection cancelled"));
             }
             self.sessions
                 .lock()
@@ -1519,7 +1523,7 @@ impl SshManager {
     pub async fn cancel_zmodem(&self, session_id: &str) -> anyhow::Result<()> {
         let machine = lock(&self.zmodem).get(session_id).cloned();
         let Some(machine) = machine else {
-            return Err(anyhow!("ZMODEM 会话不存在"));
+            return Err(anyhow!("ZMODEM session not found"));
         };
         let bytes = machine
             .lock()
@@ -1783,7 +1787,7 @@ impl SshManager {
         let transfers = lock(&self.transfers);
         let control = transfers
             .get(transfer_id)
-            .ok_or_else(|| anyhow!("传输任务不存在"))?;
+            .ok_or_else(|| anyhow!("transfer task not found"))?;
         control.paused.store(paused, Ordering::SeqCst);
         Ok(())
     }
@@ -1792,7 +1796,7 @@ impl SshManager {
         let transfers = lock(&self.transfers);
         let control = transfers
             .get(transfer_id)
-            .ok_or_else(|| anyhow!("传输任务不存在"))?;
+            .ok_or_else(|| anyhow!("transfer task not found"))?;
         control.paused.store(false, Ordering::SeqCst);
         control.cancelled.store(true, Ordering::SeqCst);
         Ok(())
@@ -1894,7 +1898,7 @@ impl SshManager {
         let (info, task) = match kind.as_str() {
             "local" | "dynamic" => {
                 if kind == "local" && target_host.trim().is_empty() {
-                    return Err(anyhow!("请填写目标主机"));
+                    return Err(anyhow!("target host is required"));
                 }
 
                 let listener = TcpListener::bind((bind_host.as_str(), bind_port))
@@ -1930,7 +1934,7 @@ impl SshManager {
             }
             "remote" => {
                 if target_host.trim().is_empty() {
-                    return Err(anyhow!("请填写目标主机"));
+                    return Err(anyhow!("target host is required"));
                 }
 
                 let actual_port = connection
@@ -1957,7 +1961,7 @@ impl SshManager {
                     None,
                 )
             }
-            _ => return Err(anyhow!("不支持的端口转发类型")),
+            _ => return Err(anyhow!("unsupported port forward kind")),
         };
 
         lock(&self.forwards).insert(
@@ -1983,7 +1987,7 @@ impl SshManager {
     async fn stop_forward_inner(&self, id: &str) -> anyhow::Result<()> {
         let forward = lock(&self.forwards)
             .remove(id)
-            .ok_or_else(|| anyhow!("端口转发不存在"))?;
+            .ok_or_else(|| anyhow!("port forward not found"))?;
 
         if let Some(task) = forward.task {
             task.abort();
@@ -2057,7 +2061,7 @@ impl SshManager {
         sessions.get(id).cloned().ok_or_else(|| {
             // Surfaced by SFTP, port forwarding and remote edit alike; tell the
             // user what to do instead of just that the lookup missed.
-            anyhow!("SSH 会话已断开或不存在，请重新连接后再试")
+            anyhow!("SSH session is disconnected or missing, reconnect and try again")
         })
     }
 
@@ -2516,7 +2520,9 @@ async fn run_download(
 
     if is_dir {
         if !options.recursive {
-            return Err(TransferFailure::new(anyhow!("目标是目录，请开启递归下载")));
+            return Err(TransferFailure::new(anyhow!(
+                "target is a directory, enable recursive download"
+            )));
         }
         collect_remote_files(&sftp, remote_path, &mut files)
             .await
@@ -2628,7 +2634,9 @@ async fn run_upload(
     let is_dir = metadata.is_dir();
 
     if is_dir && !options.recursive {
-        return Err(TransferFailure::new(anyhow!("目标是目录，请开启递归上传")));
+        return Err(TransferFailure::new(anyhow!(
+            "target is a directory, enable recursive upload"
+        )));
     }
 
     let files = tokio::task::spawn_blocking(move || collect_local_files(&root))
@@ -2842,7 +2850,7 @@ async fn finalize_remote_upload(
 
     if let Ok(metadata) = sftp.metadata(target).await {
         if metadata.is_dir() {
-            anyhow::bail!("远端目标位置是目录，无法用文件覆盖: {target}");
+            anyhow::bail!("remote target is a directory, cannot overwrite with a file: {target}");
         }
     }
 
@@ -3395,7 +3403,7 @@ async fn authenticate_with_agent(
         .context("failed to list SSH agent identities")?;
 
     if identities.is_empty() {
-        return Err(anyhow!("SSH agent 中没有可用身份"));
+        return Err(anyhow!("no usable identities in the SSH agent"));
     }
 
     let hash = handle
@@ -3432,8 +3440,8 @@ async fn authenticate_with_agent(
     }
 
     Err(match last_error {
-        Some(error) => anyhow!("SSH agent 认证失败：{error}"),
-        None => anyhow!("SSH agent 认证失败"),
+        Some(error) => anyhow!("SSH agent authentication failed: {error}"),
+        None => anyhow!("SSH agent authentication failed"),
     })
 }
 
@@ -4004,7 +4012,7 @@ mod tests {
             .err()
             .expect("unknown session must be an error")
             .to_string();
-        assert!(error.contains("重新连接"), "unexpected message: {error}");
+        assert!(error.contains("reconnect"), "unexpected message: {error}");
     }
 
     #[test]

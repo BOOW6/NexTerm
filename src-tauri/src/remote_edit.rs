@@ -111,7 +111,7 @@ fn scratch_dir(app: &AppHandle, id: &str, remote_path: &str) -> anyhow::Result<P
     Ok(app
         .path()
         .app_data_dir()
-        .map_err(|_| anyhow!("无法确定应用数据目录"))?
+        .map_err(|_| anyhow!("no usable app data directory"))?
         .join("remote-edit")
         .join(sanitize_component(id))
         .join(format!("{:016x}", hasher.finish())))
@@ -266,7 +266,7 @@ pub async fn remote_edit_open(
     remote_path: String,
 ) -> Result<RemoteEditSession, String> {
     if remote_path.trim().is_empty() {
-        return Err("远程路径为空".to_string());
+        return Err("remote path must not be empty".to_string());
     }
     let key = edit_key(&id, &remote_path);
     // Re-opening the same file restarts the watcher on a fresh download.
@@ -278,7 +278,7 @@ pub async fn remote_edit_open(
         .await
         .map_err(|err| err.to_string())?;
     if metadata.is_dir() {
-        return Err("不能编辑目录".to_string());
+        return Err("cannot edit a directory".to_string());
     }
 
     let file_name = remote_path
@@ -303,7 +303,7 @@ pub async fn remote_edit_open(
 
     let baseline = stat_baseline(&scratch)
         .await
-        .ok_or_else(|| "临时文件创建失败".to_string())?;
+        .ok_or_else(|| "failed to create scratch file".to_string())?;
     let watch_cancel = cancel.clone();
     let watch_task_handle = tokio::spawn(watch_task(
         app.clone(),

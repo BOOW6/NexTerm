@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { tStatic } from '../i18n';
 import { toast } from '../components/ui/toastStore';
+import { localizeBackendError } from '../lib/backendErrors';
 
 interface RemoteEditEvent {
   sessionId: string;
@@ -40,7 +41,7 @@ export function useRemoteEditEvents(): void {
       }
       toast({
         title: tStatic('remoteEdit.failedToast', { name: event.payload.name }),
-        description: event.payload.error,
+        description: event.payload.error ? localizeBackendError(event.payload.error) : undefined,
         variant: 'error'
       });
     })

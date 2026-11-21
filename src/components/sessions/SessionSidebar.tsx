@@ -44,6 +44,7 @@ import { confirmAction } from '../../lib/appWindows';
 import { forgetSessionCredentials } from '../../lib/credentialVault';
 import { clearTerminalSnapshot } from '../../lib/terminalSnapshot';
 import { useQuickConnectLauncher } from '../../features/workspace/useQuickConnectLauncher';
+import { localizeBackendError } from '../../lib/backendErrors';
 
 interface GroupSectionProps {
   title: string;
@@ -377,7 +378,11 @@ export default function SessionSidebar() {
         variant: created.length > 0 ? 'success' : 'default'
       });
     } catch (reason) {
-      toast({ title: t('sidebar.importFailed'), description: String(reason), variant: 'error' });
+      toast({
+        title: t('sidebar.importFailed'),
+        description: localizeBackendError(String(reason)),
+        variant: 'error'
+      });
     }
   };
 
@@ -394,7 +399,11 @@ export default function SessionSidebar() {
       }
       toast({ title: t('sidebar.exported'), variant: 'success' });
     } catch (reason) {
-      toast({ title: t('sidebar.exportFailed'), description: String(reason), variant: 'error' });
+      toast({
+        title: t('sidebar.exportFailed'),
+        description: localizeBackendError(String(reason)),
+        variant: 'error'
+      });
     }
   };
 

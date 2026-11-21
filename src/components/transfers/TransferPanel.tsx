@@ -24,6 +24,7 @@ import { toast } from '../ui/toastStore';
 import { cn } from '../../lib/cn';
 import { formatBytes, formatSpeed } from '../../lib/format';
 import { useI18n } from '../../i18n';
+import { localizeBackendError } from '../../lib/backendErrors';
 
 const statusText: Record<TransferStatus, string> = {
   running: 'transfer.status.running',
@@ -69,7 +70,7 @@ export default function TransferPanel() {
     } catch (reason) {
       toast({
         title: t('transfer.toast.actionFailed'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     }
@@ -81,7 +82,7 @@ export default function TransferPanel() {
     } catch (reason) {
       toast({
         title: t('transfer.toast.cancelFailed'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     }
@@ -98,7 +99,7 @@ export default function TransferPanel() {
     } catch (reason) {
       toast({
         title: t('transfer.toast.retryFailed'),
-        description: String(reason),
+        description: localizeBackendError(String(reason)),
         variant: 'error'
       });
     }
@@ -270,7 +271,7 @@ export default function TransferPanel() {
                     <p className="mt-1 truncate text-tiny text-error" title={item.error}>
                       {item.error === INTERRUPTED_MESSAGE_KEY
                         ? t('transfer.interruptedReason')
-                        : item.error}
+                        : localizeBackendError(item.error)}
                     </p>
                   ) : null}
                 </div>

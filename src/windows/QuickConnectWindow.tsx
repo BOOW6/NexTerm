@@ -21,6 +21,7 @@ import {
   type SessionAuthMethod,
   type SessionKind
 } from '../types/session';
+import { localizeBackendError } from '../lib/backendErrors';
 import type {
   QuickConnectPayload,
   QuickConnectResult
@@ -298,7 +299,7 @@ export default function QuickConnectWindow() {
       } satisfies QuickConnectResult);
     } catch (reason) {
       setBusy(false);
-      setError(String(reason));
+      setError(localizeBackendError(String(reason)));
     }
   };
 

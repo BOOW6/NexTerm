@@ -14,6 +14,14 @@ pub struct WindowBehavior {
     pub(crate) close_to_tray: std::sync::atomic::AtomicBool,
 }
 
+/// Format an error for IPC. For anyhow errors the alternate flag keeps the
+/// context chain ("outer: inner: cause"), so the frontend sees the root
+/// cause instead of only the outermost wrapper; other Display errors pass
+/// through unchanged.
+pub fn format_err<E: std::fmt::Display>(err: E) -> String {
+    format!("{err:#}")
+}
+
 #[tauri::command]
 pub async fn set_window_behavior(
     app: AppHandle,
@@ -28,7 +36,7 @@ pub async fn set_window_behavior(
     // an empty value disables it entirely.
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
     let shortcuts = app.global_shortcut();
-    shortcuts.unregister_all().map_err(|err| err.to_string())?;
+    shortcuts.unregister_all().map_err(format_err)?;
     if let Some(hotkey) = global_show_hotkey
         .as_deref()
         .map(str::trim)
@@ -37,10 +45,10 @@ pub async fn set_window_behavior(
         let accelerator = hotkey
             .to_lowercase()
             .parse::<tauri_plugin_global_shortcut::Shortcut>()
-            .map_err(|err| format!("无效的全局快捷键 \"{hotkey}\": {err}"))?;
+            .map_err(|err| format!("invalid global shortcut \"{hotkey}\": {err}"))?;
         shortcuts
             .register(accelerator)
-            .map_err(|err| format!("全局快捷键注册失败: {err}"))?;
+            .map_err(|err| format!("failed to register global shortcut: {err}"))?;
     }
     Ok(())
 }
@@ -78,34 +86,34 @@ impl SessionLogRoot {
 fn validate_log_path(root: &Path, path: &str) -> Result<(), String> {
     let path = PathBuf::from(path);
     let Some(file_name) = path.file_name() else {
-        return Err("无效的日志文件名".to_string());
+        return Err("invalid log file name".to_string());
     };
     let name = file_name.to_string_lossy();
     if name.chars().any(|c| {
         c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
     }) {
-        return Err("日志文件名包含非法字符".to_string());
+        return Err("log file name contains invalid characters".to_string());
     }
     if path
         .extension()
         .map(|ext| !ext.eq_ignore_ascii_case("log"))
         .unwrap_or(true)
     {
-        return Err("日志文件必须以 .log 结尾".to_string());
+        return Err("log file must end with .log".to_string());
     }
     let Some(parent) = path.parent() else {
-        return Err("无效的日志路径".to_string());
+        return Err("invalid log path".to_string());
     };
     // Canonicalize both sides: a lexical prefix check would accept
     // `<root>\..\evil.log`.
     let canon_parent = parent
         .canonicalize()
-        .map_err(|err| format!("日志目录不可用: {err}"))?;
+        .map_err(|err| format!("log directory unavailable: {err}"))?;
     let canon_root = root
         .canonicalize()
-        .map_err(|err| format!("日志目录不可用: {err}"))?;
+        .map_err(|err| format!("log directory unavailable: {err}"))?;
     if !canon_parent.starts_with(&canon_root) {
-        return Err("日志路径必须位于配置的日志目录内".to_string());
+        return Err("log path must be inside the configured log directory".to_string());
     }
     Ok(())
 }
@@ -177,7 +185,7 @@ pub async fn create_pty_session(
     state
         .create_session(app, id, cols, rows, log_path, pty_command)
         .await
-        .map_err(|err| err.to_string())
+        .map_err(format_err)
 }
 
 /// Resolve which local shell candidates point at an existing executable.
@@ -380,7 +388,7 @@ pub async fn write_pty(
     state
         .write_session(&id, data.into_bytes())
         .await
-        .map_err(|err| err.to_string())
+        .map_err(format_err)
 }
 
 #[tauri::command]
@@ -393,7 +401,7 @@ pub async fn resize_pty(
     state
         .resize_session(&id, cols, rows)
         .await
-        .map_err(|err| err.to_string())
+        .map_err(format_err)
 }
 
 #[tauri::command]
@@ -401,10 +409,7 @@ pub async fn close_pty_session(
     state: State<'_, PtySessionManager>,
     id: String,
 ) -> Result<(), String> {
-    state
-        .close_session(&id)
-        .await
-        .map_err(|err| err.to_string())
+    state.close_session(&id).await.map_err(format_err)
 }
 
 /// A rejected log path only downgrades logging (with a console warning) —
@@ -458,7 +463,7 @@ pub async fn ssh_connect(
             rows,
         )
         .await
-        .map_err(|err| err.to_string())
+        .map_err(format_err)
 }
 
 /// Re-point the output log of a live session (SSH, local PTY, Telnet or
@@ -476,7 +481,7 @@ pub async fn set_session_log(
     // Explicit user action: a confined-out path is reported, not silently
     // downgraded.
     if !log_root.allows(&log_path) {
-        return Err("日志路径必须位于配置的日志目录内".to_string());
+        return Err("log path must be inside the configured log directory".to_string());
     }
     if ssh.set_log(&id, log_path.as_deref()).is_ok() {
         return Ok(());
@@ -497,7 +502,7 @@ pub async fn set_session_log(
 pub async fn serial_list(
     state: State<'_, crate::serial::SerialSessionManager>,
 ) -> Result<Vec<crate::serial::SerialPortInfo>, String> {
-    state.list_ports().await.map_err(|err| err.to_string())
+    state.list_ports().await.map_err(format_err)
 }
 
 #[tauri::command]
@@ -534,7 +539,7 @@ pub async fn serial_connect(
             log_path,
         )
         .await
-        .map_err(|err| err.to_string())
+        .map_err(format_err)
 }
 
 #[tauri::command]
@@ -546,7 +551,7 @@ pub async fn serial_write(
     state
         .write(&id, data.into_bytes().as_slice())
         .await
-        .map_err(|err| err.to_string())
+        .map_err(format_err)
 }
 
 #[tauri::command]
@@ -556,7 +561,7 @@ pub async fn serial_resize(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    state.resize(&id, cols, rows).map_err(|err| err.to_string())
+    state.resize(&id, cols, rows).map_err(format_err)
 }
 
 #[tauri::command]
@@ -564,7 +569,7 @@ pub async fn serial_disconnect(
     state: State<'_, crate::serial::SerialSessionManager>,
     id: String,
 ) -> Result<(), String> {
-    state.disconnect(&id).await.map_err(|err| err.to_string())
+    state.disconnect(&id).await.map_err(format_err)
 }
 
 #[tauri::command]
@@ -581,7 +586,7 @@ pub async fn telnet_connect(
     state
         .connect(app, id, host, port, log_path)
         .await
-        .map_err(|err| err.to_string())
+        .map_err(format_err)
 }
 
 #[tauri::command]
@@ -590,10 +595,7 @@ pub async fn telnet_write(
     id: String,
     data: String,
 ) -> Result<(), String> {
-    state
-        .write(&id, data.as_bytes())
-        .await
-        .map_err(|err| err.to_string())
+    state.write(&id, data.as_bytes()).await.map_err(format_err)
 }
 
 #[tauri::command]
@@ -603,10 +605,7 @@ pub async fn telnet_resize(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    state
-        .resize(&id, cols, rows)
-        .await
-        .map_err(|err| err.to_string())
+    state.resize(&id, cols, rows).await.map_err(format_err)
 }
 
 #[tauri::command]
@@ -614,7 +613,7 @@ pub async fn telnet_disconnect(
     state: State<'_, TelnetSessionManager>,
     id: String,
 ) -> Result<(), String> {
-    state.disconnect(&id).await.map_err(|err| err.to_string())
+    state.disconnect(&id).await.map_err(format_err)
 }
 
 #[tauri::command]
@@ -624,14 +623,12 @@ pub fn ssh_host_key_response(state: State<'_, SshManager>, request_id: String, a
 
 #[tauri::command]
 pub fn known_hosts_list(state: State<'_, SshManager>) -> Result<Vec<KnownHost>, String> {
-    state.known_hosts().map_err(|err| err.to_string())
+    state.known_hosts().map_err(format_err)
 }
 
 #[tauri::command]
 pub fn known_hosts_remove(state: State<'_, SshManager>, host: String) -> Result<(), String> {
-    state
-        .remove_known_host(&host)
-        .map_err(|err| err.to_string())
+    state.remove_known_host(&host).map_err(format_err)
 }
 
 #[tauri::command]
@@ -640,10 +637,7 @@ pub async fn ssh_write(
     id: String,
     data: String,
 ) -> Result<(), String> {
-    state
-        .write(&id, data.as_bytes())
-        .await
-        .map_err(|err| err.to_string())
+    state.write(&id, data.as_bytes()).await.map_err(format_err)
 }
 
 #[tauri::command]
@@ -653,10 +647,7 @@ pub async fn ssh_resize(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    state
-        .resize(&id, cols, rows)
-        .await
-        .map_err(|err| err.to_string())
+    state.resize(&id, cols, rows).await.map_err(format_err)
 }
 
 #[tauri::command]
@@ -665,10 +656,7 @@ pub async fn ssh_disconnect(
     state: State<'_, SshManager>,
     id: String,
 ) -> Result<(), String> {
-    state
-        .disconnect(app, &id)
-        .await
-        .map_err(|err| err.to_string())
+    state.disconnect(app, &id).await.map_err(format_err)
 }
 
 #[tauri::command]
@@ -677,10 +665,7 @@ pub async fn sftp_list(
     id: String,
     path: String,
 ) -> Result<Vec<SftpEntry>, String> {
-    state
-        .sftp_list(&id, path)
-        .await
-        .map_err(|err| err.to_string())
+    state.sftp_list(&id, path).await.map_err(format_err)
 }
 
 #[tauri::command]
@@ -695,7 +680,7 @@ pub async fn sftp_download(
     state
         .sftp_download(app, &id, remote_path, local_path, options)
         .await
-        .map_err(|err| err.to_string())
+        .map_err(format_err)
 }
 
 #[tauri::command]
@@ -710,7 +695,7 @@ pub async fn sftp_upload(
     state
         .sftp_upload(app, &id, local_path, remote_path, options)
         .await
-        .map_err(|err| err.to_string())
+        .map_err(format_err)
 }
 
 #[tauri::command]
@@ -720,11 +705,11 @@ pub async fn sftp_pause_transfer(
     paused: bool,
 ) -> Result<(), String> {
     if transfer_id.starts_with("zmodem-") {
-        return Err("ZMODEM 传输不支持暂停".to_string());
+        return Err("ZMODEM transfer does not support pausing".to_string());
     }
     state
         .set_transfer_paused(&transfer_id, paused)
-        .map_err(|err| err.to_string())
+        .map_err(format_err)
 }
 
 #[tauri::command]
@@ -734,14 +719,9 @@ pub async fn sftp_cancel_transfer(
 ) -> Result<(), String> {
     // ZMODEM receives share the transfer queue; their ids carry the session.
     if let Some(session_id) = transfer_id.strip_prefix("zmodem-") {
-        return state
-            .cancel_zmodem(session_id)
-            .await
-            .map_err(|err| err.to_string());
+        return state.cancel_zmodem(session_id).await.map_err(format_err);
     }
-    state
-        .cancel_transfer(&transfer_id)
-        .map_err(|err| err.to_string())
+    state.cancel_transfer(&transfer_id).map_err(format_err)
 }
 
 #[tauri::command]
@@ -760,9 +740,7 @@ pub fn known_hosts_import(
     state: State<'_, SshManager>,
     path: String,
 ) -> Result<KnownHostsImportResult, String> {
-    state
-        .import_known_hosts(&path)
-        .map_err(|err| err.to_string())
+    state.import_known_hosts(&path).map_err(format_err)
 }
 
 #[tauri::command]
@@ -773,7 +751,7 @@ pub fn known_hosts_export(
 ) -> Result<KnownHostsExportResult, String> {
     state
         .export_known_hosts(&path, hash_hosts)
-        .map_err(|err| err.to_string())
+        .map_err(format_err)
 }
 
 #[tauri::command]
@@ -804,7 +782,7 @@ pub async fn port_forward_start(
             target_port,
         )
         .await
-        .map_err(|err| err.to_string())
+        .map_err(format_err)
 }
 
 #[tauri::command]
@@ -813,10 +791,7 @@ pub async fn port_forward_stop(
     state: State<'_, SshManager>,
     id: String,
 ) -> Result<(), String> {
-    state
-        .stop_port_forward(app, &id)
-        .await
-        .map_err(|err| err.to_string())
+    state.stop_port_forward(app, &id).await.map_err(format_err)
 }
 
 #[tauri::command]
@@ -829,7 +804,7 @@ pub async fn sftp_remove(
     state
         .sftp_remove(&id, path, is_dir)
         .await
-        .map_err(|err| err.to_string())
+        .map_err(format_err)
 }
 
 #[tauri::command]
@@ -839,10 +814,7 @@ pub async fn sftp_rename(
     from: String,
     to: String,
 ) -> Result<(), String> {
-    state
-        .sftp_rename(&id, from, to)
-        .await
-        .map_err(|err| err.to_string())
+    state.sftp_rename(&id, from, to).await.map_err(format_err)
 }
 
 #[tauri::command]
@@ -851,10 +823,7 @@ pub async fn sftp_mkdir(
     id: String,
     path: String,
 ) -> Result<(), String> {
-    state
-        .sftp_mkdir(&id, path)
-        .await
-        .map_err(|err| err.to_string())
+    state.sftp_mkdir(&id, path).await.map_err(format_err)
 }
 
 /// Backend-driven session import. The file path never crosses the IPC
@@ -882,16 +851,16 @@ pub async fn import_sessions(
         let Some(selected) = picker.blocking_pick_file() else {
             return Ok(None);
         };
-        let path = selected.into_path().map_err(|err| err.to_string())?;
-        let metadata = std::fs::metadata(&path).map_err(|err| err.to_string())?;
+        let path = selected.into_path().map_err(format_err)?;
+        let metadata = std::fs::metadata(&path).map_err(format_err)?;
         if metadata.len() > MAX_BYTES {
-            return Err("文件过大（上限 8 MiB）".to_string());
+            return Err("file too large (limit 8 MiB)".to_string());
         }
-        let bytes = std::fs::read(&path).map_err(|err| err.to_string())?;
+        let bytes = std::fs::read(&path).map_err(format_err)?;
         Ok(Some(decode_text(bytes)))
     })
     .await
-    .map_err(|err| err.to_string())?
+    .map_err(format_err)?
 }
 
 /// Import files such as PuTTY `.reg` exports are commonly UTF-16LE with a BOM,
@@ -948,12 +917,12 @@ pub async fn export_sessions(
         let Some(selected) = saver.blocking_save_file() else {
             return Ok(false);
         };
-        let path = selected.into_path().map_err(|err| err.to_string())?;
-        std::fs::write(&path, contents).map_err(|err| err.to_string())?;
+        let path = selected.into_path().map_err(format_err)?;
+        std::fs::write(&path, contents).map_err(format_err)?;
         Ok(true)
     })
     .await
-    .map_err(|err| err.to_string())?
+    .map_err(format_err)?
 }
 
 #[tauri::command]
@@ -970,7 +939,7 @@ pub async fn vault_initialize(
     let status = state
         .initialize(&master_password)
         .await
-        .map_err(|err| err.to_string())?;
+        .map_err(format_err)?;
     let _ = app.emit("nexterm-vault-unlocked", ());
     Ok(status)
 }
@@ -981,10 +950,7 @@ pub async fn vault_unlock(
     app: AppHandle,
     master_password: String,
 ) -> Result<bool, String> {
-    let unlocked = state
-        .unlock(&master_password)
-        .await
-        .map_err(|err| err.to_string())?;
+    let unlocked = state.unlock(&master_password).await.map_err(format_err)?;
     if unlocked {
         let _ = app.emit("nexterm-vault-unlocked", ());
     }
@@ -1004,25 +970,22 @@ pub async fn vault_set(
     name: String,
     secret: String,
 ) -> Result<(), String> {
-    state
-        .set(&name, &secret)
-        .await
-        .map_err(|err| err.to_string())
+    state.set(&name, &secret).await.map_err(format_err)
 }
 
 #[tauri::command]
 pub fn vault_get(state: State<'_, VaultManager>, name: String) -> Result<Option<String>, String> {
-    state.get(&name).map_err(|err| err.to_string())
+    state.get(&name).map_err(format_err)
 }
 
 #[tauri::command]
 pub async fn vault_delete(state: State<'_, VaultManager>, name: String) -> Result<(), String> {
-    state.delete(&name).await.map_err(|err| err.to_string())
+    state.delete(&name).await.map_err(format_err)
 }
 
 #[tauri::command]
 pub async fn vault_clear(state: State<'_, VaultManager>, app: AppHandle) -> Result<(), String> {
-    state.clear().await.map_err(|err| err.to_string())?;
+    state.clear().await.map_err(format_err)?;
     let _ = app.emit("nexterm-vault-cleared", ());
     Ok(())
 }
@@ -1037,7 +1000,7 @@ pub async fn vault_change_password(
     let status = state
         .change_password(&old_password, &new_password)
         .await
-        .map_err(|err| err.to_string())?;
+        .map_err(format_err)?;
     let _ = app.emit("nexterm-vault-unlocked", ());
     Ok(status)
 }
@@ -1051,7 +1014,7 @@ pub async fn vault_reset(
     state
         .reset(master_password.as_deref())
         .await
-        .map_err(|err| err.to_string())?;
+        .map_err(format_err)?;
     let _ = app.emit("nexterm-vault-cleared", ());
     Ok(())
 }

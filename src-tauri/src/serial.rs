@@ -138,7 +138,7 @@ impl SerialSessionManager {
     ) -> anyhow::Result<String> {
         validate_session_id(&id)?;
         if port_name.trim().is_empty() {
-            return Err(anyhow!("串口名称为空"));
+            return Err(anyhow!("serial port name must not be empty"));
         }
 
         let log_app = app.clone();

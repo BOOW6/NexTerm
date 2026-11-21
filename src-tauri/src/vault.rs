@@ -127,7 +127,7 @@ impl VaultManager {
     fn vault_path(&self) -> anyhow::Result<&Path> {
         self.path
             .as_deref()
-            .ok_or_else(|| anyhow!("无法确定应用配置目录，凭据保险库不可用"))
+            .ok_or_else(|| anyhow!("no usable config directory, credential vault unavailable"))
     }
 
     pub fn status(&self) -> VaultStatus {
@@ -147,7 +147,7 @@ impl VaultManager {
         let _io = self.io.lock().await;
         let path = self.vault_path()?;
         if path.exists() {
-            return Err(anyhow!("凭据保险库已存在"));
+            return Err(anyhow!("credential vault already exists"));
         }
         validate_master_password(master_password)?;
 
@@ -213,10 +213,10 @@ impl VaultManager {
         let file: VaultFile =
             serde_json::from_str(&text).context("failed to parse credential vault")?;
         if file.version != VAULT_VERSION {
-            return Err(anyhow!("不支持的凭据保险库版本"));
+            return Err(anyhow!("unsupported credential vault version"));
         }
         if file.kdf != "argon2id" {
-            return Err(anyhow!("不支持的 KDF 算法: {}", file.kdf));
+            return Err(anyhow!("unsupported KDF algorithm: {}", file.kdf));
         }
         let params = file.kdf_params.unwrap_or_default();
 
@@ -226,7 +226,7 @@ impl VaultManager {
         let salt: [u8; SALT_LEN] = salt_bytes
             .as_slice()
             .try_into()
-            .map_err(|_| anyhow!("凭据保险库 salt 长度无效"))?;
+            .map_err(|_| anyhow!("invalid credential vault salt length"))?;
         let key = derive_key_async(master_password.to_string(), salt, params).await?;
 
         let plaintext = match decrypt(&key, &file.nonce, &file.data) {
@@ -255,7 +255,7 @@ impl VaultManager {
 
     pub async fn set(&self, name: &str, secret: &str) -> anyhow::Result<()> {
         if name.trim().is_empty() {
-            return Err(anyhow!("凭据名称不能为空"));
+            return Err(anyhow!("credential name must not be empty"));
         }
         let _io = self.io.lock().await;
         let (snapshot, previous) = {
@@ -327,7 +327,7 @@ impl VaultManager {
         validate_master_password(new_password)?;
         let _io = self.io.lock().await;
         if !self.unlock_inner(old_password).await? {
-            return Err(anyhow!("当前主密码错误"));
+            return Err(anyhow!("current master password is incorrect"));
         }
 
         let params = {
@@ -374,9 +374,11 @@ impl VaultManager {
         let master_password = master_password
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .ok_or_else(|| anyhow!("重置凭据保险库需要当前主密码"))?;
+            .ok_or_else(|| {
+                anyhow!("resetting the credential vault requires the current master password")
+            })?;
         if !self.unlock_attempt(master_password).await? {
-            return Err(anyhow!("当前主密码错误"));
+            return Err(anyhow!("current master password is incorrect"));
         }
         std::fs::remove_file(path).context("failed to remove credential vault")?;
         let mut state = lock(&self.state);
@@ -395,8 +397,12 @@ impl VaultManager {
     }
 
     fn persist_sync(state: &VaultState, path: &Path) -> anyhow::Result<()> {
-        let salt = state.salt.ok_or_else(|| anyhow!("凭据保险库尚未解锁"))?;
-        let key = state.key.ok_or_else(|| anyhow!("凭据保险库尚未解锁"))?;
+        let salt = state
+            .salt
+            .ok_or_else(|| anyhow!("credential vault is locked"))?;
+        let key = state
+            .key
+            .ok_or_else(|| anyhow!("credential vault is locked"))?;
 
         let plaintext =
             serde_json::to_vec(&state.entries).context("failed to serialize vault entries")?;
@@ -477,14 +483,14 @@ impl VaultManager {
 
 fn require_unlocked(state: &VaultState) -> anyhow::Result<()> {
     if state.key.is_none() {
-        return Err(anyhow!("凭据保险库已锁定"));
+        return Err(anyhow!("credential vault is locked"));
     }
     Ok(())
 }
 
 fn validate_master_password(password: &str) -> anyhow::Result<()> {
     if password.chars().count() < 8 {
-        return Err(anyhow!("主密码至少需要 8 个字符"));
+        return Err(anyhow!("master password must be at least 8 characters"));
     }
     Ok(())
 }
@@ -495,11 +501,11 @@ fn derive_key_with_params(
     params: &KdfParams,
 ) -> anyhow::Result<[u8; KEY_LEN]> {
     let params = Params::new(params.m_cost, params.t_cost, params.p_cost, None)
-        .map_err(|err| anyhow!("无效的 KDF 参数: {err}"))?;
+        .map_err(|err| anyhow!("invalid KDF parameters: {err}"))?;
     let mut key = [0u8; KEY_LEN];
     Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
         .hash_password_into(password.as_bytes(), salt, &mut key)
-        .map_err(|err| anyhow!("无法派生保险库密钥: {err}"))?;
+        .map_err(|err| anyhow!("failed to derive vault key: {err}"))?;
     Ok(key)
 }
 
@@ -513,7 +519,7 @@ async fn derive_key_async(
     let key =
         tokio::task::spawn_blocking(move || derive_key_with_params(&password, &salt, &params))
             .await
-            .map_err(|err| anyhow!("无法派生保险库密钥: {err}"))??;
+            .map_err(|err| anyhow!("failed to derive vault key: {err}"))??;
     Ok(key)
 }
 
@@ -524,7 +530,7 @@ fn decrypt(key: &[u8; KEY_LEN], nonce: &str, data: &str) -> anyhow::Result<Vec<u
     let nonce_bytes: [u8; NONCE_LEN] = nonce_bytes
         .as_slice()
         .try_into()
-        .map_err(|_| anyhow!("凭据保险库 nonce 长度无效"))?;
+        .map_err(|_| anyhow!("invalid credential vault nonce length"))?;
     let ciphertext = BASE64
         .decode(data.as_bytes())
         .context("failed to decode vault data")?;
