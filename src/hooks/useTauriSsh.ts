@@ -57,6 +57,11 @@ export interface HostKeyTimeoutPayload {
   port: number;
 }
 
+export interface HostKeyPersistFailedPayload {
+  host: string;
+  error: string;
+}
+
 export interface KnownHost {
   host: string;
   algorithm: string;
@@ -367,6 +372,14 @@ export async function listenHostKeyTimeout(
 ): Promise<() => void> {
   return listen<HostKeyTimeoutPayload>('ssh-host-key-timeout', (event) => {
     onTimeout(event.payload);
+  });
+}
+
+export async function listenHostKeyPersistFailed(
+  onFailed: (payload: HostKeyPersistFailedPayload) => void
+): Promise<() => void> {
+  return listen<HostKeyPersistFailedPayload>('ssh-host-key-persist-failed', (event) => {
+    onFailed(event.payload);
   });
 }
 

@@ -148,6 +148,8 @@ export const ZH: Dictionary = {
   'hostKey.window.mismatchTitle': '主机密钥不匹配',
   'hostKey.timeoutToastTitle': '主机密钥确认超时：{host}:{port}',
   'hostKey.timeoutToastDesc': '指纹确认窗口已关闭，连接已取消，可重新发起连接。',
+  'hostKey.persistFailedToastTitle': '主机指纹已接受，但未能写入 known_hosts：{host}',
+  'hostKey.persistFailedToastDesc': '本次连接不受影响，下次连接时将再次确认该指纹。',
   'hostKey.mismatch.warning':
     '该主机当前密钥与已保存记录不一致，连接已中止。请勿在未确认服务器变更的情况下继续连接。',
   'hostKey.mismatch.savedFingerprint': '已保存指纹',
@@ -321,6 +323,9 @@ export const EN: Dictionary = {
   'hostKey.timeoutToastTitle': 'Host key confirmation timed out: {host}:{port}',
   'hostKey.timeoutToastDesc':
     'The fingerprint prompt was closed and the connection cancelled; you can try connecting again.',
+  'hostKey.persistFailedToastTitle': 'Fingerprint accepted but known_hosts write failed: {host}',
+  'hostKey.persistFailedToastDesc':
+    'This connection is unaffected; the next connection will confirm the fingerprint again.',
   'hostKey.mismatch.warning':
     'The host key differs from the saved record and the connection was aborted. Do not continue unless you have verified the server change.',
   'hostKey.mismatch.savedFingerprint': 'Saved fingerprint',

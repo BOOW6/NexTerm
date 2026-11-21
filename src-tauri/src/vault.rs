@@ -404,13 +404,34 @@ impl VaultManager {
         temp_file
             .sync_all()
             .context("failed to flush credential vault")?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // Restrict permissions on the temp file BEFORE the rename: the
+            // blob would otherwise be world-readable until this chmod ran,
+            // and a chmod failure after the rename could not be surfaced
+            // without forking the caller's in-memory state from disk.
+            temp_file
+                .set_permissions(std::fs::Permissions::from_mode(0o600))
+                .context("failed to restrict credential vault permissions")?;
+        }
         drop(temp_file);
         std::fs::rename(&temp, path).context("failed to replace credential vault")?;
 
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+            // Idempotent fallback: some filesystems rewrite permissions during
+            // rename. Best-effort, but never silent.
+            if let Err(error) =
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            {
+                eprintln!(
+                    "[vault] failed to restrict permissions on {}: {error}",
+                    path.display()
+                );
+            }
             if let Some(parent) = path.parent() {
                 if let Ok(dir) = std::fs::File::open(parent) {
                     let _ = dir.sync_all();

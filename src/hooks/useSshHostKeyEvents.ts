@@ -4,6 +4,7 @@ import { toast } from '../components/ui/toastStore';
 import { tStatic } from '../i18n';
 import {
   listenHostKeyMismatch,
+  listenHostKeyPersistFailed,
   listenHostKeyPrompt,
   listenHostKeyTimeout,
   respondHostKey
@@ -39,15 +40,26 @@ export function useSshHostKeyEvents(): void {
           description: tStatic('hostKey.timeoutToastDesc'),
           variant: 'warning'
         });
+      }),
+      listenHostKeyPersistFailed((payload) => {
+        // The accepted connection is fine; the user must know the next
+        // connect will re-ask for this fingerprint instead of suspecting
+        // a security problem.
+        toast({
+          title: tStatic('hostKey.persistFailedToastTitle', { host: payload.host }),
+          description: tStatic('hostKey.persistFailedToastDesc'),
+          variant: 'warning'
+        });
       })
     ])
-      .then(([disposePrompt, disposeMismatch, disposeTimeout]) => {
+      .then(([disposePrompt, disposeMismatch, disposeTimeout, disposePersistFailed]) => {
         if (cancelled) {
           disposePrompt();
           disposeMismatch();
           disposeTimeout();
+          disposePersistFailed();
         } else {
-          disposers = [disposePrompt, disposeMismatch, disposeTimeout];
+          disposers = [disposePrompt, disposeMismatch, disposeTimeout, disposePersistFailed];
         }
       })
       .catch(() => undefined);

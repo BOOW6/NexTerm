@@ -281,10 +281,10 @@ impl HostKeyState {
         entries
     }
 
-    fn remove(&self, host: &str) {
+    fn remove(&self, host: &str) -> anyhow::Result<()> {
         let mut known = lock(&self.known);
         known.remove(host);
-        self.persist(&known);
+        self.persist(&known)
     }
 
     fn add(
@@ -293,7 +293,7 @@ impl HostKeyState {
         algorithm: String,
         fingerprint: String,
         public_key: Option<String>,
-    ) {
+    ) -> anyhow::Result<()> {
         let mut known = lock(&self.known);
         known.insert(
             host.clone(),
@@ -305,31 +305,28 @@ impl HostKeyState {
                 public_key,
             },
         );
-        self.persist(&known);
+        self.persist(&known)
     }
 
-    fn persist(&self, known: &HashMap<String, KnownHost>) {
+    fn persist(&self, known: &HashMap<String, KnownHost>) -> anyhow::Result<()> {
         let Some(path) = self.path.as_deref() else {
             // No usable config directory: keep the in-memory map, do not
             // degrade to a temp file.
-            return;
+            return Err(anyhow!("no usable config directory for known_hosts"));
         };
         let entries: Vec<&KnownHost> = known.values().collect();
-        let Ok(json) = serde_json::to_vec_pretty(&entries) else {
-            return;
-        };
+        let json =
+            serde_json::to_vec_pretty(&entries).context("failed to serialize known_hosts")?;
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
         // Write-through-temp-then-rename: a crash mid-write leaves the
         // previous file intact instead of a truncated, unparsable one.
         let temp = path.with_extension("json.tmp");
-        if std::fs::write(&temp, json)
+        std::fs::write(&temp, json)
             .and_then(|()| std::fs::rename(&temp, path))
-            .is_err()
-        {
-            eprintln!("[known_hosts] failed to persist {}", path.display());
-        }
+            .with_context(|| format!("failed to persist known_hosts to {}", path.display()))?;
+        Ok(())
     }
 }
 
@@ -434,7 +431,11 @@ impl<R: Runtime> client::Handler for Client<R> {
                 if let Some(entry) = known.get_mut(&self.host_label) {
                     if entry.public_key.is_none() {
                         entry.public_key = key.to_openssh().ok();
-                        self.host_key.persist(&known);
+                        // Metadata backfill only: not worth failing the
+                        // handshake over, but keep it visible in logs.
+                        if let Err(error) = self.host_key.persist(&known) {
+                            eprintln!("[known_hosts] backfill persist failed: {error:#}");
+                        }
                     }
                 }
                 return Ok(true);
@@ -498,12 +499,23 @@ impl<R: Runtime> client::Handler for Client<R> {
             if self.cancel.is_cancelled() {
                 return Ok(false);
             }
-            self.host_key.add(
+            if let Err(error) = self.host_key.add(
                 self.host_label.clone(),
                 algorithm,
                 fingerprint,
                 key.to_openssh().ok(),
-            );
+            ) {
+                // The accepted connection itself stays fine; warn so the user
+                // understands why the next connect re-asks for this
+                // fingerprint instead of suspecting a security problem.
+                let _ = self.app.emit(
+                    "ssh-host-key-persist-failed",
+                    HostKeyPersistFailedPayload {
+                        host: self.host_label.clone(),
+                        error: error.to_string(),
+                    },
+                );
+            }
             Ok(true)
         } else {
             Ok(false)
@@ -580,6 +592,12 @@ struct HostKeyTimeoutPayload {
     request_id: String,
     host: String,
     port: u16,
+}
+
+#[derive(Clone, Serialize)]
+struct HostKeyPersistFailedPayload {
+    host: String,
+    error: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -1075,8 +1093,7 @@ impl SshManager {
     }
 
     pub fn remove_known_host(&self, host: &str) -> anyhow::Result<()> {
-        self.host_keys().remove(host);
-        Ok(())
+        self.host_keys().remove(host)
     }
 
     pub fn resolve_host_key(&self, request_id: &str, accept: bool) {
@@ -1450,28 +1467,36 @@ impl SshManager {
 
         // A disconnect during the auth/handshake phases may have given up on
         // this attempt; never register a session nobody is watching anymore.
-        if lock(&self.connecting)
-            .get(&id)
-            .map(|handle| handle.cancelled.load(Ordering::SeqCst))
-            .unwrap_or(true)
+        // Holding the `connecting` lock across the check AND the insert closes
+        // the old check-then-insert TOCTOU window (same pattern as the PTY
+        // manager): `disconnect` removes the reservation under the same lock,
+        // so it either lands before the check (we observe `cancelled` and
+        // bail) or after the insert (it then finds the live session in
+        // `sessions` and shuts it down) — never in between.
         {
-            return Err(anyhow!("SSH 连接已取消"));
+            let connecting = lock(&self.connecting);
+            if connecting
+                .get(&id)
+                .map(|handle| handle.cancelled.load(Ordering::SeqCst))
+                .unwrap_or(true)
+            {
+                return Err(anyhow!("SSH 连接已取消"));
+            }
+            self.sessions
+                .lock()
+                .map_err(|_| anyhow!("failed to lock SSH sessions"))?
+                .insert(
+                    id.clone(),
+                    Arc::new(SshConnection {
+                        handle,
+                        writer,
+                        sftp: tokio::sync::Mutex::new(None),
+                        remote_forwards,
+                        log,
+                        jump_handle,
+                    }),
+                );
         }
-
-        self.sessions
-            .lock()
-            .map_err(|_| anyhow!("failed to lock SSH sessions"))?
-            .insert(
-                id.clone(),
-                Arc::new(SshConnection {
-                    handle,
-                    writer,
-                    sftp: tokio::sync::Mutex::new(None),
-                    remote_forwards,
-                    log,
-                    jump_handle,
-                }),
-            );
 
         Ok(id)
     }
@@ -1518,6 +1543,13 @@ impl SshManager {
         }
 
         stop_session_forwards(&self.forwards, &app, id).await;
+
+        // In-progress SFTP transfers are deliberately NOT cancelled here.
+        // Their tasks hold their own SFTP channel and fail on their own the
+        // moment the connection drops; the done payload then carries
+        // `disconnected: true`, which the frontend turns into a resumable
+        // entry and resumes from the `.part` sidecar after a reconnect.
+        // Cancelling from here would break that resume chain.
 
         let connection = self
             .sessions
@@ -1796,7 +1828,7 @@ impl SshManager {
             for entry in entries {
                 known.insert(entry.host.clone(), entry);
             }
-            self.host_keys.persist(&known);
+            self.host_keys.persist(&known)?;
         }
 
         Ok(result)
@@ -3719,12 +3751,14 @@ mod tests {
         let dir = tempdir().unwrap();
         let state = HostKeyState::new(Some(dir.path().join("known_hosts.json")));
         let key = test_key();
-        state.add(
-            "example.com:22".to_string(),
-            key.algorithm().to_string(),
-            key.fingerprint(HashAlg::Sha256).to_string(),
-            None,
-        );
+        state
+            .add(
+                "example.com:22".to_string(),
+                key.algorithm().to_string(),
+                key.fingerprint(HashAlg::Sha256).to_string(),
+                None,
+            )
+            .unwrap();
 
         assert!(matches!(
             classify_server_key(
@@ -3746,12 +3780,14 @@ mod tests {
         let dir = tempdir().unwrap();
         let state = HostKeyState::new(Some(dir.path().join("known_hosts.json")));
         let key = test_key();
-        state.add(
-            "example.com:22".to_string(),
-            key.algorithm().to_string(),
-            key.fingerprint(HashAlg::Sha256).to_string(),
-            None,
-        );
+        state
+            .add(
+                "example.com:22".to_string(),
+                key.algorithm().to_string(),
+                key.fingerprint(HashAlg::Sha256).to_string(),
+                None,
+            )
+            .unwrap();
 
         match classify_server_key(&state, "example.com:22", "SHA256:tampered") {
             HostKeyCheck::Mismatch { expected } => {
@@ -3843,13 +3879,17 @@ mod tests {
         let path = dir.path().join("nested").join("known_hosts.json");
         let state = HostKeyState::new(Some(path.clone()));
 
-        state.add("zeta:22".into(), "Rsa".into(), "SHA256:zeta".into(), None);
-        state.add(
-            "alpha:22".into(),
-            "Ed25519".into(),
-            "SHA256:alpha".into(),
-            None,
-        );
+        state
+            .add("zeta:22".into(), "Rsa".into(), "SHA256:zeta".into(), None)
+            .unwrap();
+        state
+            .add(
+                "alpha:22".into(),
+                "Ed25519".into(),
+                "SHA256:alpha".into(),
+                None,
+            )
+            .unwrap();
 
         let entries = state.list();
         assert_eq!(
@@ -3871,8 +3911,12 @@ mod tests {
         let dir = tempdir().unwrap();
         let state = HostKeyState::new(Some(dir.path().join("known_hosts.json")));
 
-        state.add("host:22".into(), "Rsa".into(), "SHA256:old".into(), None);
-        state.add("host:22".into(), "Rsa".into(), "SHA256:new".into(), None);
+        state
+            .add("host:22".into(), "Rsa".into(), "SHA256:old".into(), None)
+            .unwrap();
+        state
+            .add("host:22".into(), "Rsa".into(), "SHA256:new".into(), None)
+            .unwrap();
 
         let entries = state.list();
         assert_eq!(entries.len(), 1);
@@ -3884,10 +3928,14 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("known_hosts.json");
         let state = HostKeyState::new(Some(path.clone()));
-        state.add("keep:22".into(), "Rsa".into(), "SHA256:keep".into(), None);
-        state.add("drop:22".into(), "Rsa".into(), "SHA256:drop".into(), None);
+        state
+            .add("keep:22".into(), "Rsa".into(), "SHA256:keep".into(), None)
+            .unwrap();
+        state
+            .add("drop:22".into(), "Rsa".into(), "SHA256:drop".into(), None)
+            .unwrap();
 
-        state.remove("drop:22");
+        state.remove("drop:22").unwrap();
 
         assert_eq!(state.list().len(), 1);
         let reloaded = HostKeyState::new(Some(path));
@@ -4253,12 +4301,14 @@ mod tests {
         assert!(!path.exists());
 
         // New records persist normally again after the reset.
-        state.add(
-            "recovered:22".to_string(),
-            "ssh-ed25519".to_string(),
-            "SHA256:test".to_string(),
-            None,
-        );
+        state
+            .add(
+                "recovered:22".to_string(),
+                "ssh-ed25519".to_string(),
+                "SHA256:test".to_string(),
+                None,
+            )
+            .unwrap();
         assert_eq!(state.list().len(), 1);
     }
 

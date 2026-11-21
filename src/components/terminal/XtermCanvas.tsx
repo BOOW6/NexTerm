@@ -1484,7 +1484,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             useSessionStore.getState().setStatus(sessionId, 'idle');
             void writeScrollbackNotice(
               instance,
-              `\x1b[33m[${serialCloseNotice(payload)}][0m`,
+              `\x1b[33m[${serialCloseNotice(payload)}]\x1b[0m`,
               true
             );
           });
@@ -1507,7 +1507,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
               useSessionStore.getState().setStatus(sessionId, 'idle');
               void writeScrollbackNotice(
                 instance,
-                `\x1b[33m[${t('terminal.serialDisconnected')}][0m`,
+                `\x1b[33m[${t('terminal.serialDisconnected')}]\x1b[0m`,
                 true
               );
             }

@@ -167,7 +167,16 @@ impl SerialSessionManager {
                 .context("failed to open serial port")
         })
         .await
-        .map_err(|err| anyhow!("failed to open serial port: {err}"))?;
+        .map_err(|err| {
+            // The blocking task panicked or was cancelled before the open
+            // result arrived: roll the reservation back so the id stays
+            // usable, same as the open-failure path below.
+            self.sessions
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .remove(&id);
+            anyhow!("failed to open serial port: {err}")
+        })?;
 
         let port = match open_result {
             Ok(port) => port,
@@ -181,9 +190,15 @@ impl SerialSessionManager {
             }
         };
 
-        let write_handle = port
-            .try_clone()
-            .context("failed to clone serial port handle")?;
+        let write_handle = port.try_clone().map_err(|error| {
+            // Roll the reservation back so the id stays usable: without it a
+            // half-open session would squat the id and the port forever.
+            self.sessions
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .remove(&id);
+            anyhow::Error::new(error).context("failed to clone serial port handle")
+        })?;
         *session.port.lock().unwrap_or_else(|p| p.into_inner()) = Some(write_handle);
 
         let sessions = Arc::clone(&self.sessions);
