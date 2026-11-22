@@ -883,5 +883,63 @@ pub fn hex_header(type_: u8, flags: u32) -> Vec<u8> {
     out
 }
 
+/// Detects the first ZRQINIT sentinel in the raw output stream, cross-chunk
+/// safe. The receive-confirm mode uses it to hold the handshake answer until
+/// the user accepts: `sz` retries ZRQINIT until it sees our ZRINIT, so while
+/// the dialog is open no file data is in flight and dropped retry bytes are
+/// harmless.
+pub struct BatchStartScanner {
+    tail: Vec<u8>,
+    found: bool,
+}
+
+impl Default for BatchStartScanner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl BatchStartScanner {
+    pub fn new() -> Self {
+        Self {
+            tail: Vec::new(),
+            found: false,
+        }
+    }
+
+    /// Feed the next raw chunk. Returns true once the sentinel has been seen
+    /// (sticky until [`BatchStartScanner::reset`]).
+    pub fn feed(&mut self, data: &[u8]) -> bool {
+        if self.found {
+            return true;
+        }
+        let mut buf = std::mem::take(&mut self.tail);
+        buf.extend_from_slice(data);
+        if find_subsequence(&buf, &SENTINEL).is_some() {
+            self.found = true;
+            self.tail.clear();
+            return true;
+        }
+        // Only a suffix that is a prefix of the sentinel can still complete
+        // it with the next chunk (same rule as the receiver's scan buffer).
+        let keep = sentinel_prefix_len(&buf);
+        self.tail = buf[buf.len() - keep..].to_vec();
+        false
+    }
+
+    /// Re-arm for the next batch.
+    pub fn reset(&mut self) {
+        self.tail.clear();
+        self.found = false;
+    }
+}
+
+fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.len() > haystack.len() {
+        return None;
+    }
+    (0..=haystack.len() - needle.len()).find(|&i| &haystack[i..i + needle.len()] == needle)
+}
+
 #[cfg(test)]
 mod tests;

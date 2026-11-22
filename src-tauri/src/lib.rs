@@ -147,6 +147,7 @@ pub fn run() {
                 Some(dir.join("known_hosts.json"))
             });
             app.manage(SshManager::new(known_hosts_path));
+            app.manage(ssh::ZmodemConfirmState::default());
 
             // Without a config directory the vault refuses to operate (the
             // manager reports clear errors) instead of silently degrading to
@@ -194,6 +195,8 @@ pub fn run() {
             commands::set_session_log,
             commands::set_session_log_root,
             commands::session_logs_clear,
+            commands::set_zmodem_auto_receive,
+            commands::zmodem_receive_response,
             commands::telnet_connect,
             commands::telnet_write,
             commands::telnet_resize,

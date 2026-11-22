@@ -383,3 +383,65 @@ fn cancel_keeps_the_same_chunk_as_terminal_output() {
         Action::WriteToRemote { data } if data == &CANCEL_SEQUENCE.to_vec()
     )));
 }
+
+mod batch_start_scanner {
+    use super::super::{BatchStartScanner, ZDLE, ZHEX, ZPAD};
+
+    fn sentinel() -> Vec<u8> {
+        vec![ZPAD, ZPAD, ZDLE, ZHEX, b'0', b'0']
+    }
+
+    #[test]
+    fn detects_the_sentinel_in_one_chunk() {
+        let mut scanner = BatchStartScanner::new();
+        let mut chunk = b"prompt\r\n".to_vec();
+        chunk.extend_from_slice(&sentinel());
+        chunk.extend_from_slice(b"0000000\r\n");
+        assert!(scanner.feed(&chunk));
+    }
+
+    #[test]
+    fn detects_the_sentinel_split_across_chunks() {
+        let s = sentinel();
+        let mut scanner = BatchStartScanner::new();
+        assert!(!scanner.feed(b"prompt\r\n**"));
+        assert!(!scanner.feed(&s[..4]));
+        assert!(scanner.feed(&s[4..]));
+    }
+
+    #[test]
+    fn keeps_only_real_prefixes_as_carry() {
+        // A suffix that merely looks like `**` must not latch onto garbage.
+        let mut scanner = BatchStartScanner::new();
+        assert!(!scanner.feed(b"idle output **"));
+        assert!(!scanner.feed(b"more text without a sentinel\r\n"));
+        // The carry was dropped: the sentinel now has to appear in full.
+        let mut chunk = b"x".to_vec();
+        chunk.extend_from_slice(&sentinel());
+        assert!(scanner.feed(&chunk));
+    }
+
+    #[test]
+    fn stays_sticky_until_reset() {
+        let mut scanner = BatchStartScanner::new();
+        assert!(scanner.feed(&sentinel()));
+        assert!(scanner.feed(b"anything"));
+        scanner.reset();
+        assert!(!scanner.feed(b"plain text"));
+        let mut chunk = b"x".to_vec();
+        chunk.extend_from_slice(&sentinel());
+        assert!(scanner.feed(&chunk));
+    }
+
+    #[test]
+    fn shell_text_never_trips_it() {
+        let mut scanner = BatchStartScanner::new();
+        for chunk in [
+            "root@host:~$ ls\r\n".as_bytes(),
+            "total 0\r\n".as_bytes(),
+            &[b'*', b'*', 0x18][..],
+        ] {
+            assert!(!scanner.feed(chunk));
+        }
+    }
+}

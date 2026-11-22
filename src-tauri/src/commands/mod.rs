@@ -166,10 +166,30 @@ use crate::fonts::{FontManager, SystemFontFace, SystemFontFamily};
 use crate::pty::{PtyPlatformInfo, PtySessionManager};
 use crate::ssh::{
     JumpTarget, KnownHost, KnownHostsExportResult, KnownHostsImportResult, PortForwardInfo,
-    SftpEntry, SftpTransferOptions, SshManager,
+    SftpEntry, SftpTransferOptions, SshManager, ZmodemConfirmState,
 };
 use crate::telnet::TelnetSessionManager;
 use crate::vault::{VaultManager, VaultStatus};
+
+/// Mirror the frontend's "ZMODEM auto receive" toggle into the backend read
+/// loops (they consult it live when a transfer starts).
+#[tauri::command]
+pub fn set_zmodem_auto_receive(state: State<'_, ZmodemConfirmState>, enabled: bool) {
+    state.set_auto_receive(enabled);
+}
+
+/// Answer a pending receive-confirmation prompt. An unknown or already
+/// timed-out request id is a no-op.
+#[tauri::command]
+pub fn zmodem_receive_response(
+    state: State<'_, ZmodemConfirmState>,
+    request_id: String,
+    accept: bool,
+) {
+    if let Some(sender) = state.take_pending(&request_id) {
+        let _ = sender.send(accept);
+    }
+}
 
 #[tauri::command]
 pub async fn fonts_list(state: State<'_, FontManager>) -> Result<Vec<SystemFontFamily>, String> {

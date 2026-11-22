@@ -16,6 +16,7 @@ import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
 import { useSettingsSync } from './hooks/useSettingsSync';
 import { useSessionLogRootSync } from './hooks/useSessionLogRootSync';
 import { useSessionLogEvents } from './hooks/useSessionLogEvents';
+import { useZmodemPolicySync } from './hooks/useZmodemPolicySync';
 import { useSnippetSync } from './hooks/useSnippetSync';
 import { useMacroSync } from './hooks/useMacroSync';
 import { useWindowState } from './hooks/useWindowState';
@@ -37,6 +38,7 @@ function AppShell() {
   useMacroSync();
   useSessionLogRootSync();
   useSessionLogEvents();
+  useZmodemPolicySync();
   useVaultEvents();
   useWindowState();
   useWindowTitle();

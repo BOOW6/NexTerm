@@ -28,7 +28,7 @@ use russh_sftp::{client::SftpSession, protocol::OpenFlags};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime, Wry};
 
-use crate::zmodem::{Action as ZmodemAction, ZmodemReceiver};
+use crate::zmodem::{Action as ZmodemAction, BatchStartScanner, ZmodemReceiver};
 use tokio::{
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom},
     net::{TcpListener, TcpStream},
@@ -751,6 +751,57 @@ impl ZmodemFile {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Receive-confirmation policy shared by all SSH sessions: whether incoming
+/// ZMODEM batches start downloading automatically, plus the in-flight user
+/// decisions (same shape as the host-key pending map). The frontend mirrors
+/// the toggle via `set_zmodem_auto_receive` and answers prompts through
+/// `zmodem_receive_response`.
+#[derive(Default)]
+pub struct ZmodemConfirmState {
+    auto_receive: Mutex<bool>,
+    pending: Mutex<HashMap<String, oneshot::Sender<bool>>>,
+}
+
+impl ZmodemConfirmState {
+    pub fn set_auto_receive(&self, enabled: bool) {
+        *lock(&self.auto_receive) = enabled;
+    }
+
+    fn auto_receive(&self) -> bool {
+        *lock(&self.auto_receive)
+    }
+
+    fn insert_pending(&self, request_id: String, sender: oneshot::Sender<bool>) {
+        lock(&self.pending).insert(request_id, sender);
+    }
+
+    pub(crate) fn take_pending(&self, request_id: &str) -> Option<oneshot::Sender<bool>> {
+        lock(&self.pending).remove(request_id)
+    }
+}
+
+/// Ask the user whether to accept an incoming ZMODEM batch (receive-confirm
+/// mode). Resolves through the `zmodem_receive_response` command; an
+/// unanswered dialog counts as a rejection so the read loop can never wedge.
+async fn ask_zmodem_receive(app: &AppHandle, session_id: &str) -> bool {
+    let state = app.state::<ZmodemConfirmState>();
+    let request_id = Uuid::new_v4().to_string();
+    let (sender, receiver) = oneshot::channel();
+    state.insert_pending(request_id.clone(), sender);
+    let _ = app.emit(
+        "zmodem-receive-request",
+        serde_json::json!({
+            "requestId": request_id,
+            "sessionId": session_id,
+        }),
+    );
+    // Same bound as the host-key dialog.
+    let decision = tokio::time::timeout(Duration::from_secs(120), receiver).await;
+    state.take_pending(&request_id);
+    matches!(decision, Ok(Ok(true)))
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn handle_zmodem_action(
     app: &AppHandle,
     event_id: &str,
@@ -1339,6 +1390,14 @@ impl SshManager {
             // Bytes retained by completed ZMODEM files of this session,
             // for the cumulative receive quota.
             let mut zmodem_batch_bytes: u64 = 0;
+            // Receive-confirmation flow (auto_receive off): the scanner
+            // watches the raw stream for the ZRQINIT sentinel before the
+            // machine answers the handshake. While the dialog is open the
+            // read loop simply waits on the decision — `sz` only sends
+            // ZRQINIT retries until it sees our ZRINIT, so there is no file
+            // data in flight to buffer, and the triggering chunk is dropped.
+            let mut zscanner = BatchStartScanner::new();
+            let mut zbatch_active = false;
 
             // Distinguishes a remote shell that ended on its own (the user
             // typed `exit`, or the login shell was killed) from a transport
@@ -1349,12 +1408,51 @@ impl SshManager {
             while let Some(message) = read_half.wait().await {
                 match message {
                     ChannelMsg::Data { data } => {
-                        let (passthrough, actions, cancelled_by_user) = {
+                        // Receive-confirmation gate (auto_receive off): watch
+                        // the raw bytes for a batch start before the machine
+                        // answers the handshake.
+                        if !app_handle.state::<ZmodemConfirmState>().auto_receive()
+                            && !zbatch_active
+                            && zscanner.feed(&data)
+                        {
+                            let accepted = ask_zmodem_receive(&app_handle, &event_id).await;
+                            if accepted {
+                                // Disarm until the batch ends; the next
+                                // ZRQINIT retry drives the normal handshake.
+                                zbatch_active = true;
+                            } else {
+                                // Stop the sender; the untouched machine
+                                // stays in scan state for the next batch.
+                                let cancel = {
+                                    let mut machine = zmachine
+                                        .lock()
+                                        .unwrap_or_else(|poison| poison.into_inner());
+                                    machine.cancel()
+                                };
+                                let manager = app_handle.state::<SshManager>();
+                                if let Err(err) = manager.write(&event_id, &cancel).await {
+                                    eprintln!("[zmodem] cancel write failed: {err}");
+                                }
+                            }
+                            continue;
+                        }
+                        let (passthrough, actions, cancelled_by_user, done_or_aborted) = {
                             let mut machine =
                                 zmachine.lock().unwrap_or_else(|poison| poison.into_inner());
                             let feed = machine.feed(&data);
-                            (feed.passthrough, feed.actions, feed.cancelled)
+                            (
+                                feed.passthrough,
+                                feed.actions,
+                                feed.cancelled,
+                                feed.done || feed.aborted,
+                            )
                         };
+                        if done_or_aborted {
+                            // Batch ended (cleanly or aborted): re-arm the
+                            // confirmation scanner for the next one.
+                            zbatch_active = false;
+                            zscanner.reset();
+                        }
                         if !passthrough.is_empty() {
                             let decoded = output_decoder.feed(&passthrough);
                             read_log.write(&decoded);

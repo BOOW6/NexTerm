@@ -52,7 +52,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
   - 事件：`sftp-progress`、`sftp-transfer-done`
   - 每个 SSH 会话复用一条 SFTP 子系统通道；传输支持递归目录、聚合进度、断点续传、暂停/取消/重试与冲突策略（询问/覆盖/跳过/重命名/较新才覆盖）。断点续传实现：下载写本地 `<file>.part`，上传写远端 `<file>.nexterm-part`，均带侧车元数据（来源 size + mtime 指纹）做续传校验，完成后原子替换目标文件，目标路径上只出现完整内容。传输任务绑定会话而非后端连接 id：断线自动重连后自动从 part 续传；conflict=ask 时经 `sftp-conflict` 事件弹出独立确认窗口（`sftp_conflict_response` 应答，支持"应用到全部"）。OS 拖拽上传与面板内拖动移动复用同一传输/重命名管线。
   - **传输失败路径 fail-closed**：`ConflictPolicy` 是 serde 强类型枚举（未知值在 IPC 边界拒绝，缺省回落 ask）；rename 候选耗尽与远程目录创建失败会让传输报错终止，绝不回退原路径覆盖。
-  - ZMODEM 接收（`src-tauri/src/zmodem.rs`，纯状态机 + 单测）：SSH 读循环在 UTF-8 解码前拦截 `sz` 流，文件落系统下载目录；进度复用 `sftp-progress`（id 前缀 `zmodem-`，取消走取消序列，暂停被拒绝）。本地写失败即终态（关文件、删 part、队列报错、发送取消序列），且接收有单文件 2 GiB / 会话批次 8 GiB 配额（FileStart 拒绝 + 逐块校验，谎报 size 逃不过）。
+  - ZMODEM 接收（`src-tauri/src/zmodem.rs`，纯状态机 + 单测）：SSH 读循环在 UTF-8 解码前拦截 `sz` 流，文件落系统下载目录；进度复用 `sftp-progress`（id 前缀 `zmodem-`，取消走取消序列，暂停被拒绝）。本地写失败即终态（关文件、删 part、队列报错、发送取消序列），且接收有单文件 2 GiB / 会话批次 8 GiB 配额（FileStart 拒绝 + 逐块校验，谎报 size 逃不过）。接收确认模式（设置 `zmodemAutoReceive` 关闭）：`BatchStartScanner` 在握手应答前拦截 ZRQINIT，经 `zmodem-receive-request` 事件弹确认框、`zmodem_receive_response` 应答，120s 超时视为拒绝并发送取消序列。
   - 远程文件本地编辑：baseline 仅在上传成功后推进（失败保持 dirty 并按 2s→60s 指数退避重试）；scratch 副本随 watcher 退出删除、启动时清理遗留。
   - UI：目录浏览、文件/文件夹上传、文件/文件夹下载、新建文件夹、重命名、删除、传输队列、远程文件本地编辑、拖拽上传/移动。
 
@@ -273,6 +273,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - [x] 依赖审计门禁（cargo audit + npm audit --omit=dev）与 SECURITY.md 漏洞披露流程
 - [x] 质量审计整改第一批：transport 连接表不变量与 Serial 广播、SFTP/ZMODEM/远程编辑失败路径 fail-closed、凭据删除墓碑重试、backup v2、设置迁移加固、根级/面板级 Error Boundary、de-slop 检查器增强（black/white + 原始 JSX 文案）、i18n 键使用扫描、敏感缓存保留与清理入口
 - [x] 质量审计整改第二批：SFTP 健康检查不再持锁等待 RTT（5s 信任窗 + 无锁探测）、sftp-transfer-done 按面板会话过滤并合并刷新、ssh 后端抽边界第一批（known_hosts 存储与编解码移入 ssh/host_keys.rs，14 个测试随迁）、SettingsWindow 抽边界第一批（known_hosts 卡片拆为展示组件）
+- [x] 产品决策落地：滚动缓冲快照改为三态范围设置（所有 / 仅本地（默认）/ 关闭，legacy 布尔迁移），ZMODEM 接收确认（`zmodemAutoReceive` 关闭时经 `BatchStartScanner` 在握手应答前拦截，复用主机密钥式 120s 超时对话框，拒绝发取消序列）
 - [ ] 拆分续批：XtermCanvas（建议边界：TransportAttempt 连接编排 → TerminalOutputPipeline 写队列/解析等待 → ResizeCoordinator，先补组件测试再动）；ssh/mod.rs 剩余（连接握手、SFTP 传输引擎、端口转发各成模块）；SettingsWindow 剩余（Vault、主题、片段各成卡片组件）
 - [ ] IPC Rust/TS 共享 schema 或生成绑定（消除手写字段与字符串枚举；需引入 schemars/ts-rs 或等价方案并评估构建链影响）
 - [ ] 后台标签资源释放：DockLayout defaultRenderer="always" 使全部 xterm/WebGL 上下文常驻；需要休眠策略 + WebGL 释放 + LRU 上限（改动触及渲染管线，须实机回归）

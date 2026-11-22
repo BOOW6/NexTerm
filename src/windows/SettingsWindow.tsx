@@ -1606,6 +1606,15 @@ export default function SettingsWindow() {
           />
           {t('settings.terminal.copyOnSelect')}
         </label>
+        <label className="flex items-center gap-2 text-meta text-muted">
+          <input
+            type="checkbox"
+            className="app-checkbox h-3.5 w-3.5 accent-accent"
+            checked={draft.zmodemAutoReceive}
+            onChange={(event) => update('zmodemAutoReceive', event.target.checked)}
+          />
+          {t('settings.terminal.zmodemAutoReceive')}
+        </label>
         <div>
           <Label htmlFor="terminal-snapshots">{t('settings.terminal.snapshotsLabel')}</Label>
           <Select

@@ -144,6 +144,7 @@ export const ZH: Dictionary = {
   'settings.terminal.snapshotsOff': '关闭',
   'settings.terminal.snapshotsHint':
     '快照以明文形式保存在本地，用于重开或重启后恢复滚动缓冲。远程会话输出可能包含敏感内容，默认不保存。',
+  'settings.terminal.zmodemAutoReceive': 'ZMODEM 自动接收（关闭后每次传输需要确认）',
   'settings.terminal.ligaturesNote':
     '连字需要等宽字体支持（如 Fira Code、Cascadia Code），WebGL 渲染下同样生效。',
   'settings.terminal.sessionLog': '记录会话日志',
@@ -468,6 +469,8 @@ export const EN: Dictionary = {
   'settings.terminal.snapshotsOff': 'Off',
   'settings.terminal.snapshotsHint':
     'Snapshots are stored locally as plaintext to restore scrollback after reopening or restarting. Remote session output may contain sensitive content and is not saved by default.',
+  'settings.terminal.zmodemAutoReceive':
+    'ZMODEM auto receive (turn off to confirm every incoming transfer)',
   'settings.terminal.ligaturesNote':
     'Ligatures require monospaced font support (e.g. Fira Code, Cascadia Code) and also apply under the WebGL renderer.',
   'settings.terminal.sessionLog': 'Record session logs',

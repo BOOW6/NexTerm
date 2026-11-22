@@ -62,6 +62,8 @@ export interface SettingsSnapshot {
   sftpConflictPolicy: SftpConflictPolicy;
   defaultPort: number;
   defaultUsername: string;
+  /** Whether incoming ZMODEM batches start downloading without asking. */
+  zmodemAutoReceive: boolean;
   sessionLogEnabled: boolean;
   /** Directory for session output logs; empty disables path-based logging. */
   sessionLogDir: string;
@@ -102,6 +104,7 @@ export const DEFAULT_SETTINGS: SettingsSnapshot = {
   sftpConflictPolicy: 'ask',
   defaultPort: 22,
   defaultUsername: '',
+  zmodemAutoReceive: true,
   sessionLogEnabled: false,
   sessionLogDir: '',
   closeToTray: false,
@@ -224,6 +227,8 @@ function normalizeSettings(input: Partial<SettingsSnapshot>): SettingsSnapshot {
         : 'ask',
     defaultPort: asClampedInt(input.defaultPort, 22, 1, 65535),
     defaultUsername: asTrimmed(input.defaultUsername, ''),
+    zmodemAutoReceive:
+      input.zmodemAutoReceive === undefined ? true : Boolean(input.zmodemAutoReceive),
     sessionLogEnabled: Boolean(input.sessionLogEnabled),
     closeToTray: Boolean(input.closeToTray),
     globalShowHotkey:
@@ -357,6 +362,7 @@ export function settingsSnapshot(): SettingsSnapshot {
     sftpConflictPolicy: state.sftpConflictPolicy,
     defaultPort: state.defaultPort,
     defaultUsername: state.defaultUsername,
+    zmodemAutoReceive: state.zmodemAutoReceive,
     sessionLogEnabled: state.sessionLogEnabled,
     sessionLogDir: state.sessionLogDir,
     closeToTray: state.closeToTray,
