@@ -193,6 +193,7 @@ pub fn run() {
             commands::ssh_disconnect,
             commands::set_session_log,
             commands::set_session_log_root,
+            commands::session_logs_clear,
             commands::telnet_connect,
             commands::telnet_write,
             commands::telnet_resize,

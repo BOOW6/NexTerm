@@ -125,6 +125,43 @@ pub fn set_session_log_root(state: State<'_, SessionLogRoot>, dir: Option<String
     state.set(dir);
 }
 
+/// Delete every top-level `*.log` file inside the configured session log
+/// directory (the log picker only ever writes there). Returns the number of
+/// removed files so the UI can confirm the cleanup.
+#[tauri::command]
+pub fn session_logs_clear(state: State<'_, SessionLogRoot>) -> Result<u32, String> {
+    let root = state
+        .0
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .clone()
+        .ok_or_else(|| "no session log directory configured".to_string())?;
+    // Canonicalize like validate_log_path so the removal is anchored to the
+    // real directory, then only unlink plain `.log` files directly inside it.
+    let canon_root = root
+        .canonicalize()
+        .map_err(|err| format!("log directory unavailable: {err}"))?;
+    let entries = std::fs::read_dir(&canon_root)
+        .map_err(|err| format!("failed to list log directory: {err}"))?;
+    let mut removed = 0u32;
+    for entry in entries {
+        let path = entry
+            .map_err(|err| format!("failed to list log directory: {err}"))?
+            .path();
+        let is_log_file = path.is_file()
+            && path
+                .extension()
+                .map(|ext| ext.eq_ignore_ascii_case("log"))
+                .unwrap_or(false);
+        if is_log_file {
+            std::fs::remove_file(&path)
+                .map_err(|err| format!("failed to delete {}: {err}", path.display()))?;
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
 use crate::fonts::{FontManager, SystemFontFace, SystemFontFamily};
 use crate::pty::{PtyPlatformInfo, PtySessionManager};
 use crate::ssh::{

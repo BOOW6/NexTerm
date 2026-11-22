@@ -87,6 +87,7 @@ import {
 } from '../hooks/useTauriSsh';
 import type { SessionAuthMethod, SftpConflictPolicy } from '../types/session';
 import { localizeBackendError } from '../lib/backendErrors';
+import { clearAllTerminalSnapshots } from '../lib/terminalSnapshot';
 
 type SettingsTab =
   'appearance' | 'terminal' | 'snippets' | 'ssh' | 'shortcuts' | 'security' | 'about';
@@ -766,6 +767,45 @@ export default function SettingsWindow() {
       }
     } catch {
       /* dialog unavailable */
+    }
+  };
+
+  const clearSnapshots = async () => {
+    const ok = await confirmAction(t('settings.terminal.clearSnapshotsConfirm'), {
+      title: t('settings.terminal.clearSnapshots'),
+      okLabel: t('settings.terminal.clearSnapshots')
+    });
+    if (!ok) {
+      return;
+    }
+    const removed = clearAllTerminalSnapshots();
+    toast({
+      title: t('settings.terminal.snapshotsCleared', { count: removed }),
+      variant: 'success'
+    });
+  };
+
+  const clearSessionLogs = async () => {
+    if (!draft.sessionLogDir.trim()) {
+      toast({ title: t('settings.terminal.logsNoDir'), variant: 'warning' });
+      return;
+    }
+    const ok = await confirmAction(t('settings.terminal.clearLogsConfirm'), {
+      title: t('settings.terminal.clearLogs'),
+      okLabel: t('settings.terminal.clearLogs')
+    });
+    if (!ok) {
+      return;
+    }
+    try {
+      const removed = await invoke<number>('session_logs_clear');
+      toast({ title: t('settings.terminal.logsCleared', { count: removed }), variant: 'success' });
+    } catch (reason) {
+      toast({
+        title: t('settings.terminal.logsClearFailed'),
+        description: localizeBackendError(String(reason)),
+        variant: 'error'
+      });
     }
   };
 
@@ -1601,6 +1641,16 @@ export default function SettingsWindow() {
           </Button>
         </div>
         <p className="text-tiny text-muted-foreground">{t('settings.terminal.logNote')}</p>
+        <div className="flex gap-2 pt-1">
+          <Button variant="secondary" size="sm" onClick={() => void clearSessionLogs()}>
+            <Trash2 className="h-3.5 w-3.5" />
+            {t('settings.terminal.clearLogs')}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => void clearSnapshots()}>
+            <Trash2 className="h-3.5 w-3.5" />
+            {t('settings.terminal.clearSnapshots')}
+          </Button>
+        </div>
       </div>
 
       <div>

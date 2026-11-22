@@ -147,6 +147,15 @@ export const ZH: Dictionary = {
   'settings.terminal.logDirPick': '选择会话日志目录',
   'settings.terminal.logNote':
     '开启后终端输出（含 ANSI 控制序列）会追加写入目录下的「会话名-时间.log」。新建连接立即生效； 对已连接的会话切换开关即时生效，且不更换已有日志文件。日志可能包含敏感输出，请注意保存位置。',
+  'settings.terminal.clearLogs': '清理会话日志',
+  'settings.terminal.clearLogsConfirm': '将删除所选日志目录下的全部 .log 文件。继续吗？',
+  'settings.terminal.logsCleared': '已删除 {count} 个会话日志',
+  'settings.terminal.logsClearFailed': '清理会话日志失败',
+  'settings.terminal.logsNoDir': '尚未配置会话日志目录',
+  'settings.terminal.clearSnapshots': '清除全部终端快照',
+  'settings.terminal.clearSnapshotsConfirm':
+    '将删除所有保存的终端滚动缓冲快照，其中可能包含敏感输出。继续吗？',
+  'settings.terminal.snapshotsCleared': '已清除 {count} 份终端快照',
   'settings.terminal.featuresHint': '仅在 Font Ligatures 开启时生效，例如 "calt" off, "ss03"。',
   'settings.terminal.preview': '预览',
   'settings.terminal.previewLoading': '正在加载终端预览…',
@@ -457,6 +466,16 @@ export const EN: Dictionary = {
   'settings.terminal.logDirPick': 'Choose session log directory',
   'settings.terminal.logNote':
     'When enabled, terminal output (including ANSI control sequences) is appended to "session-name-time.log" in the directory. New connections pick it up immediately; toggling applies to connected sessions live without switching to a new log file. Logs may contain sensitive output, so be mindful of where you store them.',
+  'settings.terminal.clearLogs': 'Clean up session logs',
+  'settings.terminal.clearLogsConfirm':
+    'This deletes every .log file in the configured log directory. Continue?',
+  'settings.terminal.logsCleared': 'Removed {count} session logs',
+  'settings.terminal.logsClearFailed': 'Failed to clean up the session logs',
+  'settings.terminal.logsNoDir': 'No session log directory is configured',
+  'settings.terminal.clearSnapshots': 'Clear all terminal snapshots',
+  'settings.terminal.clearSnapshotsConfirm':
+    'This deletes every stored terminal scrollback snapshot. They may contain sensitive output. Continue?',
+  'settings.terminal.snapshotsCleared': 'Removed {count} terminal snapshots',
   'settings.terminal.featuresHint':
     'Only applies when Font Ligatures is on, e.g. "calt" off, "ss03".',
   'settings.terminal.preview': 'Preview',
