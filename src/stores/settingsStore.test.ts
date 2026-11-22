@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   DEFAULT_SETTINGS,
   DEFAULT_SHORTCUTS,
+  migratePersistedSettings,
+  SETTINGS_VERSION,
   useSettingsStore,
   type SettingsSnapshot
 } from './settingsStore';
@@ -132,6 +134,22 @@ describe('applySettings', () => {
     useSettingsStore.getState().applySettings(snapshot({ telnetAutoReconnect: false }));
     expect(useSettingsStore.getState().telnetAutoReconnect).toBe(false);
   });
+
+  it('repairs snapshots that predate or mistype text fields', () => {
+    // Regression: older persisted payloads could lack the newer text fields
+    // entirely, and normalization crashed on `.trim()` of undefined.
+    useSettingsStore.getState().applySettings({
+      ...snapshot(),
+      terminalFontFamily: undefined,
+      defaultUsername: undefined,
+      uiFontFeatureSettings: 42
+    } as unknown as SettingsSnapshot);
+
+    const state = useSettingsStore.getState();
+    expect(state.terminalFontFamily).toBe(DEFAULT_SETTINGS.terminalFontFamily);
+    expect(state.defaultUsername).toBe('');
+    expect(state.uiFontFeatureSettings).toBe(DEFAULT_SETTINGS.uiFontFeatureSettings);
+  });
 });
 
 describe('theme setters', () => {
@@ -164,5 +182,16 @@ describe('theme setters', () => {
 
     useSettingsStore.getState().applySettings(snapshot({ themeAccent: '#8250df' }));
     expect(useSettingsStore.getState().themeAccent).toBe('#8250df');
+  });
+});
+
+describe('migratePersistedSettings', () => {
+  it('resets future persisted versions to defaults instead of trusting them', () => {
+    const future = { ...DEFAULT_SETTINGS, themeMode: 'sepia' };
+    expect(migratePersistedSettings(future, SETTINGS_VERSION + 1)).toEqual({});
+    // Same and older versions pass through: normalizeSettings in the merge
+    // repairs whatever a legacy payload lacks.
+    expect(migratePersistedSettings(future, SETTINGS_VERSION)).toBe(future);
+    expect(migratePersistedSettings('garbage', 1)).toBe('garbage');
   });
 });

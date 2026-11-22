@@ -133,37 +133,52 @@ function normalizeThemeAccent(value: unknown): string {
   return /^[0-9a-f]{6}$/.test(body) ? `#${body}` : '';
 }
 
-function normalizeSettings(input: SettingsSnapshot): SettingsSnapshot {
+/** Trimmed string or the fallback; persisted inputs may predate a field or
+ * carry the wrong type, and normalization must be total (never throw). */
+function asTrimmed(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+/** Clamped integer from a possibly-missing persisted number. */
+function asClampedInt(value: unknown, fallback: number, min: number, max: number): number {
+  const rounded = Math.round(typeof value === 'number' ? value : NaN);
+  return Math.min(max, Math.max(min, rounded || fallback));
+}
+
+/** Line height, rounded to one decimal and clamped. */
+function asLineHeight(value: unknown): number {
+  const rounded = Math.round((typeof value === 'number' ? value : NaN) * 10) / 10;
+  return Math.min(1.6, Math.max(0.8, rounded || 1));
+}
+
+function normalizeSettings(input: Partial<SettingsSnapshot>): SettingsSnapshot {
   return {
     language: normalizeLanguage(input.language),
     themeMode: normalizeThemeMode(input.themeMode),
     lightTheme: normalizeThemeId(input.lightTheme, 'light'),
     darkTheme: normalizeThemeId(input.darkTheme, 'dark'),
     themeAccent: normalizeThemeAccent(input.themeAccent),
-    uiFontFamily: (input.uiFontFamily ?? '').trim() || DEFAULT_SETTINGS.uiFontFamily,
+    uiFontFamily: asTrimmed(input.uiFontFamily, DEFAULT_SETTINGS.uiFontFamily),
     uiFontLigatures: Boolean(input.uiFontLigatures),
-    uiFontFeatureSettings:
-      (input.uiFontFeatureSettings ?? '').trim() || DEFAULT_SETTINGS.uiFontFeatureSettings,
-    terminalFontFamily: input.terminalFontFamily.trim() || DEFAULT_SETTINGS.terminalFontFamily,
+    uiFontFeatureSettings: asTrimmed(
+      input.uiFontFeatureSettings,
+      DEFAULT_SETTINGS.uiFontFeatureSettings
+    ),
+    terminalFontFamily: asTrimmed(input.terminalFontFamily, DEFAULT_SETTINGS.terminalFontFamily),
     terminalFontLigatures: Boolean(input.terminalFontLigatures),
-    terminalFontFeatureSettings:
-      (input.terminalFontFeatureSettings ?? '').trim() ||
-      DEFAULT_SETTINGS.terminalFontFeatureSettings,
+    terminalFontFeatureSettings: asTrimmed(
+      input.terminalFontFeatureSettings,
+      DEFAULT_SETTINGS.terminalFontFeatureSettings
+    ),
     terminalColorScheme: normalizeTerminalColorSchemeId(input.terminalColorScheme),
-    terminalFontSize: Math.min(20, Math.max(10, Math.round(input.terminalFontSize) || 13)),
+    terminalFontSize: asClampedInt(input.terminalFontSize, 13, 10, 20),
     terminalCursorStyle:
       input.terminalCursorStyle === 'underline' || input.terminalCursorStyle === 'bar'
         ? input.terminalCursorStyle
         : 'block',
     terminalCursorBlink: Boolean(input.terminalCursorBlink),
-    terminalScrollback: Math.min(
-      100000,
-      Math.max(1000, Math.round(input.terminalScrollback) || 10000)
-    ),
-    terminalLineHeight: Math.min(
-      1.6,
-      Math.max(0.8, Math.round(input.terminalLineHeight * 10) / 10 || 1)
-    ),
+    terminalScrollback: asClampedInt(input.terminalScrollback, 10000, 1000, 100000),
+    terminalLineHeight: asLineHeight(input.terminalLineHeight),
     terminalCopyOnSelect: Boolean(input.terminalCopyOnSelect),
     terminalRestoreScrollback:
       input.terminalRestoreScrollback === undefined
@@ -193,18 +208,36 @@ function normalizeSettings(input: SettingsSnapshot): SettingsSnapshot {
       input.sftpConflictPolicy === 'newer'
         ? input.sftpConflictPolicy
         : 'ask',
-    defaultPort: Math.min(65535, Math.max(1, Math.round(input.defaultPort) || 22)),
-    defaultUsername: input.defaultUsername.trim(),
+    defaultPort: asClampedInt(input.defaultPort, 22, 1, 65535),
+    defaultUsername: asTrimmed(input.defaultUsername, ''),
     sessionLogEnabled: Boolean(input.sessionLogEnabled),
     closeToTray: Boolean(input.closeToTray),
     globalShowHotkey:
       typeof input.globalShowHotkey === 'string' ? input.globalShowHotkey.trim() : '',
-    sessionLogDir: (input.sessionLogDir ?? '').trim(),
+    sessionLogDir: asTrimmed(input.sessionLogDir, ''),
     shortcuts: {
       ...DEFAULT_SHORTCUTS,
       ...input.shortcuts
     }
   };
+}
+
+export const SETTINGS_VERSION = 1;
+
+/**
+ * Bridge a persisted payload of an older (or unknown) version into the
+ * current schema. A newer version than this build understands must reset to
+ * defaults: feeding forward-incompatible data into normalizeSettings would
+ * repair it into a half-valid state the user never chose.
+ */
+export function migratePersistedSettings(persisted: unknown, fromVersion: number): unknown {
+  if (fromVersion > SETTINGS_VERSION) {
+    console.warn(
+      `[settings] persisted settings version ${fromVersion} is newer than ${SETTINGS_VERSION}; resetting to defaults`
+    );
+    return {};
+  }
+  return persisted;
 }
 
 interface SettingsState extends SettingsSnapshot {
@@ -258,10 +291,8 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'nexterm.settings.v1',
-      version: 1,
-      // Future schema changes go through this hook; normalizeSettings in the
-      // merge below already repairs unknown/partial payloads.
-      migrate: (persisted) => persisted as SettingsState,
+      version: SETTINGS_VERSION,
+      migrate: migratePersistedSettings,
       merge: (persisted, current) => {
         const saved = (persisted as Partial<SettingsState> | undefined) ?? {};
         const merged = {
@@ -276,7 +307,7 @@ export const useSettingsStore = create<SettingsState>()(
             ...(saved.shortcuts ?? {})
           }
         };
-        return { ...merged, ...normalizeSettings(merged as SettingsSnapshot) };
+        return { ...merged, ...normalizeSettings(merged) };
       }
     }
   )
