@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const writePtyMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 const writeSshMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 const writeTelnetMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+const writeSerialMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 
 vi.mock('../hooks/useTauriPty', () => ({ writePty: writePtyMock }));
 vi.mock('../hooks/useTauriSsh', () => ({ writeSsh: writeSshMock }));
 vi.mock('../hooks/useTauriTelnet', () => ({ writeTelnet: writeTelnetMock }));
+vi.mock('../hooks/useTauriSerial', () => ({ writeSerial: writeSerialMock }));
 
 import { broadcastCount, broadcastInput, useBroadcastStore } from './broadcastStore';
 import { useConnectionStore, type ConnectionEntry } from './connectionStore';
@@ -103,6 +105,15 @@ describe('broadcastInput', () => {
     expect(writeSshMock).not.toHaveBeenCalled(); // b is connecting
     expect(writePtyMock).toHaveBeenCalledExactlyOnceWith('pty-1', 'x');
     expect(writeTelnetMock).toHaveBeenCalledExactlyOnceWith('tel-1', 'x');
+  });
+
+  it('writes to serial broadcast members', () => {
+    setSessions([makeSession({ id: 'a', kind: 'ssh' }), makeSession({ id: 'b', kind: 'serial' })]);
+    setConnection('b', { transports: [{ kind: 'serial', id: 'ser-1' }] });
+    useBroadcastStore.setState({ ids: ['a', 'b'] });
+
+    broadcastInput('a', 'x');
+    expect(writeSerialMock).toHaveBeenCalledExactlyOnceWith('ser-1', 'x');
   });
 
   it('never writes back to the source session', () => {

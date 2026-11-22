@@ -3,6 +3,7 @@ import { isSshBackedSession } from './sessionVisuals';
 import { writePty } from '../hooks/useTauriPty';
 import { writeSsh } from '../hooks/useTauriSsh';
 import { writeTelnet } from '../hooks/useTauriTelnet';
+import { writeSerial } from '../hooks/useTauriSerial';
 import { useSessionStore } from '../stores/sessionStore';
 import type { ConnectionEntry } from '../stores/connectionStore';
 
@@ -34,6 +35,10 @@ export function writeToSession(sessionId: string, data: string): boolean {
   } else if (session.kind === 'telnet') {
     for (const id of transportIds(entry, 'telnet')) {
       tryWrite(writeTelnet(id, data));
+    }
+  } else if (session.kind === 'serial') {
+    for (const id of transportIds(entry, 'serial')) {
+      tryWrite(writeSerial(id, data));
     }
   }
   return wrote;

@@ -110,7 +110,9 @@ export function openSessionPanel(
 
   panel.api.setActive();
   store.markUsed(sessionId);
-  store.setStatus(sessionId, session.kind === 'local' ? 'connected' : 'idle');
+  // Local sessions start connecting right away (the PTY is created as soon
+  // as the terminal mounts); everything else waits for its transport.
+  store.setStatus(sessionId, session.kind === 'local' ? 'connecting' : 'idle');
   useWorkspaceStore.getState().setActiveSessionId(sessionId);
 
   return panel;

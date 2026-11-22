@@ -1685,12 +1685,17 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             attempt,
             (payload) => {
               clearTransportListeners();
+              useConnectionStore.getState().removeTransport(sessionId, 'serial', id);
               backendId = '';
               backendIdRef.current = '';
               resizeTarget = null;
               // No auto-reconnect: unplugged adapters stay unplugged until the
-              // user explicitly reconnects.
-              useSessionStore.getState().setStatus(sessionId, 'disconnected');
+              // user explicitly reconnects. Same sibling rule as the local and
+              // Telnet paths: only the last transport going away marks the
+              // session ended.
+              if (useConnectionStore.getState().connections[sessionId] === undefined) {
+                useSessionStore.getState().setStatus(sessionId, 'disconnected');
+              }
               writeEndBlock(instance, serialCloseEndBar(payload));
             }
           );
@@ -1705,6 +1710,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             logPath: sessionLogTarget() || undefined
           });
           if (disposed || generation !== transportGeneration || attempt.closedEarly) {
+            useConnectionStore.getState().removeTransport(sessionId, 'serial', connectedId);
             disconnectQuietly(disconnectSerial(connectedId));
             if (attempt.closedEarly && !disposed && generation === transportGeneration) {
               clearTransportListeners();
@@ -1718,6 +1724,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           backendId = connectedId;
           backendIdRef.current = connectedId;
           // Serial has no window-size negotiation: no resizeTarget.
+          useConnectionStore.getState().addTransport(sessionId, 'serial', connectedId);
           useSessionStore.getState().setStatus(sessionId, 'connected');
           setEndBar(null);
 
@@ -2653,12 +2660,17 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             useConnectionStore.getState().removeConnection(sessionId, backendId);
             disconnectQuietly(disconnectSsh(backendId));
           } else if (transport === 'telnet') {
+            // The closed listener is already gone, so the backend's closed
+            // event cannot clean the transport entry up: do it here.
+            useConnectionStore.getState().removeTransport(sessionId, 'telnet', backendId);
             disconnectQuietly(disconnectTelnet(backendId));
           } else if (transport === 'serial') {
             // Serial has its own manager: closePtySession would report
             // "session not found" and leave the COM port open forever.
+            useConnectionStore.getState().removeTransport(sessionId, 'serial', backendId);
             disconnectQuietly(disconnectSerial(backendId));
           } else {
+            useConnectionStore.getState().removeTransport(sessionId, 'pty', backendId);
             void closePtySession(backendId);
           }
         } else if (isSsh && pendingConnectId) {
@@ -2670,7 +2682,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
         // Closing the last terminal panel of a session clears its status
         // even when other panels (SFTP, forwards) of the session stay open.
-        if (isSsh && useConnectionStore.getState().connections[sessionId] === undefined) {
+        if (useConnectionStore.getState().connections[sessionId] === undefined) {
           useSessionStore.getState().setStatus(sessionId, 'idle');
         }
 
