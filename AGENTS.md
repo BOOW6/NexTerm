@@ -272,4 +272,9 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - [x] 现代主题 4 族 8 款（Slate / Graphite / Terminal Green / Sandstone）、强调色自定义、终端配色跟随界面、对比度门禁
 - [x] 依赖审计门禁（cargo audit + npm audit --omit=dev）与 SECURITY.md 漏洞披露流程
 - [x] 质量审计整改第一批：transport 连接表不变量与 Serial 广播、SFTP/ZMODEM/远程编辑失败路径 fail-closed、凭据删除墓碑重试、backup v2、设置迁移加固、根级/面板级 Error Boundary、de-slop 检查器增强（black/white + 原始 JSX 文案）、i18n 键使用扫描、敏感缓存保留与清理入口
-- [ ] trzsz / rz 发送端（ZMODEM 上行）、SSH Agent 转发、多跳 ProxyJump；待收敛 IPC 面（known_hosts 导入导出路径、ZMODEM 接收前确认、统一本地文件授权模型）、XtermCanvas/ssh 后端/SettingsWindow 拆分、组件与端到端集成测试、发布签名与公证
+- [x] 质量审计整改第二批：SFTP 健康检查不再持锁等待 RTT（5s 信任窗 + 无锁探测）、sftp-transfer-done 按面板会话过滤并合并刷新、ssh 后端抽边界第一批（known_hosts 存储与编解码移入 ssh/host_keys.rs，14 个测试随迁）、SettingsWindow 抽边界第一批（known_hosts 卡片拆为展示组件）
+- [ ] 拆分续批：XtermCanvas（建议边界：TransportAttempt 连接编排 → TerminalOutputPipeline 写队列/解析等待 → ResizeCoordinator，先补组件测试再动）；ssh/mod.rs 剩余（连接握手、SFTP 传输引擎、端口转发各成模块）；SettingsWindow 剩余（Vault、主题、片段各成卡片组件）
+- [ ] IPC Rust/TS 共享 schema 或生成绑定（消除手写字段与字符串枚举；需引入 schemars/ts-rs 或等价方案并评估构建链影响）
+- [ ] 后台标签资源释放：DockLayout defaultRenderer="always" 使全部 xterm/WebGL 上下文常驻；需要休眠策略 + WebGL 释放 + LRU 上限（改动触及渲染管线，须实机回归）
+- [ ] 需要外部资源，暂缓（仅记录）：Windows 代码签名 / macOS 公证（需要证书与公证账号）、真实 SSH/SFTP 服务器集成测试容器与 E2E（需要测试基础设施）、终端高输出/大目录性能基准（需要实机测量）、cargo audit 本地运行（此前 TLS 握手失败，CI 已覆盖）、ConPTY resize 探针进默认 CI（需 Windows runner 验证）
+- [ ] trzsz / rz 发送端（ZMODEM 上行）、SSH Agent 转发、多跳 ProxyJump；待收敛 IPC 面（known_hosts 导入导出路径、ZMODEM 接收前确认、统一本地文件授权模型）
