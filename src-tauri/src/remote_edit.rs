@@ -6,7 +6,10 @@
 //! file-watch crate: editors write in several chunks, so a quiet period is
 //! required anyway, and polling keeps the dependency tree small. The watcher
 //! stops when the session drops, the scratch file is deleted, or the app
-//! exits; scratch copies live under `app_data_dir/remote-edit`.
+//! exits; scratch copies live under `app_data_dir/remote-edit`. A scratch
+//! copy never outlives its watcher: the watcher deletes it on exit, and
+//! startup wipes whatever a previous run left behind, so remote content does
+//! not linger in the app data dir.
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -25,12 +28,21 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::MissedTickBehavior;
 
-use crate::ssh::{SftpTransferOptions, SshManager};
+use crate::ssh::{ConflictPolicy, SftpTransferOptions, SshManager};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 /// Editors save in several chunks; wait for the write to settle before
 /// syncing so we never upload a half-written file.
 const QUIET_PERIOD: Duration = Duration::from_millis(1500);
+/// Retry ladder after a failed upload: the file stays dirty and is retried,
+/// doubling from the poll interval up to this cap so a persistent failure
+/// (full remote disk, permission error) does not spam the transfer queue.
+const MAX_RETRY_DELAY: Duration = Duration::from_secs(60);
+
+/// Next delay before retrying a failed sync.
+fn next_retry_delay(current: Duration) -> Duration {
+    (current * 2).min(MAX_RETRY_DELAY)
+}
 
 type Baseline = (u64, Option<SystemTime>);
 
@@ -55,7 +67,9 @@ impl RemoteEditManager {
     /// `key`. A watcher that is finishing must not tear down its replacement:
     /// re-opening the same file stops the old watcher and installs a new one,
     /// and the old task notices its cancel flag up to one poll interval later.
-    fn stop_if_current(&self, key: &str, cancel: &Arc<AtomicBool>) {
+    /// Returns whether this watcher was still the current one (only the
+    /// current watcher owns and cleans up the scratch copy).
+    fn stop_if_current(&self, key: &str, cancel: &Arc<AtomicBool>) -> bool {
         let mut watchers = self
             .watchers
             .lock()
@@ -68,6 +82,7 @@ impl RemoteEditManager {
             watchers.remove(key);
             cancel.store(true, Ordering::SeqCst);
         }
+        is_current
     }
 }
 
@@ -175,6 +190,7 @@ async fn watch_task(
     let key = edit_key(&id, &remote_path);
     let mut interval = tokio::time::interval(POLL_INTERVAL);
     interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    let mut retry_delay = POLL_INTERVAL;
 
     loop {
         interval.tick().await;
@@ -200,7 +216,6 @@ async fn watch_task(
             // Still being written; the next poll sees the final state.
             continue;
         }
-        baseline = settled;
 
         let ssh = app.state::<SshManager>();
         if !ssh.has_connection(&id) {
@@ -209,7 +224,7 @@ async fn watch_task(
         let options = SftpTransferOptions {
             recursive: false,
             resume: false,
-            conflict: "overwrite".to_string(),
+            conflict: ConflictPolicy::Overwrite,
         };
         let name = scratch
             .file_name()
@@ -226,6 +241,11 @@ async fn watch_task(
             .await
         {
             Ok(_) => {
+                // Only a successful sync advances the baseline. Advancing it
+                // before the upload made the next poll see "no local change"
+                // and never retry a failed save.
+                baseline = settled;
+                retry_delay = POLL_INTERVAL;
                 let _ = app.emit(
                     "remote-edit-synced",
                     serde_json::json!({
@@ -248,12 +268,47 @@ async fn watch_task(
                 if !ssh.has_connection(&id) {
                     break;
                 }
+                // The file stays dirty and is retried on a later poll; back
+                // off so a persistent failure does not fire an error event
+                // every couple of seconds.
+                tokio::time::sleep(retry_delay).await;
+                retry_delay = next_retry_delay(retry_delay);
+                if cancel.load(Ordering::SeqCst) {
+                    break;
+                }
             }
         }
     }
 
     if let Some(manager) = app.try_state::<RemoteEditManager>() {
-        manager.stop_if_current(&key, &cancel);
+        let was_current = manager.stop_if_current(&key, &cancel);
+        if was_current {
+            // Remote content must not linger in the app data dir: delete the
+            // scratch copy and tidy the now-empty hash and session dirs
+            // (remove_dir only succeeds when they hold no other edit).
+            let _ = tokio::fs::remove_file(&scratch).await;
+            if let Some(hash_dir) = scratch.parent() {
+                let _ = tokio::fs::remove_dir(hash_dir).await;
+                if let Some(session_dir) = hash_dir.parent() {
+                    let _ = tokio::fs::remove_dir(session_dir).await;
+                }
+            }
+        }
+    }
+}
+
+/// Remove every scratch copy left behind by a previous run. Watchers live
+/// only in memory, so after a restart nothing can be synced anymore and
+/// the leftover remote content must not stay on disk.
+pub async fn cleanup_stale_scratch(app: AppHandle) {
+    let Ok(root) = app.path().app_data_dir() else {
+        return;
+    };
+    let root = root.join("remote-edit");
+    if let Err(err) = tokio::fs::remove_dir_all(&root).await {
+        if err.kind() != std::io::ErrorKind::NotFound {
+            eprintln!("[remote-edit] failed to clean stale scratch copies: {err}");
+        }
     }
 }
 
@@ -334,6 +389,8 @@ pub async fn remote_edit_open(
 }
 
 /// Stop watching a file (also used when the caller knows the edit is done).
+/// The watcher deletes its scratch copy on exit, so remote content does not
+/// stay in the app data dir after the edit ends.
 #[tauri::command]
 pub async fn remote_edit_stop(
     app: AppHandle,
@@ -344,4 +401,38 @@ pub async fn remote_edit_stop(
         manager.stop(&edit_key(&id, &remote_path));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retry_backoff_doubles_up_to_the_cap() {
+        let mut delay = POLL_INTERVAL;
+        let mut steps = 0;
+        while delay < MAX_RETRY_DELAY {
+            delay = next_retry_delay(delay);
+            steps += 1;
+        }
+        assert_eq!(delay, MAX_RETRY_DELAY);
+        // 2s -> 4s -> 8s -> 16s -> 32s -> 60s cap: the ladder stays short.
+        assert!(steps <= 5, "backoff reached the cap in {steps} steps");
+        assert_eq!(next_retry_delay(MAX_RETRY_DELAY), MAX_RETRY_DELAY);
+    }
+
+    #[test]
+    fn sanitize_component_is_filesystem_safe() {
+        assert_eq!(sanitize_component("notes.txt"), "notes.txt");
+        assert_eq!(sanitize_component("a/b\\c"), "a_b_c");
+        assert_eq!(sanitize_component(""), "file");
+    }
+
+    #[test]
+    fn edit_key_separates_paths_within_one_session() {
+        let first = edit_key("sess", "/a/one.txt");
+        assert_ne!(first, edit_key("sess", "/a/two.txt"));
+        assert_eq!(first, edit_key("sess", "/a/one.txt"));
+        assert_ne!(first, edit_key("sess2", "/a/one.txt"));
+    }
 }

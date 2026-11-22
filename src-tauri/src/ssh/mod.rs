@@ -208,15 +208,17 @@ pub struct SftpTransferOptions {
     #[serde(default = "default_true")]
     pub resume: bool,
     #[serde(default = "default_conflict")]
-    pub conflict: String,
+    pub conflict: ConflictPolicy,
 }
 
 fn default_true() -> bool {
     true
 }
 
-fn default_conflict() -> String {
-    "overwrite".to_string()
+fn default_conflict() -> ConflictPolicy {
+    // An omitted policy must not default to destroying the target file:
+    // fall back to asking (which skips after an unanswered timeout) instead.
+    ConflictPolicy::Ask
 }
 
 impl Default for SftpTransferOptions {
@@ -704,6 +706,72 @@ fn sanitize_filename(name: &str) -> String {
     }
 }
 
+/// Per-file receive cap. The remote peer picks the file name and starts
+/// sending bytes without any user prompt, so the receive side must be able
+/// to refuse on its own: a hostile or runaway `sz` must not be able to fill
+/// the download disk indefinitely.
+const ZMODEM_MAX_FILE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+/// Cumulative cap for one SSH session's receive batch (all files combined).
+const ZMODEM_MAX_BATCH_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+
+/// Decide whether a ZMODEM receive may start. `None` sizes (sender did not
+/// announce one) pass here and are enforced mid-transfer instead.
+fn zmodem_receive_allowed(size: Option<u64>, batch_bytes: u64) -> Result<(), String> {
+    let size = size.unwrap_or(0);
+    if size > ZMODEM_MAX_FILE_BYTES {
+        return Err("ZMODEM file too large (limit 2 GiB)".to_string());
+    }
+    if batch_bytes.saturating_add(size) > ZMODEM_MAX_BATCH_BYTES {
+        return Err("ZMODEM batch exceeds the 8 GiB receive limit".to_string());
+    }
+    Ok(())
+}
+
+/// Abort an in-flight receive: mark the machine aborted so terminal output
+/// resumes, then write the ZMODEM cancel sequence so the remote `sz` stops.
+async fn send_zmodem_cancel(
+    app: &AppHandle,
+    event_id: &str,
+    machine: &std::sync::Mutex<ZmodemReceiver>,
+) {
+    let bytes = machine
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .cancel();
+    let manager = app.state::<SshManager>();
+    if let Err(err) = manager.write(event_id, &bytes).await {
+        eprintln!("[zmodem] cancel write failed: {err}");
+    }
+}
+
+/// Report a receive that never produced a queue entry (quota refusal or
+/// local file creation failure) so the transfer queue shows the failure
+/// instead of the sender's bytes simply disappearing.
+fn emit_zmodem_failure(
+    app: &AppHandle,
+    event_id: &str,
+    name: &str,
+    size: Option<u64>,
+    error: &str,
+) {
+    emit_done(
+        app,
+        &SftpTransferDonePayload {
+            transfer_id: ZmodemFile::transfer_id(event_id),
+            direction: "download".to_string(),
+            name: name.to_string(),
+            success: false,
+            cancelled: false,
+            disconnected: false,
+            error: Some(error.to_string()),
+            transferred: 0,
+            total: size.unwrap_or(0),
+            files_done: 0,
+            files_total: 1,
+        },
+    );
+}
+
 impl ZmodemFile {
     fn transfer_id(event_id: &str) -> String {
         format!("zmodem-{}", event_id)
@@ -835,12 +903,15 @@ impl ZmodemFile {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_zmodem_action(
     app: &AppHandle,
     event_id: &str,
     action: ZmodemAction,
     cancelled_by_user: bool,
     state: &mut Option<ZmodemFile>,
+    batch_bytes: &mut u64,
+    machine: &std::sync::Mutex<ZmodemReceiver>,
 ) {
     match action {
         ZmodemAction::WriteToRemote { data } => {
@@ -855,6 +926,16 @@ async fn handle_zmodem_action(
                 prev.finish(app, false, false, false, None).await;
             }
             *state = None;
+
+            if let Err(error) = zmodem_receive_allowed(size, *batch_bytes) {
+                // Refuse without creating anything, make the failure visible
+                // in the queue, and stop the sender.
+                eprintln!("[zmodem] refusing receive of {name}: {error}");
+                emit_zmodem_failure(app, event_id, &name, size, &error);
+                send_zmodem_cancel(app, event_id, machine).await;
+                return;
+            }
+
             match ZmodemFile::start(app, event_id, name.clone(), size).await {
                 Ok(file) => {
                     *state = Some(file);
@@ -867,13 +948,42 @@ async fn handle_zmodem_action(
                         }),
                     );
                 }
-                Err(err) => eprintln!("[zmodem] failed to create local file: {err}"),
+                Err(err) => {
+                    let error = format!("failed to create ZMODEM download file: {err}");
+                    eprintln!("[zmodem] {error}");
+                    emit_zmodem_failure(app, event_id, &name, size, &error);
+                    send_zmodem_cancel(app, event_id, machine).await;
+                }
             }
         }
         ZmodemAction::FileData { data } => {
             if let Some(file) = state.as_mut() {
-                if let Err(err) = file.write_data(app, &data).await {
+                let next = file.transferred.saturating_add(data.len() as u64);
+                // Unknown or lying senders are caught here: the announced
+                // size never gets trusted past the bytes actually received.
+                let limit_error = if next > ZMODEM_MAX_FILE_BYTES {
+                    Some("ZMODEM file too large (limit 2 GiB)".to_string())
+                } else if batch_bytes.saturating_add(next) > ZMODEM_MAX_BATCH_BYTES {
+                    Some("ZMODEM batch exceeds the 8 GiB receive limit".to_string())
+                } else {
+                    None
+                };
+                if let Some(error) = limit_error {
+                    eprintln!("[zmodem] refusing further data for {}: {error}", file.name);
+                    file.finish(app, false, false, false, Some(error)).await;
+                    *state = None;
+                    send_zmodem_cancel(app, event_id, machine).await;
+                } else if let Err(err) = file.write_data(app, &data).await {
+                    // A write failure is terminal: close the file, drop the
+                    // partial data, report the queue entry as failed and stop
+                    // the sender. This used to be only logged, so the batch
+                    // could still finish "successfully" and rename a
+                    // truncated file under the final name.
                     eprintln!("[zmodem] write failed: {err}");
+                    let error = format!("failed to write ZMODEM download: {err}");
+                    file.finish(app, false, false, false, Some(error)).await;
+                    *state = None;
+                    send_zmodem_cancel(app, event_id, machine).await;
                 }
             }
         }
@@ -890,6 +1000,11 @@ async fn handle_zmodem_action(
                     Some("ZMODEM transfer interrupted".to_string())
                 };
                 file.finish(app, success, cancelled, false, error).await;
+                if success {
+                    // Only kept files count toward the batch quota; failed
+                    // ones are deleted, so their bytes are not retained.
+                    *batch_bytes = batch_bytes.saturating_add(bytes);
+                }
             }
             *state = None;
         }
@@ -1375,6 +1490,9 @@ impl SshManager {
                 map.insert(event_id.clone(), zmachine.clone());
             }
             let mut zfile: Option<ZmodemFile> = None;
+            // Bytes retained by completed ZMODEM files of this session,
+            // for the cumulative receive quota.
+            let mut zmodem_batch_bytes: u64 = 0;
 
             // Distinguishes a remote shell that ended on its own (the user
             // typed `exit`, or the login shell was killed) from a transport
@@ -1407,6 +1525,8 @@ impl SshManager {
                                 action,
                                 cancelled_by_user,
                                 &mut zfile,
+                                &mut zmodem_batch_bytes,
+                                &zmachine,
                             )
                             .await;
                         }
@@ -2178,8 +2298,12 @@ impl TransferProgress {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum ConflictPolicy {
+/// Conflict policy for SFTP transfers. Deserialized directly from the IPC
+/// payload so an unrecognized value is rejected at the boundary instead of
+/// silently degrading to overwrite.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConflictPolicy {
     Overwrite,
     Skip,
     Rename,
@@ -2187,18 +2311,6 @@ enum ConflictPolicy {
     Ask,
     /// Overwrite only when the source is newer or the size differs.
     Newer,
-}
-
-impl ConflictPolicy {
-    fn parse(value: &str) -> Self {
-        match value {
-            "skip" => Self::Skip,
-            "rename" => Self::Rename,
-            "ask" => Self::Ask,
-            "newer" => Self::Newer,
-            _ => Self::Overwrite,
-        }
-    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -2232,9 +2344,12 @@ fn split_file_name(name: &str) -> (&str, Option<&str>) {
     }
 }
 
-fn unique_local_path(path: &Path) -> PathBuf {
+/// Returns a free local path, or `None` when every rename candidate is
+/// taken. `None` must fail the transfer: falling back to the original path
+/// would overwrite the file the rename policy exists to avoid.
+fn unique_local_path(path: &Path) -> Option<PathBuf> {
     if !path.exists() {
-        return path.to_path_buf();
+        return Some(path.to_path_buf());
     }
 
     let parent = path.parent().unwrap_or_else(|| Path::new(""));
@@ -2251,14 +2366,17 @@ fn unique_local_path(path: &Path) -> PathBuf {
         };
         let candidate = parent.join(candidate);
         if !candidate.exists() {
-            return candidate;
+            return Some(candidate);
         }
     }
 
-    path.to_path_buf()
+    None
 }
 
-async fn unique_remote_path(sftp: &SftpSession, path: &str) -> String {
+/// Same probe for remote targets. Inconclusive existence probes keep the
+/// search going but can never produce the original path: exhaustion returns
+/// `None` so the caller fails the transfer instead of overwriting.
+async fn unique_remote_path(sftp: &SftpSession, path: &str) -> Option<String> {
     let (directory, name) = match path.rsplit_once('/') {
         Some((directory, name)) => (directory, name),
         None => ("", path),
@@ -2279,7 +2397,7 @@ async fn unique_remote_path(sftp: &SftpSession, path: &str) -> String {
         };
 
         match sftp.try_exists(&candidate).await {
-            Ok(false) => return candidate,
+            Ok(false) => return Some(candidate),
             Ok(true) => {}
             Err(error) => {
                 // An inconclusive probe must not hand out a name that may
@@ -2290,7 +2408,7 @@ async fn unique_remote_path(sftp: &SftpSession, path: &str) -> String {
         }
     }
 
-    path.to_string()
+    None
 }
 
 fn remote_join(base: &str, relative: &Path) -> String {
@@ -2326,15 +2444,26 @@ async fn ensure_remote_dir(sftp: &SftpSession, path: &str) -> anyhow::Result<()>
             Ok(true) => {}
             Ok(false) => {
                 if let Err(error) = sftp.create_dir(&current).await {
-                    eprintln!("[sftp] failed to create remote directory {current}: {error}");
+                    // A sibling transfer may have created it in the race
+                    // window; only a directory that is still missing is a
+                    // real failure. Continuing silently here used to defer
+                    // the error into a confusing file-open failure later.
+                    if !matches!(sftp.try_exists(&current).await, Ok(true)) {
+                        return Err(anyhow!(
+                            "failed to create remote directory {current}: {error}"
+                        ));
+                    }
                 }
             }
             Err(error) => {
                 // Probe failed: attempt the create anyway and surface the
                 // failure instead of leaving it to a confusing open error.
-                eprintln!("[sftp] failed to probe remote directory {current}: {error}");
-                if let Err(error) = sftp.create_dir(&current).await {
-                    eprintln!("[sftp] failed to create remote directory {current}: {error}");
+                if let Err(create_error) = sftp.create_dir(&current).await {
+                    if !matches!(sftp.try_exists(&current).await, Ok(true)) {
+                        return Err(anyhow!(
+                            "failed to create remote directory {current}: {create_error} (probe failed: {error})"
+                        ));
+                    }
                 }
             }
         }
@@ -2546,7 +2675,7 @@ async fn run_download(
     );
     progress.emit(true);
 
-    let policy = ConflictPolicy::parse(&options.conflict);
+    let policy = options.conflict;
     let local_root = PathBuf::from(local_path);
 
     let result: anyhow::Result<()> = async {
@@ -2649,7 +2778,7 @@ async fn run_upload(
         TransferProgress::new(app.clone(), transfer_id, "upload", name, total, files.len());
     progress.emit(true);
 
-    let policy = ConflictPolicy::parse(&options.conflict);
+    let policy = options.conflict;
 
     let result: anyhow::Result<()> = async {
         for file in &files {
@@ -3001,7 +3130,11 @@ async fn resolve_upload_conflict(
             Ok(false)
         }
         ConflictPolicy::Rename => {
-            *target = unique_remote_path(sftp, target.as_str()).await;
+            *target = unique_remote_path(sftp, target.as_str())
+                .await
+                .ok_or_else(|| {
+                    TransferFailure::new(anyhow!("no available rename target for {name}"))
+                })?;
             Ok(true)
         }
         ConflictPolicy::Newer => {
@@ -3049,7 +3182,11 @@ async fn resolve_upload_conflict(
             match decision {
                 ConflictDecision::Overwrite => Ok(true),
                 ConflictDecision::Rename => {
-                    *target = unique_remote_path(sftp, target.as_str()).await;
+                    *target = unique_remote_path(sftp, target.as_str())
+                        .await
+                        .ok_or_else(|| {
+                            TransferFailure::new(anyhow!("no available rename target for {name}"))
+                        })?;
                     Ok(true)
                 }
                 ConflictDecision::Skip => {
@@ -3099,7 +3236,9 @@ async fn resolve_download_conflict(
             Ok(false)
         }
         ConflictPolicy::Rename => {
-            *target = unique_local_path(target);
+            *target = unique_local_path(target).ok_or_else(|| {
+                TransferFailure::new(anyhow!("no available rename target for {name}"))
+            })?;
             Ok(true)
         }
         ConflictPolicy::Newer => {
@@ -3139,7 +3278,9 @@ async fn resolve_download_conflict(
             match decision {
                 ConflictDecision::Overwrite => Ok(true),
                 ConflictDecision::Rename => {
-                    *target = unique_local_path(target);
+                    *target = unique_local_path(target).ok_or_else(|| {
+                        TransferFailure::new(anyhow!("no available rename target for {name}"))
+                    })?;
                     Ok(true)
                 }
                 ConflictDecision::Skip => {
@@ -4130,7 +4271,25 @@ mod tests {
         std::fs::write(&first, b"one").unwrap();
         std::fs::write(dir.path().join("report (1).txt"), b"two").unwrap();
 
-        assert_eq!(unique_local_path(&first), dir.path().join("report (2).txt"));
+        assert_eq!(
+            unique_local_path(&first).unwrap(),
+            dir.path().join("report (2).txt")
+        );
+    }
+
+    #[test]
+    fn unique_local_path_gives_up_instead_of_returning_the_original() {
+        // Exhausting every rename candidate must surface `None` so the
+        // transfer fails: the historical fallback returned the original
+        // path, which overwrites the file rename was meant to protect.
+        let dir = tempdir().unwrap();
+        let first = dir.path().join("report.txt");
+        std::fs::write(&first, b"one").unwrap();
+        for index in 1..1000 {
+            std::fs::write(dir.path().join(format!("report ({index}).txt")), b"x").unwrap();
+        }
+
+        assert_eq!(unique_local_path(&first), None);
     }
 
     #[test]
@@ -4269,17 +4428,59 @@ mod tests {
     }
 
     #[test]
-    fn conflict_policies_cover_the_filezilla_set() {
-        assert_eq!(ConflictPolicy::parse("ask"), ConflictPolicy::Ask);
-        assert_eq!(ConflictPolicy::parse("newer"), ConflictPolicy::Newer);
-        assert_eq!(ConflictPolicy::parse("skip"), ConflictPolicy::Skip);
-        assert_eq!(ConflictPolicy::parse("rename"), ConflictPolicy::Rename);
+    fn conflict_policies_reject_unknown_values_at_the_boundary() {
+        // Unknown policies must fail deserialization instead of degrading
+        // to overwrite: the caller gets an explicit error, never a silent
+        // destructive default.
+        assert!(serde_json::from_str::<SftpTransferOptions>(r#"{"conflict":"whatever"}"#).is_err());
+        assert!(serde_json::from_str::<SftpTransferOptions>(r#"{"conflict":""}"#).is_err());
+        assert!(serde_json::from_str::<SftpTransferOptions>(r#"{"conflict":null}"#).is_err());
+
+        let options =
+            serde_json::from_str::<SftpTransferOptions>(r#"{"conflict":"newer"}"#).unwrap();
+        assert_eq!(options.conflict, ConflictPolicy::Newer);
+        let options =
+            serde_json::from_str::<SftpTransferOptions>(r#"{"conflict":"overwrite"}"#).unwrap();
+        assert_eq!(options.conflict, ConflictPolicy::Overwrite);
+    }
+
+    #[test]
+    fn missing_conflict_policy_defaults_to_ask() {
+        let options = serde_json::from_str::<SftpTransferOptions>("{}").unwrap();
+        assert_eq!(options.conflict, ConflictPolicy::Ask);
+        assert_eq!(SftpTransferOptions::default().conflict, ConflictPolicy::Ask);
+    }
+
+    #[test]
+    fn zmodem_receive_quota_rejects_oversized_files_and_batches() {
+        assert!(zmodem_receive_allowed(Some(1024), 0).is_ok());
+        // Unknown sizes pass the start check and are enforced mid-transfer.
+        assert!(zmodem_receive_allowed(None, 0).is_ok());
+
         assert_eq!(
-            ConflictPolicy::parse("overwrite"),
-            ConflictPolicy::Overwrite
+            zmodem_receive_allowed(Some(ZMODEM_MAX_FILE_BYTES + 1), 0).unwrap_err(),
+            "ZMODEM file too large (limit 2 GiB)"
         );
-        // Unknown values keep the historical default.
-        assert_eq!(ConflictPolicy::parse("whatever"), ConflictPolicy::Overwrite);
+        assert!(zmodem_receive_allowed(Some(ZMODEM_MAX_FILE_BYTES), 0).is_ok());
+
+        assert_eq!(
+            zmodem_receive_allowed(Some(1024), ZMODEM_MAX_BATCH_BYTES).unwrap_err(),
+            "ZMODEM batch exceeds the 8 GiB receive limit"
+        );
+        // Exactly at the combined limit is still allowed; one byte more is not.
+        assert!(zmodem_receive_allowed(
+            Some(ZMODEM_MAX_FILE_BYTES),
+            ZMODEM_MAX_BATCH_BYTES - ZMODEM_MAX_FILE_BYTES
+        )
+        .is_ok());
+        assert_eq!(
+            zmodem_receive_allowed(
+                Some(ZMODEM_MAX_FILE_BYTES),
+                ZMODEM_MAX_BATCH_BYTES - ZMODEM_MAX_FILE_BYTES + 1
+            )
+            .unwrap_err(),
+            "ZMODEM batch exceeds the 8 GiB receive limit"
+        );
     }
 
     #[test]

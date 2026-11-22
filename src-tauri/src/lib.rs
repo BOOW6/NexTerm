@@ -63,6 +63,12 @@ pub fn run() {
             // Load the bundled ConPTY before the first PTY session is created.
             pty::conpty_bundle::install(app.handle());
 
+            // Watchers live only in memory: scratch copies from a previous
+            // run can never be synced again, so wipe them before the first
+            // remote edit can create a new one.
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(remote_edit::cleanup_stale_scratch(app_handle));
+
             #[cfg(not(target_os = "macos"))]
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_decorations(false);
