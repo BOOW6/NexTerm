@@ -15,6 +15,7 @@ import { openSessionPanel } from '../../features/workspace/sessionActions';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { Button } from '../ui/button';
+import ErrorBoundary from '../ui/ErrorBoundary';
 import { useQuickConnectLauncher } from '../../features/workspace/useQuickConnectLauncher';
 import { useI18n } from '../../i18n';
 
@@ -33,22 +34,34 @@ function PanelFallback() {
   );
 }
 
+// Every panel is wrapped in its own error boundary: a crashed panel must
+// render as an error surface inside its pane, not blank out the workspace.
 const components = {
-  terminal: (props: IDockviewPanelProps) => <TerminalTab {...props} />,
+  terminal: (props: IDockviewPanelProps) => (
+    <ErrorBoundary label="terminal panel">
+      <TerminalTab {...props} />
+    </ErrorBoundary>
+  ),
   sftp: (props: IDockviewPanelProps) => (
-    <Suspense fallback={<PanelFallback />}>
-      <SFTPPanel {...props} />
-    </Suspense>
+    <ErrorBoundary label="sftp panel">
+      <Suspense fallback={<PanelFallback />}>
+        <SFTPPanel {...props} />
+      </Suspense>
+    </ErrorBoundary>
   ),
   transfers: () => (
-    <Suspense fallback={<PanelFallback />}>
-      <TransferPanel />
-    </Suspense>
+    <ErrorBoundary label="transfer panel">
+      <Suspense fallback={<PanelFallback />}>
+        <TransferPanel />
+      </Suspense>
+    </ErrorBoundary>
   ),
   forwards: (props: IDockviewPanelProps) => (
-    <Suspense fallback={<PanelFallback />}>
-      <PortForwardPanel {...props} />
-    </Suspense>
+    <ErrorBoundary label="port-forward panel">
+      <Suspense fallback={<PanelFallback />}>
+        <PortForwardPanel {...props} />
+      </Suspense>
+    </ErrorBoundary>
   )
 };
 
