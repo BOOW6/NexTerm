@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask, message } from '@tauri-apps/plugin-dialog';
 import { tStatic } from '../i18n';
 import { localizeBackendError } from './backendErrors';
+import { appVersion } from './appInfo';
 import { toast } from '../components/ui/toastStore';
 
 export type AppWindowKind =
@@ -216,7 +217,8 @@ export async function confirmAction(
 
 export async function showAboutDialog(): Promise<void> {
   try {
-    await message('NexTerm 0.1.0\nTauri 2 + React 18 + Rust', {
+    const version = await appVersion();
+    await message(`NexTerm ${version}\nTauri 2 + React 18 + Rust`, {
       title: tStatic('appWindow.aboutTitle'),
       kind: 'info'
     });

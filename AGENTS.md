@@ -43,7 +43,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - 基于 `russh` 实现**密码认证**、**私钥认证**（可选 passphrase）、**OpenSSH 用户证书认证**（私钥 + `*-cert.pub`，SSH config 导入识别 `CertificateFile`）与 **SSH Agent 认证**的交互式 SSH 终端。**ProxyJump** 在后端通过跳板连接上的 `direct-tcpip` 通道（`ssh -J` 语义）承载目标握手，跳板与目标两台主机分别做 known_hosts 校验；跳板传输随目标会话存亡。
 - **主机密钥校验（TOFU）**：首次连接弹出 SHA256 指纹确认，写入应用配置目录的 `known_hosts.json`；后续自动比对，不匹配则中止。支持 OpenSSH `known_hosts` 导入/导出（导出可选 hashed host 格式；导入会跳过哈希与通配符条目）。
 - 后端命令：`ssh_connect` / `ssh_write` / `ssh_resize` / `ssh_disconnect` / `ssh_host_key_response` / `known_hosts_list` / `known_hosts_remove` / `known_hosts_import` / `known_hosts_export`；`set_session_log` 用于对活动会话（SSH / PTY / Telnet）即时切换输出日志。
-- **Telnet**（`src-tauri/src/telnet/mod.rs`）：最小 RFC 854 NVT 实现——拒绝一切选项协商（`decode_telnet` 纯函数处理 IAC 转义/子协商跨块、带单测），输出走同一解码/事件/日志管线，事件 `telnet-output-{id}`、`telnet-closed-{id}`（closed 事件带 `closed`/`eof`/`error` 原因与可选错误串）；resize 为 no-op（未协商窗口尺寸）。
+- **Telnet**（`src-tauri/src/telnet/mod.rs`）：RFC 854 NVT 实现，只接受控制台必需的协商（服务端 ECHO、SGA；应答 NAWS 与 TTYPE=VT100），其余选项一律拒绝（`decode_telnet` 纯函数处理 IAC 转义/子协商跨块、带单测）；resize 在对端接受 NAWS 后发送窗口尺寸子协商，未协商时静默忽略。输出走同一解码/事件/日志管线，事件 `telnet-output-{id}`、`telnet-closed-{id}`（closed 事件带 `closed`/`eof`/`error` 原因与可选错误串）。
 - **串口**（`src-tauri/src/serial.rs`）：命令 `serial_list` / `serial_connect` / `serial_write` / `serial_resize`（no-op）/ `serial_disconnect`；事件 `serial-output-{id}`、`serial-closed-{id}`；复用日志管线与 `Utf8StreamDecoder`；断开即关闭端口句柄，由读取线程统一发出关闭事件。
 - 输出事件：`ssh-output-{id}`、`ssh-closed-{id}`；主机密钥事件：`ssh-host-key`、`ssh-host-key-mismatch`。
 - **端口转发**：命令 `port_forward_list` / `port_forward_start` / `port_forward_stop`，事件 `port-forwards-changed`；支持本地（`-L`）、远程（`-R`）与动态 SOCKS5（`-D`）。UI 为独立「端口转发」面板。
@@ -51,7 +51,9 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
   - 命令：`sftp_list` / `sftp_download` / `sftp_upload` / `sftp_remove` / `sftp_rename` / `sftp_mkdir` / `sftp_pause_transfer` / `sftp_cancel_transfer`；远程文件编辑：`remote_edit_open` / `remote_edit_stop`（临时副本 + size/mtime 轮询回传，事件 `remote-edit-synced` / `remote-edit-error`）
   - 事件：`sftp-progress`、`sftp-transfer-done`
   - 每个 SSH 会话复用一条 SFTP 子系统通道；传输支持递归目录、聚合进度、断点续传、暂停/取消/重试与冲突策略（询问/覆盖/跳过/重命名/较新才覆盖）。断点续传实现：下载写本地 `<file>.part`，上传写远端 `<file>.nexterm-part`，均带侧车元数据（来源 size + mtime 指纹）做续传校验，完成后原子替换目标文件，目标路径上只出现完整内容。传输任务绑定会话而非后端连接 id：断线自动重连后自动从 part 续传；conflict=ask 时经 `sftp-conflict` 事件弹出独立确认窗口（`sftp_conflict_response` 应答，支持"应用到全部"）。OS 拖拽上传与面板内拖动移动复用同一传输/重命名管线。
-  - ZMODEM 接收（`src-tauri/src/zmodem.rs`，纯状态机 + 单测）：SSH 读循环在 UTF-8 解码前拦截 `sz` 流，文件落系统下载目录；进度复用 `sftp-progress`（id 前缀 `zmodem-`，取消走取消序列，暂停被拒绝）。
+  - **传输失败路径 fail-closed**：`ConflictPolicy` 是 serde 强类型枚举（未知值在 IPC 边界拒绝，缺省回落 ask）；rename 候选耗尽与远程目录创建失败会让传输报错终止，绝不回退原路径覆盖。
+  - ZMODEM 接收（`src-tauri/src/zmodem.rs`，纯状态机 + 单测）：SSH 读循环在 UTF-8 解码前拦截 `sz` 流，文件落系统下载目录；进度复用 `sftp-progress`（id 前缀 `zmodem-`，取消走取消序列，暂停被拒绝）。本地写失败即终态（关文件、删 part、队列报错、发送取消序列），且接收有单文件 2 GiB / 会话批次 8 GiB 配额（FileStart 拒绝 + 逐块校验，谎报 size 逃不过）。
+  - 远程文件本地编辑：baseline 仅在上传成功后推进（失败保持 dirty 并按 2s→60s 指数退避重试）；scratch 副本随 watcher 退出删除、启动时清理遗留。
   - UI：目录浏览、文件/文件夹上传、文件/文件夹下载、新建文件夹、重命名、删除、传输队列、远程文件本地编辑、拖拽上传/移动。
 
 ### 设置与主题（P4 / P5）
@@ -71,7 +73,9 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - **主题质量门禁**：`src/theme/contrast.test.ts` 直接解析 `tokens.css` 校验 14 个主题的 WCAG AA 对比度（正文 4.5:1、微标签/链接/状态色 3:1）；`terminalTheme.test.ts` 要求每个现代主题自带完整 16 色板。视觉对照截图存于 [`doc/themes/`](doc/themes/README.md)。
 - 新增主题的约定：在 `tokens.css` 追加完整的颜色 + 结构 token 块 → 在 `themes.ts` 注册（含 `group` 与 `family`）→ 需要结构差异再写 `skins/<族>.css` → 补 i18n 文案 → 跑对比度测试与截图脚本（`doc/themes/README.md`）。不要用组件内的 Tailwind 覆盖实现主题差异。
 - 设置面板：外观、终端外观（字体/字号/光标/回滚/行高）、命令片段管理、SSH 默认值、可配置快捷键、known_hosts 管理、恢复默认。
-- **会话日志**：设置 > 终端 开启并选择目录后，PTY 与 SSH 读循环把解码后的输出（含 ANSI 序列）追加写入 `会话名-时间.log`（`src-tauri/src/log_sink.rs`，`Arc<LogSink>` 挂在会话上，零额外 IPC）；日志路径在终端面板挂载时决定，自动重连续写同一文件，切换开关对活动会话即时生效。
+- **会话日志**：设置 > 终端 开启并选择目录后，PTY 与 SSH 读循环把解码后的输出（含 ANSI 序列）追加写入 `会话名-时间.log`（`src-tauri/src/log_sink.rs`，`Arc<LogSink>` 挂在会话上，零额外 IPC）；日志路径在终端面板挂载时决定，自动重连续写同一文件，切换开关对活动会话即时生效。`session_logs_clear` 后端命令删除配置日志根（canonicalize 校验）下的顶层 `.log`，入口在设置 > 终端。
+- **敏感缓存保留**：终端快照（明文滚动缓冲，localStorage）超过 24 个会话按 LRU 淘汰（`terminalSnapshot.ts` 索引键），设置 > 终端 提供一键清除全部快照；远程编辑 scratch 副本随 watcher 退出删除并在启动时清理遗留。
+- **凭据删除可观察**：`forgetSessionCredentials` 返回 `{ removed, failed }`，失败键写入持久化墓碑（`nexterm.pendingVaultDeletes.v1`）并在每次解锁后重试（`retryPendingVaultDeletions`），删除会话与快速连接改认证方式时失败弹警告。
 - **自动更新**：`tauri-plugin-updater` 已接线（capability `updater:default`；公钥与更新源在 `tauri.conf.json` 的 `plugins.updater`），设置 > 关于 提供「检查更新」。签名私钥在 `~/.tauri/nexterm-updater.key`（不进仓库），发布流程见 `doc/build.md`。
 
 ## 技术栈
@@ -246,14 +250,14 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - [x] 递归传输、断点续传、暂停/取消/重试、冲突策略
 - [x] SSH 保活（30s / 3 次）、断线自动重连（指数退避）、断线后端口转发清理与会话状态回收
 - [x] 加密凭据保险库（主密码、Argon2id + AES-256-GCM、KDF 参数随文件持久化、异步命令 + 磁盘操作互斥）
-- [x] 会话导入（SSH config / MobaXterm / PuTTY）、JSON 备份、树形分组
+- [x] 会话导入（SSH config / MobaXterm / PuTTY）、v2 全字段 JSON 备份（Telnet/Serial/证书/ProxyJump/自定义 Shell 无损 round-trip，兼容 v1）、树形分组
 - [x] 终端 WebLinks / Unicode11 / 选中即复制 / 滚动缓冲恢复
 - [x] i18n 骨架（中 / 英核心工作区）
 - [x] OpenSSH 证书认证、跳板机 / ProxyJump（单跳；SFTP 与端口转发复用隧道）
 - [x] 命令片段、会话日志、updater 自动更新脚手架（设置 > 关于 检查更新）
 - [x] Telnet 会话（最小 NVT：协商全拒、终端内登录、复用日志管线）
 - [x] i18n 全量迁移（五分片字典 + 中英键位一致性测试；组件用 useI18n、非组件用 tStatic）
-- [x] 多会话广播输入（会话标签右键 / 命令面板加入，状态栏徽标；PTY/Telnet 传输 id 已在连接表登记）
+- [x] 多会话广播输入（会话标签右键 / 命令面板加入，状态栏徽标；PTY/Telnet/Serial 传输 id 已在连接表登记，条目存在 ⇔ 有活跃连接）
 - [x] 本地会话可选 Shell（预设探测 + 自定义可执行文件与参数，参数支持引号）
 - [x] SFTP 拖拽上传（OS 拖入，命中测试 + 覆盖层）与面板内拖动移动（SFTP rename）
 - [x] 远程文件本地编辑（临时副本 + 保存自动回传，走 SFTP 上传引擎与传输队列）
@@ -267,4 +271,5 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - [x] 会话终态结束块与键盘操作（缓冲内 MobaXterm 式结束块 + R 重连/Enter 关闭/Esc 取消重连/S 保存输出到文件；自动重连倒计时右下角浮条；SSH 断开路径视口跳顶修复）
 - [x] 现代主题 4 族 8 款（Slate / Graphite / Terminal Green / Sandstone）、强调色自定义、终端配色跟随界面、对比度门禁
 - [x] 依赖审计门禁（cargo audit + npm audit --omit=dev）与 SECURITY.md 漏洞披露流程
-- [ ] trzsz / rz 发送端（ZMODEM 上行）、SSH Agent 转发、多跳 ProxyJump、可访问性增强
+- [x] 质量审计整改第一批：transport 连接表不变量与 Serial 广播、SFTP/ZMODEM/远程编辑失败路径 fail-closed、凭据删除墓碑重试、backup v2、设置迁移加固、根级/面板级 Error Boundary、de-slop 检查器增强（black/white + 原始 JSX 文案）、i18n 键使用扫描、敏感缓存保留与清理入口
+- [ ] trzsz / rz 发送端（ZMODEM 上行）、SSH Agent 转发、多跳 ProxyJump；待收敛 IPC 面（known_hosts 导入导出路径、ZMODEM 接收前确认、统一本地文件授权模型）、XtermCanvas/ssh 后端/SettingsWindow 拆分、组件与端到端集成测试、发布签名与公证

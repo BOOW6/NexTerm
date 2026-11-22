@@ -2,7 +2,7 @@
 name = "nexterm"
 version = "0.1.0"
 description = "NexTerm backend"
-authors = ["you"]
+authors = ["NexTerm contributors"]
 edition = "2021"
 
 [lib]

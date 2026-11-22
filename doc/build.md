@@ -145,11 +145,11 @@ setSessionLog(id, logPath): Promise<void>
 ```ts
 connectTelnet({ id, host, port, logPath? }): Promise<string>
 writeTelnet(id, data): Promise<void>
-resizeTelnet(id, cols, rows): Promise<void>   // 未协商窗口尺寸，no-op
+resizeTelnet(id, cols, rows): Promise<void>   // 对端接受 NAWS 后发送窗口尺寸，未协商时静默忽略
 disconnectTelnet(id): Promise<void>
 ```
 
-输出事件：`telnet-output-{id}`、`telnet-closed-{id}`。实现为最小 RFC 854 NVT（`src-tauri/src/telnet/mod.rs`）：拒绝所有选项协商，登录在终端内完成。
+输出事件：`telnet-output-{id}`、`telnet-closed-{id}`。实现为 RFC 854 NVT（`src-tauri/src/telnet/mod.rs`）：接受服务端 ECHO / SGA 协商，应答 NAWS（窗口尺寸）与 TTYPE（VT100），其余选项一律拒绝；登录在终端内完成。
 
 ### SSH / SFTP
 
@@ -203,7 +203,7 @@ readTextFile(path): Promise<string>
 writeTextFile(path, contents): Promise<void>
 ```
 
-保险库文件为应用配置目录下的 `credentials.vault.json`，使用 Argon2id 派生密钥与 AES-256-GCM 加密；应用重启后默认锁定。会话导入解析在 `src/lib/sessionImport.ts` 中完成（SSH config / MobaXterm / PuTTY / NexTerm JSON），文件读写通过 `read_text_file` / `write_text_file`。
+保险库文件为应用配置目录下的 `credentials.vault.json`，使用 Argon2id 派生密钥与 AES-256-GCM 加密；应用重启后默认锁定。会话导入解析在 `src/lib/sessionImport.ts` 中完成（SSH config / MobaXterm / PuTTY / NexTerm JSON，备份为 v2 全字段格式）；会话导入/导出的文件对话框与磁盘读写由后端命令（`import_sessions` / `export_sessions`）完成，路径不进入前端。known_hosts 导入/导出（`known_hosts_import` / `known_hosts_export`）仍由前端传入所选路径，属已知的待收敛 IPC 面。
 
 ## 自动更新（updater）
 

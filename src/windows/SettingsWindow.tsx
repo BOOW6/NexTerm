@@ -88,6 +88,7 @@ import {
 import type { SessionAuthMethod, SftpConflictPolicy } from '../types/session';
 import { localizeBackendError } from '../lib/backendErrors';
 import { clearAllTerminalSnapshots } from '../lib/terminalSnapshot';
+import { appVersion } from '../lib/appInfo';
 
 type SettingsTab =
   'appearance' | 'terminal' | 'snippets' | 'ssh' | 'shortcuts' | 'security' | 'about';
@@ -284,6 +285,12 @@ export default function SettingsWindow() {
   const [vaultStatus, setVaultStatus] = useState<VaultStatus | null>(null);
   const [vaultStatusUnknown, setVaultStatusUnknown] = useState(false);
   const [vaultBusy, setVaultBusy] = useState(false);
+  // The about page reads the runtime version (single source: tauri.conf.json)
+  // instead of a hardcoded copy that drifts between releases.
+  const [aboutVersion, setAboutVersion] = useState('');
+  useEffect(() => {
+    void appVersion().then(setAboutVersion);
+  }, []);
   // What this window last believed the store holds. External changes (e.g. a
   // theme cycle in the main window) are merged into the draft per-field so
   // unsaved local edits survive.
@@ -1977,7 +1984,7 @@ export default function SettingsWindow() {
   const renderAbout = () => (
     <section className="space-y-3">
       <div className="space-y-2">
-        <h3 className="text-sm font-emphasis text-foreground">NexTerm 0.1.0</h3>
+        <h3 className="text-sm font-emphasis text-foreground">NexTerm {aboutVersion}</h3>
         <p className="text-meta text-muted">Tauri 2 + React 18 + Rust</p>
         <p className="text-meta text-muted">
           {t('settings.about.shortcuts', {
