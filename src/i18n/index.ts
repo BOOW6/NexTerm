@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useLayoutEffect } from 'react';
 import { useSettingsStore, type LanguageSetting } from '../stores/settingsStore';
 import { EN as coreEn, ZH as coreZh } from './dictionaries/core';
 import { EN as panelsEn, ZH as panelsZh } from './dictionaries/panels';
@@ -63,6 +63,15 @@ export function useI18n(): I18n {
     [locale]
   );
   return { locale, t };
+}
+
+/** Mirror the active locale onto the document so screen readers announce
+ * the right language. `index.html` ships a static lang that never updates. */
+export function useDocumentLang(): void {
+  const language = useSettingsStore((state) => state.language);
+  useLayoutEffect(() => {
+    document.documentElement.lang = resolveLocale(language);
+  }, [language]);
 }
 
 /**

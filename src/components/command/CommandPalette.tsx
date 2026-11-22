@@ -60,6 +60,33 @@ const GROUP_LABEL_KEY: Record<CommandItem['group'], string> = {
 };
 
 function CommandWindow({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+  // aria-modal alone does not stop Tab from reaching the workspace behind
+  // the portal: cycle focus inside the dialog ourselves.
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  const trapFocus = (event: React.KeyboardEvent): void => {
+    if (event.key !== 'Tab' || !dialogRef.current) {
+      return;
+    }
+    const focusables = dialogRef.current.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusables.length === 0) {
+      return;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+    const inside = dialogRef.current.contains(active);
+    if (event.shiftKey && (!inside || active === first)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (!inside || active === last)) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[12vh]">
       <div
@@ -68,6 +95,8 @@ function CommandWindow({ children, onClose }: { children: ReactNode; onClose: ()
         aria-hidden="true"
       />
       <div
+        ref={dialogRef}
+        onKeyDown={trapFocus}
         className="relative z-10 w-full max-w-lg animate-zoom-in overflow-hidden rounded-md border border-border-strong bg-surface-elevated shadow-popup"
         role="dialog"
         aria-modal="true"

@@ -69,6 +69,10 @@ export function EditableSelect({
 
   const activeIndex = Math.min(highlight, Math.max(0, visibleOptions.length - 1));
 
+  /** Stable per-option id: the input's aria-activedescendant must point at
+   * the highlighted option so screen readers announce keyboard navigation. */
+  const optionId = (index: number): string => `${listId}-option-${index}`;
+
   const updatePosition = () => {
     const input = inputRef.current;
     if (!input) {
@@ -179,6 +183,7 @@ export function EditableSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
+        aria-activedescendant={open ? optionId(activeIndex) : undefined}
         autoComplete="off"
         spellCheck={false}
         className={cn(
@@ -215,6 +220,7 @@ export function EditableSelect({
               {visibleOptions.map((option, index) => (
                 <button
                   key={option.value}
+                  id={optionId(index)}
                   type="button"
                   role="option"
                   aria-selected={index === activeIndex}

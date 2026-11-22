@@ -331,10 +331,7 @@ function asString(value: unknown): string | undefined {
 }
 
 function asKind(value: unknown): SessionKind {
-  return value === 'sftp' ||
-    value === 'local' ||
-    value === 'telnet' ||
-    value === 'serial'
+  return value === 'sftp' || value === 'local' || value === 'telnet' || value === 'serial'
     ? value
     : 'ssh';
 }
@@ -383,7 +380,8 @@ export function parseNexTermBackup(text: string): ImportedSession[] {
     }
     sessions.push({
       kind,
-      title: title ?? (kind === 'local' ? tStatic(SESSION_KIND_LABEL_KEY.local) : (host ?? 'Session')),
+      title:
+        title ?? (kind === 'local' ? tStatic(SESSION_KIND_LABEL_KEY.local) : (host ?? 'Session')),
       host,
       // NexTerm backups carry raw numbers; clamp to the valid port range
       // like the other parsers do instead of trusting the file.

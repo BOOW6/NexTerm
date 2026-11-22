@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { useI18n } from '../i18n';
+import { useDocumentLang, useI18n } from '../i18n';
 import { currentWindowKind } from '../lib/appWindows';
 import { useContextMenuPolicy } from '../hooks/useContextMenuPolicy';
 import { useUiFont } from '../hooks/useUiFont';
@@ -23,6 +23,7 @@ function WindowFallback() {
 export default function WindowRoot() {
   useContextMenuPolicy();
   useUiFont();
+  useDocumentLang();
 
   const renderWindow = () => {
     switch (currentWindowKind()) {
