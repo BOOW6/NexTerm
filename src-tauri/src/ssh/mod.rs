@@ -370,10 +370,25 @@ impl Drop for ConnectReservation<'_> {
     }
 }
 
+/// Cached SFTP subsystem channel of a connection plus when its health was
+/// last verified. Within `SFTP_HEALTH_INTERVAL` of a verification the
+/// channel is trusted without another probe, so bursty usage (directory
+/// browsing) pays one health RTT per window instead of one per operation.
+#[derive(Default)]
+struct CachedSftp {
+    session: Option<Arc<SftpSession>>,
+    verified_at: Option<Instant>,
+}
+
+/// How long a cached SFTP channel is trusted without re-probing.
+const SFTP_HEALTH_INTERVAL: Duration = Duration::from_secs(5);
+/// Upper bound for the stale-path health probe.
+const SFTP_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+
 struct SshConnection {
     handle: Arc<client::Handle<Client>>,
     writer: Arc<ChannelWriteHalf<client::Msg>>,
-    sftp: tokio::sync::Mutex<Option<Arc<SftpSession>>>,
+    sftp: tokio::sync::Mutex<CachedSftp>,
     remote_forwards: Arc<Mutex<RemoteForwardMap>>,
     /// Session output log shared with the read loop; dropping the connection
     /// closes the file.
@@ -1627,7 +1642,7 @@ impl SshManager {
                     Arc::new(SshConnection {
                         handle,
                         writer,
-                        sftp: tokio::sync::Mutex::new(None),
+                        sftp: tokio::sync::Mutex::new(CachedSftp::default()),
                         remote_forwards,
                         log,
                         jump_handle,
@@ -2131,20 +2146,58 @@ impl SshManager {
     }
     pub(crate) async fn open_sftp(&self, id: &str) -> anyhow::Result<Arc<SftpSession>> {
         let connection = self.connection(id)?;
-        let mut cached = connection.sftp.lock().await;
 
-        if let Some(session) = cached.as_ref() {
-            // The cached subsystem channel can die while the SSH transport
-            // stays up (server kills the subsystem, resource limits). Probe
-            // cheaply and reopen once instead of failing every file operation
-            // until a full reconnect.
-            match tokio::time::timeout(Duration::from_secs(10), session.metadata(".")).await {
-                Ok(Ok(_)) => return Ok(session.clone()),
+        // Fast path: clone the cached handle and release the lock before any
+        // network I/O. The old code held the async mutex across a metadata
+        // probe (up to 10 s), so one slow or hung channel serialized every
+        // SFTP operation of the session behind it.
+        let cached = {
+            let guard = connection.sftp.lock().await;
+            CachedSftp {
+                session: guard.session.clone(),
+                verified_at: guard.verified_at,
+            }
+        };
+        if let Some(session) = cached.session {
+            let fresh = cached
+                .verified_at
+                .map(|at| at.elapsed() < SFTP_HEALTH_INTERVAL)
+                .unwrap_or(false);
+            if fresh {
+                return Ok(session);
+            }
+            // Stale or never verified: probe without holding the lock. The
+            // probe is still what self-heals a channel the server killed
+            // while the transport stayed up.
+            match tokio::time::timeout(SFTP_PROBE_TIMEOUT, session.metadata(".")).await {
+                Ok(Ok(_)) => {
+                    let mut guard = connection.sftp.lock().await;
+                    // Only bless the entry if it still holds the channel
+                    // we just verified (another task may have rebuilt it).
+                    let same = guard
+                        .session
+                        .as_ref()
+                        .map(|current| Arc::ptr_eq(current, &session))
+                        .unwrap_or(false);
+                    if same {
+                        guard.verified_at = Some(Instant::now());
+                    }
+                    return Ok(session);
+                }
                 _ => {
                     eprintln!("[ssh] cached SFTP channel is no longer usable; reopening");
-                    *cached = None;
                 }
             }
+        }
+
+        // Reopen path. Another task may have rebuilt the channel while we
+        // were probing; trust its fresh handle instead of duplicating work.
+        // The rare reopen serializes like before, which is fine: it is the
+        // recovery path, not the steady state.
+        let mut guard = connection.sftp.lock().await;
+        if let Some(session) = guard.session.clone() {
+            guard.verified_at = Some(Instant::now());
+            return Ok(session);
         }
 
         let channel = connection
@@ -2162,7 +2215,8 @@ impl SshManager {
                 .await
                 .context("failed to initialize SFTP session")?,
         );
-        *cached = Some(session.clone());
+        guard.session = Some(session.clone());
+        guard.verified_at = Some(Instant::now());
 
         Ok(session)
     }
