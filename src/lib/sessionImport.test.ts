@@ -148,6 +148,124 @@ describe('NexTerm backup', () => {
     expect(importKey(imported[0])).toBe('ssh|10.0.0.1|22|root');
   });
 
+  it('round-trips every session kind with all v2 fields', () => {
+    // Regression: v1 backups silently dropped Telnet and Serial kinds,
+    // coerced certificate auth to password and lost ProxyJump, custom shell
+    // and serial settings on restore.
+    const sessions: Session[] = [
+      {
+        ...session,
+        id: 'tel',
+        kind: 'telnet',
+        title: 'Legacy box',
+        host: 'bbs.example.com',
+        port: 23,
+        authMethod: 'password',
+        username: undefined
+      },
+      {
+        ...session,
+        id: 'ser',
+        kind: 'serial',
+        title: 'Console',
+        host: undefined,
+        port: undefined,
+        serialPort: 'COM3',
+        serialBaud: 115200
+      },
+      {
+        ...session,
+        id: 'cert',
+        kind: 'ssh',
+        title: 'Cert hop',
+        authMethod: 'certificate',
+        keyPath: '/keys/id_ed25519',
+        certPath: '/keys/id_ed25519-cert.pub'
+      },
+      {
+        ...session,
+        id: 'jump',
+        kind: 'sftp',
+        title: 'Files via bastion',
+        jumpSessionId: 'cert',
+        username: 'files'
+      },
+      {
+        ...session,
+        id: 'local',
+        kind: 'local',
+        title: 'pwsh',
+        host: undefined,
+        port: undefined,
+        shellCommand: 'pwsh.exe',
+        shellArgs: ['-NoLogo', '-WorkingDirectory', 'C:\\dev']
+      }
+    ];
+
+    const imported = parseNexTermBackup(serializeSessionBackup(sessions));
+
+    const byTitle = new Map(imported.map((item) => [item.title, item]));
+    const telnet = byTitle.get('Legacy box');
+    expect(telnet).toMatchObject({ kind: 'telnet', host: 'bbs.example.com', port: 23 });
+    const serial = byTitle.get('Console');
+    expect(serial).toMatchObject({
+      kind: 'serial',
+      serialPort: 'COM3',
+      serialBaud: 115200,
+      host: undefined,
+      port: undefined
+    });
+    expect(byTitle.get('Cert hop')).toMatchObject({
+      kind: 'ssh',
+      authMethod: 'certificate',
+      keyPath: '/keys/id_ed25519',
+      certPath: '/keys/id_ed25519-cert.pub'
+    });
+    expect(byTitle.get('Files via bastion')).toMatchObject({
+      kind: 'sftp',
+      jumpSessionId: 'cert',
+      username: 'files'
+    });
+    expect(byTitle.get('pwsh')).toMatchObject({
+      kind: 'local',
+      shellCommand: 'pwsh.exe',
+      shellArgs: ['-NoLogo', '-WorkingDirectory', 'C:\\dev']
+    });
+  });
+
+  it('keeps importing v1 backups that only carry the old fields', () => {
+    const v1 = JSON.stringify({
+      app: 'NexTerm',
+      version: 1,
+      exportedAt: '2025-01-01T00:00:00.000Z',
+      sessions: [
+        {
+          kind: 'ssh',
+          title: 'Old',
+          host: '10.0.0.9',
+          port: 2200,
+          username: 'root',
+          authMethod: 'key',
+          keyPath: '/keys/id_rsa',
+          group: 'Legacy',
+          favorite: false
+        },
+        // v1 writers emitted serial/telnet kinds, but the old importer
+        // coerced them to ssh: restoring them as their real kind is the fix.
+        { kind: 'telnet', title: 'Old bbs', host: 'bbs.example.com', port: 23, group: 'Legacy' }
+      ]
+    });
+
+    const imported = parseNexTermBackup(v1);
+    expect(imported[0]).toMatchObject({
+      kind: 'ssh',
+      authMethod: 'key',
+      keyPath: '/keys/id_rsa',
+      port: 2200
+    });
+    expect(imported[1]).toMatchObject({ kind: 'telnet', host: 'bbs.example.com', port: 23 });
+  });
+
   it('rejects unrelated JSON', () => {
     expect(() => parseNexTermBackup('{"hello":true}')).toThrow();
   });

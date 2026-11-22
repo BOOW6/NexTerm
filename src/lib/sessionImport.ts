@@ -18,6 +18,14 @@ export interface ImportedSession {
   authMethod: SessionAuthMethod;
   keyPath?: string;
   certPath?: string;
+  /** SSH/SFTP only: the session whose connection tunnels this one. */
+  jumpSessionId?: string;
+  /** Local sessions only. */
+  shellCommand?: string;
+  shellArgs?: string[];
+  /** Serial sessions only. */
+  serialPort?: string;
+  serialBaud?: number;
   group: string;
   favorite?: boolean;
 }
@@ -323,11 +331,31 @@ function asString(value: unknown): string | undefined {
 }
 
 function asKind(value: unknown): SessionKind {
-  return value === 'sftp' || value === 'local' ? value : 'ssh';
+  return value === 'sftp' ||
+    value === 'local' ||
+    value === 'telnet' ||
+    value === 'serial'
+    ? value
+    : 'ssh';
 }
 
 function asAuthMethod(value: unknown): SessionAuthMethod {
-  return value === 'key' || value === 'agent' ? value : 'password';
+  return value === 'key' || value === 'agent' || value === 'certificate' ? value : 'password';
+}
+
+function asStringArray(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+    ? (value as string[])
+    : undefined;
+}
+
+function asPort(value: unknown, kind: SessionKind): number | undefined {
+  if (typeof value === 'number') {
+    return normalizePort(String(value));
+  }
+  // Only remote kinds have a meaningful port default; forcing 22 onto local
+  // or serial sessions would suggest a port they do not use.
+  return kind === 'ssh' || kind === 'sftp' || kind === 'telnet' ? 22 : undefined;
 }
 
 export function parseNexTermBackup(text: string): ImportedSession[] {
@@ -349,20 +377,29 @@ export function parseNexTermBackup(text: string): ImportedSession[] {
     const kind = asKind(item.kind);
     const host = asString(item.host);
     const title = asString(item.title);
-    if (kind !== 'local' && !host) {
+    // Serial sessions have no host; every other remote kind needs one.
+    if (kind !== 'local' && kind !== 'serial' && !host) {
       continue;
     }
     sessions.push({
       kind,
-      title:
-        title ?? (kind === 'local' ? tStatic(SESSION_KIND_LABEL_KEY.local) : (host ?? 'Session')),
+      title: title ?? (kind === 'local' ? tStatic(SESSION_KIND_LABEL_KEY.local) : (host ?? 'Session')),
       host,
       // NexTerm backups carry raw numbers; clamp to the valid port range
       // like the other parsers do instead of trusting the file.
-      port: typeof item.port === 'number' ? normalizePort(String(item.port)) : 22,
+      port: asPort(item.port, kind),
       username: asString(item.username),
       authMethod: asAuthMethod(item.authMethod),
       keyPath: asString(item.keyPath),
+      certPath: asString(item.certPath),
+      jumpSessionId: asString(item.jumpSessionId),
+      shellCommand: asString(item.shellCommand),
+      shellArgs: asStringArray(item.shellArgs),
+      serialPort: asString(item.serialPort),
+      serialBaud:
+        typeof item.serialBaud === 'number' && Number.isFinite(item.serialBaud)
+          ? item.serialBaud
+          : undefined,
       group: asString(item.group) ?? DEFAULT_GROUP,
       favorite: Boolean(item.favorite)
     });
@@ -383,11 +420,14 @@ export function importSessionsFromText(format: ImportFormat, text: string): Impo
   }
 }
 
+/** Backup schema v2: every SessionDraft-relevant field is exported, so a
+ * backup restores Telnet/Serial/ProxyJump/custom shell sessions losslessly.
+ * Importers still accept v1 files (they simply lack the newer fields). */
 export function serializeSessionBackup(sessions: Session[]): string {
   return JSON.stringify(
     {
       app: 'NexTerm',
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       sessions: sessions.map((session) => ({
         kind: session.kind,
@@ -397,6 +437,12 @@ export function serializeSessionBackup(sessions: Session[]): string {
         username: session.username,
         authMethod: session.authMethod,
         keyPath: session.keyPath,
+        certPath: session.certPath,
+        jumpSessionId: session.jumpSessionId,
+        shellCommand: session.shellCommand,
+        shellArgs: session.shellArgs,
+        serialPort: session.serialPort,
+        serialBaud: session.serialBaud,
         group: session.group,
         favorite: session.favorite
       }))

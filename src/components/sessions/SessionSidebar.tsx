@@ -382,6 +382,11 @@ export default function SessionSidebar() {
           authMethod: item.authMethod,
           keyPath: item.keyPath,
           certPath: item.certPath,
+          jumpSessionId: item.jumpSessionId,
+          shellCommand: item.shellCommand,
+          shellArgs: item.shellArgs,
+          serialPort: item.serialPort,
+          serialBaud: item.serialBaud,
           group: item.group,
           favorite: item.favorite
         });
