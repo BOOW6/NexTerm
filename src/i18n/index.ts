@@ -32,6 +32,10 @@ const DICTIONARIES: Record<Locale, Dictionary> = {
   'en-US': EN
 };
 
+/** The fully merged dictionaries, exposed so tooling (the key-usage scan
+ * test) validates component keys against the real lookup source. */
+export const mergedDictionaries = DICTIONARIES;
+
 export function resolveLocale(setting: LanguageSetting): Locale {
   if (setting === 'zh-CN' || setting === 'en-US') {
     return setting;
