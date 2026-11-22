@@ -325,14 +325,20 @@ export default function SessionSidebar() {
     }
     closeSessionPanel(sessionId);
     removeSession(sessionId);
-    void forgetSessionCredentials(sessionId);
+    const forgotten = await forgetSessionCredentials(sessionId);
     clearTerminalSnapshot(sessionId);
     // The session is gone: its transfer entries could never retry again.
     useTransferStore.getState().removeSessionTransfers(sessionId);
     if (activeSessionId === sessionId) {
       setActiveSessionId(null);
     }
-    toast({ title: t('sidebar.deleted', { name }), variant: 'success' });
+    if (forgotten.failed.length > 0) {
+      // The stored credentials still exist; they are tombstoned and retried
+      // after the next vault unlock, but the user must hear about it.
+      toast({ title: t('sidebar.credentialsCleanupFailed'), variant: 'warning' });
+    } else {
+      toast({ title: t('sidebar.deleted', { name }), variant: 'success' });
+    }
   };
 
   const handleImport = async (format: ImportFormat) => {

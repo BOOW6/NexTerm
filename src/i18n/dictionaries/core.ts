@@ -44,6 +44,8 @@ export const ZH: Dictionary = {
   'sidebar.deleteTitle': '删除会话',
   'sidebar.deleteConfirm': '确定删除「{name}」吗？',
   'sidebar.deleted': '已删除「{name}」',
+  'sidebar.credentialsCleanupFailed':
+    '会话已删除，但保险库中的凭据删除失败，将在下次解锁后自动重试',
   'session.open': '打开',
   'session.edit': '编辑',
   'session.favorite': '收藏',
@@ -150,6 +152,8 @@ export const EN: Dictionary = {
   'sidebar.deleteTitle': 'Delete session',
   'sidebar.deleteConfirm': 'Delete "{name}"?',
   'sidebar.deleted': 'Deleted "{name}"',
+  'sidebar.credentialsCleanupFailed':
+    'Session deleted, but removing its vault credentials failed. They will be removed after the next unlock',
   'session.open': 'Open',
   'session.edit': 'Edit',
   'session.favorite': 'Favorite',

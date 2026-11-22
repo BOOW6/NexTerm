@@ -3,7 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
 
-import { forgetSessionCredentials, rememberSessionCredentials } from './credentialVault';
+import {
+  forgetSessionCredentials,
+  rememberSessionCredentials,
+  retryPendingVaultDeletions
+} from './credentialVault';
 import { useCredentialStore } from '../stores/credentialStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import type { Session } from '../types/session';
@@ -94,5 +98,94 @@ describe('credentialVault', () => {
 
     expect(results).toEqual(['disabled']);
     expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it('reports and tombstones vault deletions that fail while locked', async () => {
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'vault_status') {
+        return { initialized: true, unlocked: false, entry_count: 3 };
+      }
+      if (command === 'vault_delete') {
+        throw new Error('credential vault is locked');
+      }
+      return undefined;
+    });
+
+    const result = await forgetSessionCredentials('s1');
+
+    // Regression: this used to be swallowed, leaving credentials on disk
+    // with no trace after the session was gone.
+    expect(result.removed).toEqual([]);
+    expect(result.failed.sort()).toEqual([
+      'session:s1:authorized',
+      'session:s1:passphrase',
+      'session:s1:password'
+    ]);
+    expect(JSON.parse(localStorage.getItem('nexterm.pendingVaultDeletes.v1') ?? '[]')).toEqual(
+      expect.arrayContaining(['session:s1:password', 'session:s1:passphrase'])
+    );
+  });
+
+  it('reports nothing stored when the vault was never initialized', async () => {
+    useCredentialStore.getState().setPassword('s1', 'p');
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'vault_status') {
+        return { initialized: false, unlocked: false, entry_count: 0 };
+      }
+      return undefined;
+    });
+
+    const result = await forgetSessionCredentials('s1');
+
+    expect(result.failed).toEqual([]);
+    expect(result.removed).toHaveLength(3);
+    expect(invokeMock).not.toHaveBeenCalledWith('vault_delete', expect.anything());
+    expect(localStorage.getItem('nexterm.pendingVaultDeletes.v1')).toBeNull();
+  });
+
+  it('clears tombstones on success and merges them across forgets', async () => {
+    // First forget fails (vault locked).
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'vault_status') {
+        return { initialized: true, unlocked: false, entry_count: 3 };
+      }
+      if (command === 'vault_delete') {
+        throw new Error('credential vault is locked');
+      }
+      return undefined;
+    });
+    await forgetSessionCredentials('s1');
+
+    // Second forget succeeds once unlocked.
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'vault_status') {
+        return { initialized: true, unlocked: true, entry_count: 0 };
+      }
+      return undefined;
+    });
+    const result = await forgetSessionCredentials('s1');
+
+    expect(result.failed).toEqual([]);
+    expect(localStorage.getItem('nexterm.pendingVaultDeletes.v1')).toBeNull();
+  });
+
+  it('retries tombstoned deletions after unlock, keeping persistent failures', async () => {
+    localStorage.setItem(
+      'nexterm.pendingVaultDeletes.v1',
+      JSON.stringify(['session:gone:password', 'session:gone:passphrase'])
+    );
+    invokeMock.mockImplementation(async (command: string, payload: { name: string }) => {
+      if (command === 'vault_delete' && payload.name === 'session:gone:passphrase') {
+        throw new Error('disk error');
+      }
+      return undefined;
+    });
+
+    const cleared = await retryPendingVaultDeletions();
+
+    expect(cleared).toBe(1);
+    expect(JSON.parse(localStorage.getItem('nexterm.pendingVaultDeletes.v1') ?? '[]')).toEqual([
+      'session:gone:passphrase'
+    ]);
   });
 });

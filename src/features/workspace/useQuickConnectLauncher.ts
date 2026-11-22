@@ -7,7 +7,11 @@ import { useCredentialStore } from '../../stores/credentialStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { toast } from '../../components/ui/toastStore';
-import { forgetSessionCredentials, rememberSessionCredentials } from '../../lib/credentialVault';
+import {
+  forgetSessionCredentials,
+  rememberSessionCredentials,
+  type ForgetResult
+} from '../../lib/credentialVault';
 import type { Session, SessionAuthMethod, SessionDraft, SessionKind } from '../../types/session';
 import { useWorkspace } from './useWorkspace';
 
@@ -170,17 +174,26 @@ async function applyQuickConnectResult(
     toast({ title: tStatic('quickConnect.toastCredentialsSaveFailed'), variant: 'warning' });
   };
 
+  const warnIfCredentialsKept = (forgotten: ForgetResult): void => {
+    if (forgotten.failed.length > 0) {
+      // Stale credentials would silently reconnect with the old secret once
+      // the vault unlocks; the tombstone retry will remove them, but the
+      // user must know this save did not fully replace them yet.
+      toast({ title: tStatic('quickConnect.toastCredentialsDeleteFailed'), variant: 'warning' });
+    }
+  };
+
   if (session) {
     const previousAuthMethod = session.authMethod ?? 'password';
     const previousKind = session.kind;
     sessionState.updateSession(session.id, result.draft);
     if (isRemote && previousAuthMethod !== result.draft.authMethod) {
-      await forgetSessionCredentials(session.id);
+      warnIfCredentialsKept(await forgetSessionCredentials(session.id));
     }
     if (previousKind !== 'local' && !isRemote) {
       // The session stopped being remote: leaving its stored credentials
       // behind would silently reconnect with them if it is switched back.
-      await forgetSessionCredentials(session.id);
+      warnIfCredentialsKept(await forgetSessionCredentials(session.id));
     }
     if (hasAuth) {
       if (result.password?.trim()) {

@@ -3,6 +3,7 @@ import {
   getVaultStatus,
   hydrateCredentialsFromVault,
   lockVault,
+  retryPendingVaultDeletions,
   unlockVault,
   type VaultStatus
 } from '../lib/credentialVault';
@@ -42,6 +43,8 @@ export const useVaultStore = create<VaultState>((set) => ({
       const ok = await unlockVault(masterPassword);
       if (ok) {
         await hydrateCredentialsFromVault();
+        // Clear deletion tombstones that were waiting for an unlock.
+        await retryPendingVaultDeletions();
       }
       const status = await getVaultStatus();
       set({ status });

@@ -78,6 +78,7 @@ export const ZH: Dictionary = {
   'quickConnect.windowOpenFailed': '连接窗口打开失败',
   'quickConnect.toastApplyFailed': '连接已提交，但保存或启动失败',
   'quickConnect.toastCredentialsSaveFailed': '连接已保存，但凭据写入保险库失败',
+  'quickConnect.toastCredentialsDeleteFailed': '旧凭据删除失败，将在下次解锁保险库后自动重试',
   // sessionActions
   'sessionAction.duplicateTitle': '{name} 副本',
   'sessionAction.sftpPanelTitle': 'SFTP - {name}',
@@ -295,6 +296,8 @@ export const EN: Dictionary = {
   'quickConnect.toastApplyFailed': 'The session was submitted, but saving or launching failed',
   'quickConnect.toastCredentialsSaveFailed':
     'Session saved, but storing credentials in the vault failed',
+  'quickConnect.toastCredentialsDeleteFailed':
+    'Removing the old credentials failed. They will be removed after the next vault unlock',
   // sessionActions
   'sessionAction.duplicateTitle': '{name} copy',
   'sessionAction.sftpPanelTitle': 'SFTP - {name}',

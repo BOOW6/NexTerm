@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { swallowListenError } from '../lib/eventListener';
 import { listen } from '@tauri-apps/api/event';
-import { hydrateCredentialsFromVault } from '../lib/credentialVault';
+import { hydrateCredentialsFromVault, retryPendingVaultDeletions } from '../lib/credentialVault';
 import { useCredentialStore } from '../stores/credentialStore';
 import { useVaultStore } from '../stores/vaultStore';
 
@@ -15,7 +15,11 @@ export function useVaultEvents(): void {
 
     const subscriptions = [
       listen('nexterm-vault-unlocked', () => {
-        void hydrateCredentialsFromVault().then(() => useVaultStore.getState().refresh());
+        // Deletion tombstones left by sessions that were removed while the
+        // vault was locked are retried on every unlock.
+        void hydrateCredentialsFromVault()
+          .then(() => retryPendingVaultDeletions())
+          .then(() => useVaultStore.getState().refresh());
       }).catch(swallowListenError),
       listen('nexterm-vault-locked', () => {
         void useVaultStore.getState().refresh();

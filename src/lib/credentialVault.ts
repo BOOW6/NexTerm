@@ -86,13 +86,114 @@ export async function saveSessionSecret(
   }
 }
 
-export async function forgetSessionCredentials(sessionId: string): Promise<void> {
+const PENDING_DELETES_KEY = 'nexterm.pendingVaultDeletes.v1';
+
+function readPendingDeletes(): string[] {
+  try {
+    const raw = window.localStorage.getItem(PENDING_DELETES_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePendingDeletes(names: string[]): void {
+  try {
+    if (names.length === 0) {
+      window.localStorage.removeItem(PENDING_DELETES_KEY);
+    } else {
+      window.localStorage.setItem(PENDING_DELETES_KEY, JSON.stringify(names));
+    }
+  } catch {
+    // Storage unavailable: the tombstone list stays best-effort.
+  }
+}
+
+export interface ForgetResult {
+  /** Vault keys that were removed (or never existed). */
+  removed: string[];
+  /** Vault keys that could not be removed because the vault was locked or
+   * errored. They are tombstoned and retried after the next unlock, but the
+   * caller must report them: the stored credentials still exist on disk. */
+  failed: string[];
+}
+
+/**
+ * Remove every stored credential of a session: the in-memory copies always,
+ * the vault entries best-effort. Vault failures used to be swallowed here,
+ * which left credentials on disk with no trace after the session was gone.
+ * Failed keys are tombstoned (persisted) and retried by
+ * `retryPendingVaultDeletions` after the next successful unlock, and the
+ * returned `failed` list lets the caller tell the user.
+ */
+export async function forgetSessionCredentials(sessionId: string): Promise<ForgetResult> {
   useCredentialStore.getState().clearCredentials(sessionId);
-  await Promise.all([
-    deleteVaultSecret(vaultKey(sessionId, 'password')).catch(() => undefined),
-    deleteVaultSecret(vaultKey(sessionId, 'passphrase')).catch(() => undefined),
-    deleteVaultSecret(vaultKey(sessionId, 'authorized')).catch(() => undefined)
-  ]);
+
+  const names = (['password', 'passphrase', 'authorized'] as const).map((field) =>
+    vaultKey(sessionId, field)
+  );
+
+  // A vault that was never initialized cannot hold any credential for this
+  // session, so there is nothing left behind to report.
+  let status: VaultStatus | undefined;
+  try {
+    status = await getVaultStatus();
+  } catch {
+    // Status probe failed: fall through and attempt the deletes anyway.
+  }
+  if (status && !status.initialized) {
+    writePendingDeletes(readPendingDeletes().filter((name) => !names.includes(name)));
+    return { removed: [...names], failed: [] };
+  }
+
+  const removed: string[] = [];
+  const failed: string[] = [];
+  await Promise.all(
+    names.map(async (name) => {
+      try {
+        await deleteVaultSecret(name);
+        removed.push(name);
+      } catch {
+        failed.push(name);
+      }
+    })
+  );
+
+  // Tombstone only what still exists: a stale tombstone for a key that was
+  // meanwhile deleted resolves on the next retry (deleting a missing key
+  // succeeds).
+  const pending = [...new Set([...readPendingDeletes(), ...failed])].filter(
+    (name) => !removed.includes(name)
+  );
+  writePendingDeletes(pending);
+  return { removed, failed };
+}
+
+/**
+ * Retry tombstoned credential deletions after the vault was unlocked.
+ * Returns how many pending keys were cleared. Safe to call from any window:
+ * deletions are idempotent, and the tombstone list is shared localStorage.
+ */
+export async function retryPendingVaultDeletions(): Promise<number> {
+  const pending = readPendingDeletes();
+  if (pending.length === 0) {
+    return 0;
+  }
+  const remaining: string[] = [];
+  let cleared = 0;
+  for (const name of pending) {
+    try {
+      await deleteVaultSecret(name);
+      cleared += 1;
+    } catch {
+      remaining.push(name);
+    }
+  }
+  writePendingDeletes(remaining);
+  return cleared;
 }
 
 export async function rememberSessionCredentials(session: Session): Promise<VaultSaveResult[]> {
