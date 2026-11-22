@@ -16,6 +16,14 @@ if (typeof globalThis.crypto?.randomUUID !== 'function') {
   });
 }
 
+// jsdom has no canvas implementation, so importing xterm (its color
+// machinery probes 2D contexts) emitted "Not implemented" noise from every
+// terminal-related test. That noise drowned real errors; a stub keeps the
+// failures clean. Tests that need real canvas behavior must mock deeper.
+HTMLCanvasElement.prototype.getContext = function getContext() {
+  return null;
+};
+
 afterEach(() => {
   window.localStorage.clear();
 });
