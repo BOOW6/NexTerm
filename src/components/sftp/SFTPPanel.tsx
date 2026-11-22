@@ -75,6 +75,8 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
   // Distinguishes an explicit "选择会话" (unbind) from the initial unbound
   // state so the auto-bind effect does not immediately re-bind.
   const userUnboundRef = useRef(false);
+  // Trailing debounce for upload-completion refreshes (see the done listener).
+  const uploadRefreshTimer = useRef<number | null>(null);
 
   const session = sessions.find((item) => item.id === boundSessionId);
   const connection = useConnectionStore((state) =>
@@ -174,8 +176,26 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
     let dispose: (() => void) | undefined;
     let cancelled = false;
 
-    listenSftpTransferDone(() => {
-      setReloadToken((value) => value + 1);
+    // Only uploads change the remote listing, and only those of this
+    // panel's session; a burst of completions coalesces into one refresh.
+    // Every completion used to re-list every open panel of every session.
+    listenSftpTransferDone((payload) => {
+      if (payload.direction !== 'upload') {
+        return;
+      }
+      const request = useTransferStore
+        .getState()
+        .transfers.find((item) => item.id === payload.transfer_id)?.request;
+      if (request && request.sessionId !== boundSessionId) {
+        return;
+      }
+      if (uploadRefreshTimer.current !== null) {
+        return;
+      }
+      uploadRefreshTimer.current = window.setTimeout(() => {
+        uploadRefreshTimer.current = null;
+        setReloadToken((value) => value + 1);
+      }, 200);
     })
       .then((unlisten) => {
         if (cancelled) {
@@ -189,8 +209,12 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
     return () => {
       cancelled = true;
       dispose?.();
+      if (uploadRefreshTimer.current !== null) {
+        window.clearTimeout(uploadRefreshTimer.current);
+        uploadRefreshTimer.current = null;
+      }
     };
-  }, []);
+  }, [boundSessionId]);
 
   const goUp = () => {
     if (path === '/') {
