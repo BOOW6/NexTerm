@@ -144,7 +144,7 @@ export function DropdownMenu({ items, align = 'end', className, label }: Dropdow
                     'flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-xs transition-colors',
                     'disabled:cursor-not-allowed disabled:opacity-40',
                     item.danger
-                      ? 'text-error hover:bg-error hover:text-white'
+                      ? 'text-error hover:bg-error hover:text-error-foreground'
                       : 'text-foreground hover:bg-accent hover:text-accent-foreground'
                   )}
                 >

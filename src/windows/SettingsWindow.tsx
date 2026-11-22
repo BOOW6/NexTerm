@@ -1307,7 +1307,7 @@ export default function SettingsWindow() {
                 <ul className="mt-1 space-y-0.5">
                   {customThemeErrors.map((error) => (
                     <li key={error.file} className="selectable text-tiny text-muted-foreground">
-                      {error.file} — {error.message}
+                      {error.file}: {error.message}
                     </li>
                   ))}
                 </ul>

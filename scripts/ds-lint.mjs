@@ -7,10 +7,10 @@
 // Rules:
 //   color-hex          bare hex literals in components/windows
 //   color-fn           rgb()/rgba()/hsl()/hsla() numeric literals
-//   color-palette      Tailwind palette classes (bg-blue-500 & friends)
+//   color-palette      Tailwind palette classes (bg-blue-500, text-white & friends)
 //   color-arbitrary    Tailwind arbitrary color values (bg-[#...])
 //   hover-scale        decorative hover:scale-105/110/125/150
-//   copy-emdash        em dash in user-visible copy
+//   copy-emdash        em dash in user-visible copy (JSX text included)
 //   copy-middot        middle dot separator in user-visible copy
 //   copy-ai-keyword    empty marketing verbs / emoji fingerprints
 //   copy-dev-marker    TODO / "AI generated" / "This component" in copy
@@ -18,6 +18,8 @@
 //
 // Comments are stripped before scanning (line numbers preserved), so WHY
 // comments and issue references (#334532) never trip the color rules.
+// Components and windows are scanned line-by-line over the stripped source,
+// so raw JSX text children are covered, not just string literals.
 // `unlock` is deliberately NOT a keyword: it is the credential vault's
 // real functional term (doc/de-slop/audit.md B3).
 
@@ -26,6 +28,9 @@ import { resolve, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+const violations = [];
+const scanned = { components: 0, i18n: 0, schema: 0 };
 
 // Central exemption list. Every entry needs a reason; keep it short.
 const EXEMPTIONS = [
@@ -40,8 +45,12 @@ const COLOR_RULES = [
   { id: 'color-hex', re: /#[0-9a-fA-F]{3,8}\b/g },
   { id: 'color-fn', re: /\b(?:rgba?|hsla?)\(\s*[\d.]/g },
   {
+    // Tailwind palette classes. black/white have no shade, only an optional
+    // opacity modifier (`bg-black/40`); every other hue requires its shade
+    // number so real classes like `text-white` are caught without
+    // false-positiving on the semantic token names.
     id: 'color-palette',
-    re: /\b(?:bg|text|border|ring|from|to|via|fill|stroke|shadow|outline|divide|caret)-(?:red|blue|green|yellow|purple|pink|indigo|emerald|amber|slate|gray|zinc|orange|cyan|teal|sky|violet|fuchsia|rose|lime|stone|neutral)-\d{2,3}\b/g
+    re: /\b(?:bg|text|border|ring|from|to|via|fill|stroke|shadow|outline|divide|caret)-(?:black|white)(?:\/\d{1,3})?\b|\b(?:bg|text|border|ring|from|to|via|fill|stroke|shadow|outline|divide|caret)-(?:red|blue|green|yellow|purple|pink|indigo|emerald|amber|slate|gray|zinc|orange|cyan|teal|sky|violet|fuchsia|rose|lime|stone|neutral)-\d{2,3}\b/g
   },
   { id: 'color-arbitrary', re: /-\[(?:#[0-9a-fA-F]|rgb|hsl)/g },
   { id: 'hover-scale', re: /hover:scale-(?:105|110|125|150)\b/g }
@@ -60,14 +69,8 @@ const COPY_RULES = [
   }
 ];
 
-// The middot is also scanned across the whole stripped line in
-// components/windows so bare JSX text children are caught; the literal pass
-// for those files therefore skips it to avoid duplicate reports.
-const COMPONENT_COPY_RULES = COPY_RULES.filter(({ id }) => id !== 'copy-middot');
-const MIDDOT_RULE = COPY_RULES.filter(({ id }) => id === 'copy-middot');
-
-const violations = [];
-const scanned = { components: 0, i18n: 0, schema: 0 };
+// i18n dictionary keys look like 'session.kind.local'; values are prose.
+const isDictionaryKey = (s) => /^'[a-z][\w]*(?:\.[\w]+)+'$/i.test(s);
 
 function rel(file) {
   return relative(ROOT, file).replace(/\\/g, '/');
@@ -120,25 +123,16 @@ function stringLiterals(line) {
   return [...line.matchAll(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`/g)].map((m) => m[0]);
 }
 
-// i18n dictionary keys look like 'session.kind.local'; values are prose.
-const isDictionaryKey = (s) => /^'[a-z][\w]*(?:\.[\w]+)+'$/i.test(s);
-
-// ---- components & windows: color rules on stripped source, copy rules on literals ----
+// ---- components & windows: color and copy rules on stripped source ----
+// Copy rules scan whole stripped lines, not just string literals: raw JSX
+// text children ({error.file} — {error.message}) never appear inside quotes
+// and used to slip past the literal pass.
 for (const dir of ['src/components', 'src/windows']) {
   for (const file of walk(resolve(ROOT, dir))) {
     scanned.components++;
     const stripped = stripComments(readFileSync(file, 'utf8'));
     scanLines(file, stripped, COLOR_RULES);
-    scanLines(file, stripped, MIDDOT_RULE);
-    stripped.split('\n').forEach((text, i) => {
-      for (const literal of stringLiterals(text)) {
-        for (const { id, re } of COMPONENT_COPY_RULES) {
-          for (const m of literal.matchAll(re)) {
-            report(file, i + 1, id, m[0]);
-          }
-        }
-      }
-    });
+    scanLines(file, stripped, COPY_RULES);
   }
 }
 

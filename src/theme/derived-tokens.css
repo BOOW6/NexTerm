@@ -24,4 +24,8 @@
   --primary-muted: color-mix(in oklch, var(--primary) 38%, hsl(var(--surface)));
   --primary-border: color-mix(in oklch, var(--primary) 45%, hsl(var(--surface)));
   --primary-subtle: color-mix(in oklch, var(--primary) 12%, transparent);
+  /* Modal backdrop scrim. Theme-independent on purpose: a neutral black wash
+   * at 40% reads as "the page is behind glass" in every family, and letting
+   * themes tint it would fight with the terminal behind it. */
+  --overlay-scrim: color-mix(in oklch, black 40%, transparent);
 }

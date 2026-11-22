@@ -63,7 +63,7 @@ function CommandWindow({ children, onClose }: { children: ReactNode; onClose: ()
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[12vh]">
       <div
-        className="absolute inset-0 animate-fade-in bg-black/40"
+        className="absolute inset-0 animate-fade-in bg-overlay-scrim"
         onClick={onClose}
         aria-hidden="true"
       />

@@ -13,7 +13,7 @@ const variants: Record<Variant, string> = {
     'border-transparent bg-transparent text-muted hover:bg-surface-hover hover:text-foreground',
   outline:
     'border-border-strong bg-transparent text-foreground hover:bg-surface-hover active:shadow-pressed',
-  danger: 'border-error bg-error text-white hover:brightness-110 active:shadow-pressed'
+  danger: 'border-error bg-error text-error-foreground hover:brightness-110 active:shadow-pressed'
 };
 
 const sizes: Record<Size, string> = {

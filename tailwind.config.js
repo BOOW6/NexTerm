@@ -36,7 +36,11 @@ export default {
         },
         success: 'hsl(var(--success))',
         warning: 'hsl(var(--warning))',
-        error: 'hsl(var(--error))',
+        error: {
+          DEFAULT: 'hsl(var(--error))',
+          foreground: 'hsl(var(--error-foreground))'
+        },
+        'overlay-scrim': 'var(--overlay-scrim)',
         'focus-ring': 'hsl(var(--focus-ring))',
         'table-header': 'hsl(var(--table-header))',
         'row-hover': 'hsl(var(--row-hover))',

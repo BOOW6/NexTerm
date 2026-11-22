@@ -59,7 +59,7 @@ function MenuRow({
         'flex h-7 w-full items-center gap-2 rounded-sm px-2 text-left text-xs outline-none',
         'disabled:pointer-events-none disabled:opacity-40',
         danger
-          ? 'text-error hover:bg-error hover:text-white focus:bg-error focus:text-white'
+          ? 'text-error hover:bg-error hover:text-error-foreground focus:bg-error focus:text-error-foreground'
           : 'text-foreground hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground'
       )}
     >

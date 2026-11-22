@@ -91,13 +91,16 @@ describe('derived token layer', () => {
       '--primary-soft',
       '--primary-muted',
       '--primary-border',
-      '--primary-subtle'
+      '--primary-subtle',
+      '--overlay-scrim'
     ]);
 
     // The base is the full-color view of the accent triplet...
     expect(body).toContain('--primary: hsl(var(--accent));');
-    // ...and every derived ramp token is a color-mix in oklch of --primary.
-    for (const key of declared.slice(1)) {
+    // ...and every accent-derived ramp token is a color-mix in oklch of
+    // --primary. --overlay-scrim is deliberately excluded: it is a fixed
+    // neutral scrim (black wash), not part of the accent ramp.
+    for (const key of declared.slice(1, -1)) {
       const value = body.match(new RegExp(`${key}:\\s*([^;]+);`))![1];
       expect(value, `${key} must derive via color-mix(in oklch)`).toMatch(
         /^color-mix\(in oklch, var\(--primary\) \d+%,/
