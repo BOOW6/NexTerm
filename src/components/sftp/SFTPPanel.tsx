@@ -132,7 +132,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
   }, [activeSessionId, boundSessionId, sessions]);
 
   useEffect(() => {
-    void api.setTitle(sessionTitle ? `SFTP · ${sessionTitle}` : 'SFTP');
+    void api.setTitle(sessionTitle ? `SFTP - ${sessionTitle}` : 'SFTP');
   }, [api, sessionTitle]);
 
   useEffect(() => {

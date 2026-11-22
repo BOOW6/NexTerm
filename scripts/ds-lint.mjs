@@ -11,6 +11,7 @@
 //   color-arbitrary    Tailwind arbitrary color values (bg-[#...])
 //   hover-scale        decorative hover:scale-105/110/125/150
 //   copy-emdash        em dash in user-visible copy
+//   copy-middot        middle dot separator in user-visible copy
 //   copy-ai-keyword    empty marketing verbs / emoji fingerprints
 //   copy-dev-marker    TODO / "AI generated" / "This component" in copy
 //   schema-repo-path   repo-internal paths in the user-facing theme schema
@@ -48,6 +49,7 @@ const COLOR_RULES = [
 
 const COPY_RULES = [
   { id: 'copy-emdash', re: /—/g },
+  { id: 'copy-middot', re: /·/g },
   {
     id: 'copy-ai-keyword',
     re: /\b(?:elevate|seamless|seamlessly|revolutionize|supercharge|effortless|delve|unleash|empower)\b|[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/giu
@@ -57,6 +59,12 @@ const COPY_RULES = [
     re: /\b(?:TODO|FIXME|HACK|XXX)\b|\bAI[ -]generated\b|\bThis component\b|lorem ipsum/gi
   }
 ];
+
+// The middot is also scanned across the whole stripped line in
+// components/windows so bare JSX text children are caught; the literal pass
+// for those files therefore skips it to avoid duplicate reports.
+const COMPONENT_COPY_RULES = COPY_RULES.filter(({ id }) => id !== 'copy-middot');
+const MIDDOT_RULE = COPY_RULES.filter(({ id }) => id === 'copy-middot');
 
 const violations = [];
 const scanned = { components: 0, i18n: 0, schema: 0 };
@@ -121,9 +129,10 @@ for (const dir of ['src/components', 'src/windows']) {
     scanned.components++;
     const stripped = stripComments(readFileSync(file, 'utf8'));
     scanLines(file, stripped, COLOR_RULES);
+    scanLines(file, stripped, MIDDOT_RULE);
     stripped.split('\n').forEach((text, i) => {
       for (const literal of stringLiterals(text)) {
-        for (const { id, re } of COPY_RULES) {
+        for (const { id, re } of COMPONENT_COPY_RULES) {
           for (const m of literal.matchAll(re)) {
             report(file, i + 1, id, m[0]);
           }

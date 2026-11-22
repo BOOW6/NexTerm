@@ -28,6 +28,7 @@ description: NexTerm UI de-slop 守卫。生成或审查 Tauri UI（组件、窗
 **文案与注释**
 
 - 用户可见文案（i18n 值、schema description、组件字符串字面量）禁 em dash（—），用句号/冒号/短句替代。
+- 用户可见文案禁间隔中点（·），含 JSX 文本子节点；并列信息用逗号（中文「，」/ 英文 ", "）或连字符 " - " 替代。
 - 禁 AI 演示风动词：elevate / seamless / revolutionize / supercharge / effortless / delve / unleash / empower；禁 emoji 功能图标（图标用 lucide-react）。
 - 禁开发者标记进入用户可见字符串：TODO / FIXME / "AI generated" / "This component" / lorem ipsum。
 - `unlock`/「解锁」是凭据保险库真实功能术语，**豁免**，不得改写。
@@ -41,9 +42,10 @@ description: NexTerm UI de-slop 守卫。生成或审查 Tauri UI（组件、窗
 ## 3. 生成后自检（按序执行，全绿才算完成）
 
 ```bash
-npm run ds:lint          # 9 规则：color-hex / color-fn / color-palette /
+npm run ds:lint          # 10 规则：color-hex / color-fn / color-palette /
                          # color-arbitrary / hover-scale / copy-emdash /
-                         # copy-ai-keyword / copy-dev-marker / schema-repo-path
+                         # copy-middot / copy-ai-keyword / copy-dev-marker /
+                         # schema-repo-path
 npm run ds:tokens:check  # 令牌快照新鲜度；改过令牌层先 npm run ds:tokens
 npm run check            # typecheck + eslint + vitest 全量
                          # （contrast / layoutTokens / derivedTokens / skinRules / i18n 门禁）

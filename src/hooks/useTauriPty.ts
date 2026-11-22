@@ -74,8 +74,18 @@ export async function listenPtyOutput(
   });
 }
 
-export async function listenPtyClosed(id: string, onClosed: () => void): Promise<() => void> {
-  return listen(`pty-closed-${id}`, () => {
-    onClosed();
+export interface PtyClosedPayload {
+  /** Known when the backend reaped the child before emitting; `null` means
+   * the reader-EOF path won the finalize race (Unix fast exit). */
+  exitStatus?: number | null;
+}
+
+export async function listenPtyClosed(
+  id: string,
+  onClosed: (payload: PtyClosedPayload) => void
+): Promise<() => void> {
+  return listen<PtyClosedPayload>(`pty-closed-${id}`, (event) => {
+    // Older backends emit a unit payload; default to an unknown exit status.
+    onClosed(event.payload ?? {});
   });
 }

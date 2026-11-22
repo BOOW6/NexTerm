@@ -90,6 +90,16 @@ struct PtyOutputPayload {
     data: String,
 }
 
+/// Why the local session went away, for the terminal's end-state bar. The
+/// exit code is only known when the watcher thread wins the finalize race:
+/// on Unix a fast reader-EOF finalizes first, before `wait()` has returned,
+/// and the code stays `None`.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PtyClosedPayload {
+    exit_status: Option<u32>,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PtyPlatformInfo {
@@ -354,8 +364,9 @@ fn create_session_blocking(
 
         // Unix: EOF means every slave fd is closed. Finalize right away so
         // the entry is reclaimed even if the watcher's wait() has not
-        // returned yet (finalize is idempotent).
-        finalize_pty_session(&read_session, &read_id, &read_sessions, &read_app);
+        // returned yet (finalize is idempotent). The exit code is not known
+        // on this path; the watcher may still be blocked in wait().
+        finalize_pty_session(&read_session, &read_id, &read_sessions, &read_app, None);
     });
 
     let watch_app = app.clone();
@@ -366,20 +377,28 @@ fn create_session_blocking(
         // zombies; on Windows ConPTY pipes never report EOF when the client
         // exits, so this wait() is what detects the exit at all. Once it
         // returns, dropping the master is what unblocks the reader thread.
-        let _ = child.wait();
-        finalize_pty_session(&session, &watch_id, &watch_sessions, &watch_app);
+        let exit_status = child.wait().ok().map(|status| status.exit_code());
+        finalize_pty_session(
+            &session,
+            &watch_id,
+            &watch_sessions,
+            &watch_app,
+            exit_status,
+        );
     });
 
     Ok(id)
 }
 
 /// Idempotent teardown shared by the reader-EOF path, the child-exit watcher
-/// and (indirectly, via its own take-drops) close_session.
+/// and (indirectly, via its own take-drops) close_session. First caller wins
+/// and its `exit_status` is what the closed event carries.
 fn finalize_pty_session(
     session: &Arc<PtySession>,
     id: &str,
     sessions: &SessionMap,
     app: &AppHandle,
+    exit_status: Option<u32>,
 ) {
     if session.closed.swap(true, Ordering::SeqCst) {
         return;
@@ -404,7 +423,10 @@ fn finalize_pty_session(
         }
     }
 
-    let _ = app.emit(&format!("pty-closed-{id}"), ());
+    let _ = app.emit(
+        &format!("pty-closed-{id}"),
+        PtyClosedPayload { exit_status },
+    );
 }
 
 fn resize_session_blocking(

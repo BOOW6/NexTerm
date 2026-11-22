@@ -4,16 +4,9 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { useBroadcastStore } from '../../stores/broadcastStore';
 import { useMacroRecorderStore } from '../../stores/macroStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
-import { SESSION_KIND_LABEL_KEY, sessionSubtitle, type SessionStatus } from '../../types/session';
+import { SESSION_KIND_LABEL_KEY, sessionSubtitle } from '../../types/session';
 import { useI18n } from '../../i18n';
-import { sessionStatusDot } from '../../lib/sessionVisuals';
-
-const statusLabelKeys: Record<SessionStatus, string> = {
-  idle: 'status.idle',
-  connecting: 'status.connecting',
-  connected: 'status.connected',
-  error: 'status.error'
-};
+import { SESSION_STATUS_LABEL_KEY, sessionStatusDot } from '../../lib/sessionVisuals';
 
 export default function StatusBar() {
   const { t, locale } = useI18n();
@@ -45,12 +38,12 @@ export default function StatusBar() {
               className={cn('h-1.5 w-1.5 rounded-full', sessionStatusDot(session.status, true))}
             />
             <span className="truncate font-medium text-foreground">{session.title}</span>
-            <span className="text-muted-foreground">·</span>
+            <span className="text-muted-foreground">|</span>
             <span>{t(SESSION_KIND_LABEL_KEY[session.kind])}</span>
-            <span className="text-muted-foreground">·</span>
+            <span className="text-muted-foreground">|</span>
             <span className="truncate">{sessionSubtitle(session, t)}</span>
-            <span className="text-muted-foreground">·</span>
-            <span>{t(statusLabelKeys[session.status])}</span>
+            <span className="text-muted-foreground">|</span>
+            <span>{t(SESSION_STATUS_LABEL_KEY[session.status])}</span>
           </>
         ) : (
           <span>{t('status.noSession')}</span>

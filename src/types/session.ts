@@ -1,6 +1,6 @@
 export type SessionKind = 'local' | 'ssh' | 'sftp' | 'telnet' | 'serial';
 
-export type SessionStatus = 'idle' | 'connecting' | 'connected' | 'error';
+export type SessionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
 
 /** How an SFTP transfer resolves an existing target file. */
 export type SftpConflictPolicy = 'ask' | 'overwrite' | 'skip' | 'rename' | 'newer';

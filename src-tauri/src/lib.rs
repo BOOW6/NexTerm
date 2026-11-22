@@ -219,6 +219,7 @@ pub fn run() {
             commands::port_forward_stop,
             commands::import_sessions,
             commands::export_sessions,
+            commands::export_terminal_transcript,
             commands::vault_status,
             commands::vault_initialize,
             commands::vault_unlock,

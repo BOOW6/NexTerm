@@ -81,7 +81,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const resolved: ThemeVariant = mode === 'system' ? systemTheme : mode;
   const themeId = resolved === 'light' ? lightTheme : darkTheme;
   const themeName = getTheme(themeId).name;
-  const themeLabel = `${themeName} · ${resolved === 'light' ? t('theme.mode.light') : t('theme.mode.dark')}`;
+  const themeLabel = `${themeName} - ${resolved === 'light' ? t('theme.mode.light') : t('theme.mode.dark')}`;
   const lightThemeName = getTheme(lightTheme).name;
   const darkThemeName = getTheme(darkTheme).name;
 

@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Terminal, type IDisposable } from '@xterm/xterm';
 import { writeText as writeClipboardText } from '@tauri-apps/plugin-clipboard-manager';
@@ -17,7 +18,8 @@ import {
   listenPtyClosed,
   listenPtyOutput,
   resizePty,
-  writePty
+  writePty,
+  type PtyClosedPayload
 } from '../../hooks/useTauriPty';
 import {
   connectSsh,
@@ -35,7 +37,8 @@ import {
   listenTelnetClosed,
   listenTelnetOutput,
   resizeTelnet,
-  writeTelnet
+  writeTelnet,
+  type TelnetClosedPayload
 } from '../../hooks/useTauriTelnet';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { broadcastInput } from '../../stores/broadcastStore';
@@ -72,6 +75,21 @@ import {
   registerTerminalReconnect,
   shouldResetBackoff
 } from '../../lib/terminalReconnect';
+import {
+  endBarDropped,
+  endBarExhausted,
+  endBarReconnecting,
+  endBlockText,
+  localExitEndBar,
+  serialCloseEndBar,
+  sessionEndShortcutAction,
+  sshExitEndBar,
+  telnetCloseEndBar,
+  type SessionEndAction,
+  type SessionEndBarState
+} from '../../lib/terminalEndState';
+import { SessionEndBar } from './SessionEndBar';
+import { terminalTranscript, transcriptFileName } from '../../lib/terminalTranscript';
 import { ResizeRepaintFilter } from '../../lib/terminalResizeRepaint';
 import { shouldCommitConptyPendingWrap } from '../../lib/terminalResizePendingWrap';
 import { logResizeDebug } from '../../lib/terminalResizeDebug';
@@ -127,6 +145,9 @@ interface XtermCanvasProps {
   logTitle?: string;
   /** Local PTY shell executable; selects the cursor-line resize policy. */
   localShellCommand?: string;
+  /** Close the hosting panel; the end-state shortcuts use it for the Enter
+   * action. */
+  onRequestClose?: () => void;
 }
 
 const WRITE_BATCH_INTERVAL_MS = 16;
@@ -243,7 +264,8 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       ssh,
       visible = true,
       logTitle = '',
-      localShellCommand
+      localShellCommand,
+      onRequestClose
     },
     ref
   ) => {
@@ -251,6 +273,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
     const terminalRef = useRef<Terminal | null>(null);
     const backendIdRef = useRef('');
     const reconnectRef = useRef<(() => void) | null>(null);
+    const cancelReconnectRef = useRef<(() => void) | null>(null);
     const searchRef = useRef<SearchAddon | null>(null);
     const loadSearchRef = useRef<(() => Promise<SearchAddon | null>) | null>(null);
     const visibleRef = useRef(visible);
@@ -265,6 +288,14 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
     // the PTY has not been told about yet.
     const [resizeHud, setResizeHud] = useState<{ cols: number; rows: number } | null>(null);
     const [initError, setInitError] = useState<string | null>(null);
+    // End state: an in-buffer block for terminal kinds, a floating chip for
+    // the live reconnect countdown. The transport closures below call the
+    // setter directly; both renders are DOM overlays outside the write queue.
+    // The ref mirrors the state for the once-registered key handler.
+    const [endState, setEndBarState] = useState<SessionEndBarState | null>(null);
+    const endStateRef = useRef<SessionEndBarState | null>(null);
+    const onRequestCloseRef = useRef(onRequestClose);
+    onRequestCloseRef.current = onRequestClose;
     const resizeHudTimerRef = useRef<number | null>(null);
     const resizeHudValueRef = useRef<{ cols: number; rows: number } | null>(null);
     const { themeId } = useTheme();
@@ -303,6 +334,49 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
     const sessionLogEnabled = useSettingsStore((state) => state.sessionLogEnabled);
     const sessionLogDir = useSettingsStore((state) => state.sessionLogDir);
+
+    // Dump the settled buffer to a user-chosen file. The backend opens the
+    // save dialog and writes the file itself; the path never crosses IPC.
+    const saveTranscript = (): void => {
+      const instance = terminalRef.current;
+      if (!instance) {
+        return;
+      }
+      invoke<boolean>('export_terminal_transcript', {
+        contents: terminalTranscript(instance.buffer),
+        fileName: transcriptFileName(logTitle, new Date()),
+        title: t('terminal.exportTranscriptTitle')
+      })
+        .then((saved) => {
+          if (saved) {
+            toast({ title: t('terminal.exportTranscriptOk'), variant: 'success' });
+          }
+        })
+        .catch((error: unknown) =>
+          toast({
+            title: t('terminal.exportTranscriptFailed'),
+            description: localizeBackendError(errorMessage(error)),
+            variant: 'error'
+          })
+        );
+    };
+
+    const dispatchEndAction = (action: SessionEndAction): void => {
+      if (action === 'reconnect' || action === 'reconnectNow') {
+        reconnectRef.current?.();
+      } else if (action === 'cancelReconnect') {
+        cancelReconnectRef.current?.();
+      } else if (action === 'saveOutput') {
+        saveTranscript();
+      } else {
+        onRequestCloseRef.current?.();
+      }
+      // Keys and chip buttons both land here; return focus to the grid so
+      // the next shortcut works without an extra click.
+      terminalRef.current?.focus();
+    };
+    const dispatchEndActionRef = useRef(dispatchEndAction);
+    dispatchEndActionRef.current = dispatchEndAction;
 
     useEffect(() => {
       const backendId = backendIdRef.current;
@@ -348,6 +422,13 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       }
 
       let disposed = false;
+      // Shared setter for every transport closure: keeps the ref mirror in
+      // lockstep so the once-registered key handler always reads the current
+      // end state.
+      const setEndBar = (state: SessionEndBarState | null) => {
+        endStateRef.current = state;
+        setEndBarState(state);
+      };
       let backendId = '';
       // Id of a connect attempt still in its handshake (typically waiting
       // for a host-key decision). Closing the panel cancels it explicitly.
@@ -765,6 +846,9 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       let reconnectTimer: number | null = null;
       let manualDisconnect = false;
       let connectedAt = 0;
+      // The last drop reason (an i18n key) feeds the dropped bar after the
+      // user cancels the auto-reconnect ladder.
+      let lastReconnectReasonKey = 'terminal.sshDisconnected';
       // Whether this session ever had a working connection. A scheduled
       // reconnect that fails must keep the chain going, so the retry
       // decision cannot rely on the current attempt's local flag.
@@ -805,7 +889,8 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
       const writeScrollbackNotice = async (
         instance: Terminal,
         notice: string,
-        placeAtBottom: boolean
+        placeAtBottom: boolean,
+        keepVisible = false
       ): Promise<void> => {
         if (disposed) {
           return;
@@ -877,28 +962,75 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             }
 
             // Derive the notice row from the buffer, not the cursor: the
-            // notice must land on the first row below ALL content.
+            // notice must land on the first row below ALL content. A
+            // multi-line block reserves room for all of its rows.
+            const noticeRows = notice.split('\r\n').length;
             const buffer = instance.buffer.active;
             const placement = computeNoticePlacement(
               (row) => buffer.getLine(buffer.baseY + row)?.translateToString(true) ?? '',
               buffer.cursorY,
-              instance.rows
+              instance.rows,
+              noticeRows
             );
             instance.write(buildNoticeWriteSequence(notice, placement, instance.rows), () => {
               if (disposed) {
                 resolve();
                 return;
               }
+              if (keepVisible) {
+                // End-state blocks stay on screen: park the cursor on the
+                // row below the block instead of scrolling it into
+                // scrollback like the record notices.
+                instance.write(`\x1b[${placement.targetRow + noticeRows};1H\r\n`, finishSequence);
+                return;
+              }
               // Scroll exactly the lines that contain history + the divider.
               // The rows below the divider are blank and stay in the viewport,
               // so they never become empty scrollback lines.
-              instance.write(buildNoticeScrollSequence(placement.targetRow, instance.rows), () =>
-                finishSequence()
+              instance.write(
+                buildNoticeScrollSequence(placement.targetRow, instance.rows, noticeRows),
+                () => finishSequence()
               );
             });
           });
         });
       };
+      /**
+       * Terminal end state (exit / loss / exhaustion): write the MobaXterm-style
+       * block into the buffer where it stays visible below the last output, and
+       * mirror the state for the key handler and screen readers.
+       */
+      const writeEndBlock = (instance: Terminal, state: SessionEndBarState): void => {
+        const tone = state.kind === 'ended' ? 'default' : 'warn';
+        void writeScrollbackNotice(
+          instance,
+          endBlockText(
+            t(state.messageKey, state.messageParams),
+            t('terminal.endBlockHints'),
+            instance.cols,
+            tone
+          ),
+          true,
+          true
+        );
+        setEndBar(state);
+      };
+
+      /** Same block for the SSH `exit` path, which must not replay
+       * `\x1b[?1049l` (the shell already restored the normal buffer). */
+      const appendEndBlock = (instance: Terminal, state: SessionEndBarState): void => {
+        const tone = state.kind === 'ended' ? 'default' : 'warn';
+        enqueueWrite(
+          `\r\n${endBlockText(
+            t(state.messageKey, state.messageParams),
+            t('terminal.endBlockHints'),
+            instance.cols,
+            tone
+          )}\r\n`
+        );
+        setEndBar(state);
+      };
+
       let connectSshTransport: (instance: Terminal) => Promise<void> = async () => {};
 
       // A rejected keystroke write means the backend session is gone while no
@@ -913,11 +1045,6 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         lastWriteFailureAt = now;
         void writeScrollbackNotice(instance, `\x1b[33m[${t('terminal.writeFailed')}]\x1b[0m`, true);
       };
-
-      const serialCloseNotice = (payload: SerialClosedPayload): string =>
-        payload.reason === 'error' && payload.message
-          ? t('terminal.serialLost', { message: payload.message })
-          : t('terminal.serialDisconnected');
 
       // ---- transport attempt skeleton ----
       // Shared by all four transports: the generation guard, listener
@@ -1013,37 +1140,61 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         }
       };
 
+      /**
+       * Mark a connection attempt as failed. With `terminalState` the failure
+       * is final (no retry ladder): the end block itself carries the message,
+       * so no extra red line is written. Returns false when the attempt was
+       * superseded, so callers skip their transport bookkeeping.
+       */
       const failAttempt = (
         instance: Terminal,
         generation: number,
         messageKey: string,
         error: unknown,
-        onFail?: () => void
-      ): void => {
+        terminalState?: SessionEndBarState
+      ): boolean => {
         if (disposed || generation !== transportGeneration) {
-          return;
+          return false;
         }
         clearTransportListeners();
         useSessionStore.getState().setStatus(sessionId, 'error');
-        enqueueWrite(
-          `\r\n\x1b[31m${t(messageKey, {
-            message: localizeBackendError(errorMessage(error))
-          })}\x1b[0m\r\n`
-        );
-        onFail?.();
+        const detail = localizeBackendError(errorMessage(error));
+        if (terminalState) {
+          writeEndBlock(instance, {
+            ...terminalState,
+            messageParams: { message: detail, ...(terminalState.messageParams ?? {}) }
+          });
+          return true;
+        }
+        enqueueWrite(`\r\n\x1b[31m${t(messageKey, { message: detail })}\x1b[0m\r\n`);
+        setEndBar(endBarDropped(messageKey, { message: detail }));
+        return true;
       };
 
-      const scheduleReconnect = (instance: Terminal, reason: string) => {
+      /**
+       * Shared reconnect ladder (SSH and Telnet): backoff, exhaustion and the
+       * end-state bar transitions. `reasonKey` names the drop for the bar;
+       * the progress countdown lives in the bar and ticks locally, instead of
+       * writing one buffer line per attempt.
+       */
+      const scheduleReconnect = (
+        instance: Terminal,
+        reasonKey: string,
+        connect: (instance: Terminal) => Promise<void>,
+        autoReconnect: () => boolean
+      ) => {
         if (disposed || manualDisconnect || reconnectTimer !== null) {
           return;
         }
-        if (!useSettingsStore.getState().sshAutoReconnect) {
-          useSessionStore.getState().setStatus(sessionId, 'idle');
+        lastReconnectReasonKey = reasonKey;
+        if (!autoReconnect()) {
+          useSessionStore.getState().setStatus(sessionId, 'disconnected');
+          writeEndBlock(instance, endBarDropped(reasonKey));
           return;
         }
         if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
           useSessionStore.getState().setStatus(sessionId, 'error');
-          enqueueWrite(`\x1b[31m[${t('terminal.sshReconnectExhausted')}]\x1b[0m\r\n`);
+          writeEndBlock(instance, endBarExhausted());
           return;
         }
 
@@ -1051,26 +1202,33 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         reconnectAttempts = attempt;
         const delay = nextReconnectDelay(attempt);
         useSessionStore.getState().setStatus(sessionId, 'connecting');
-        void writeScrollbackNotice(
-          instance,
-          `\x1b[33m[${t('terminal.reconnectCountdown', {
-            reason,
-            seconds: Math.round(delay / 1000),
-            attempt
-          })}]\x1b[0m`,
-          false
-        );
+        setEndBar(endBarReconnecting(t(reasonKey), attempt, delay));
         reconnectTimer = window.setTimeout(() => {
           reconnectTimer = null;
           if (disposed) {
             return;
           }
-          if (!useSettingsStore.getState().sshAutoReconnect) {
-            useSessionStore.getState().setStatus(sessionId, 'idle');
+          if (!autoReconnect()) {
+            useSessionStore.getState().setStatus(sessionId, 'disconnected');
+            writeEndBlock(instance, endBarDropped(reasonKey));
             return;
           }
-          void connectSshTransport(instance);
+          void connect(instance);
         }, delay);
+      };
+
+      const cancelAutoReconnect = () => {
+        if (reconnectTimer !== null) {
+          window.clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+        reconnectAttempts = 0;
+        useSessionStore.getState().setStatus(sessionId, 'disconnected');
+        if (terminal) {
+          writeEndBlock(terminal, endBarDropped(lastReconnectReasonKey));
+        } else {
+          setEndBar(endBarDropped(lastReconnectReasonKey));
+        }
       };
 
       connectSshTransport = async (instance: Terminal) => {
@@ -1139,24 +1297,19 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
               // Another split pane of this session may still be connected;
               // only reset the status once no connection remains.
               if (useConnectionStore.getState().connections[sessionId] === undefined) {
-                useSessionStore.getState().setStatus(sessionId, 'idle');
+                useSessionStore.getState().setStatus(sessionId, 'disconnected');
               }
               useTransferStore.getState().markSessionDisconnected(sessionId);
 
               // The remote shell ended on its own (`exit`, logout, a killed
               // login shell). Re-opening a shell the user just closed is wrong,
-              // so show the exit and stop here instead of scheduling a retry.
+              // so show the exit and stop here instead of scheduling a retry;
+              // the end block offers a manual reconnect via R instead.
               if (closed.reason === 'exit') {
-                const code =
-                  typeof closed.exit_status === 'number' ? closed.exit_status : undefined;
-                const message =
-                  code === undefined
-                    ? t('terminal.sshSessionEnded')
-                    : t('terminal.sshSessionEndedWithCode', { code });
                 // No `\x1b[?1049l` here: the shell already restored the normal
                 // buffer, and re-issuing the switch rewinds the viewport (the
-                // notice landed above the login banner). Just append the line.
-                enqueueWrite(`\r\n\x1b[33m[${message}]\x1b[0m\r\n`);
+                // notice landed above the login banner). Just append the block.
+                appendEndBlock(instance, sshExitEndBar(closed));
                 return;
               }
 
@@ -1176,12 +1329,19 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
                   if (disposed || generation !== transportGeneration) {
                     return;
                   }
-                  scheduleReconnect(instance, t('terminal.sshDisconnected'));
+                  scheduleReconnect(
+                    instance,
+                    'terminal.sshDisconnected',
+                    connectSshTransport,
+                    () => useSettingsStore.getState().sshAutoReconnect
+                  );
                 });
               } else {
-                enqueueWrite(
-                  `\x1b[?1049l\r\n\x1b[33m[${t('terminal.sshDisconnected')}]\x1b[0m\r\n`
-                );
+                // No auto-reconnect: the block is final. writeScrollbackNotice
+                // performs the alt-buffer exit with absolute repositioning; a
+                // raw `\x1b[?1049l` here would restore a stale viewport and
+                // jump the view to the top of the scrollback.
+                writeEndBlock(instance, endBarDropped('terminal.sshDisconnected'));
               }
             }
           );
@@ -1226,7 +1386,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
               clearTransportListeners();
               useSessionStore.getState().setStatus(sessionId, 'error');
               useConnectionStore.getState().removeConnection(sessionId, connectedId);
-              enqueueWrite(`\r\n\x1b[31m${t('terminal.sshClosedByServer')}\x1b[0m\r\n`);
+              writeEndBlock(instance, endBarDropped('terminal.sshClosedByServer'));
             }
             return;
           }
@@ -1241,6 +1401,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             .getState()
             .setConnection(sessionId, { sshId: connectedId, status: 'connected' });
           useSessionStore.getState().setStatus(sessionId, 'connected');
+          setEndBar(null);
           // Resume transfers interrupted by an earlier drop of this session;
           // the backend picks up from the .part files via their fingerprints.
           void resumeInterruptedTransfers(sessionId);
@@ -1257,17 +1418,29 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           if (pendingConnectId === id) {
             pendingConnectId = null;
           }
-          failAttempt(instance, generation, 'terminal.sshConnectFailed', error, () => {
+          // Retry whenever this session had a working connection before:
+          // either the attempt that just dropped, or a previous one whose
+          // scheduled retry itself failed (e.g. the network is still down).
+          // Never-connected sessions (auth/host-key failures) surface
+          // immediately as a terminal block instead of looping.
+          const handled = failAttempt(
+            instance,
+            generation,
+            'terminal.sshConnectFailed',
+            error,
+            everEstablished ? undefined : endBarDropped('terminal.sshConnectFailed')
+          );
+          if (handled) {
             useConnectionStore.getState().removeConnection(sessionId, id);
-            // Retry whenever this session had a working connection before:
-            // either the attempt that just dropped, or a previous one whose
-            // scheduled retry itself failed (e.g. the network is still down).
-            // Never-connected sessions (auth/host-key failures) surface
-            // immediately instead of looping.
             if (everEstablished) {
-              scheduleReconnect(instance, t('terminal.sshConnectFailedReason'));
+              scheduleReconnect(
+                instance,
+                'terminal.sshDisconnected',
+                connectSshTransport,
+                () => useSettingsStore.getState().sshAutoReconnect
+              );
             }
-          });
+          }
         }
       };
 
@@ -1289,27 +1462,23 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             return;
           }
 
-          const closedHandled = await attachClosedListener<void>(
+          const closedHandled = await attachClosedListener<PtyClosedPayload>(
             listenPtyClosed,
             id,
             generation,
             attempt,
-            () => {
+            (payload) => {
               clearTransportListeners();
               useConnectionStore.getState().removeTransport(sessionId, 'pty', id);
               backendId = '';
               backendIdRef.current = '';
               resizeTarget = null;
               // Another split pane of this session may still hold its own PTY;
-              // only the last one going away marks the session idle.
+              // only the last one going away marks the session ended.
               if (useConnectionStore.getState().connections[sessionId] === undefined) {
-                useSessionStore.getState().setStatus(sessionId, 'idle');
+                useSessionStore.getState().setStatus(sessionId, 'disconnected');
               }
-              void writeScrollbackNotice(
-                instance,
-                `\x1b[33m[${t('terminal.localShellExited')}]\x1b[0m`,
-                true
-              );
+              writeEndBlock(instance, localExitEndBar(payload.exitStatus));
             }
           );
           if (!closedHandled) {
@@ -1335,12 +1504,8 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             void closePtySession(createdId);
             if (attempt.closedEarly && !disposed && generation === transportGeneration) {
               clearTransportListeners();
-              useSessionStore.getState().setStatus(sessionId, 'idle');
-              void writeScrollbackNotice(
-                instance,
-                `\x1b[33m[${t('terminal.localShellExited')}]\x1b[0m`,
-                true
-              );
+              useSessionStore.getState().setStatus(sessionId, 'disconnected');
+              writeEndBlock(instance, localExitEndBar(null));
             }
             return;
           }
@@ -1352,6 +1517,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           flushPtyReplies();
           useConnectionStore.getState().addTransport(sessionId, 'pty', createdId);
           useSessionStore.getState().setStatus(sessionId, 'connected');
+          setEndBar(null);
 
           // A fit may have happened while the PTY was being created. Sync the
           // final grid so the shell and xterm agree before the first prompt —
@@ -1362,7 +1528,14 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
           focusIfActive(instance);
         } catch (error) {
-          failAttempt(instance, generation, 'terminal.ptyCreateFailed', error);
+          // A local PTY has no reconnect ladder: creation failure is final.
+          failAttempt(
+            instance,
+            generation,
+            'terminal.ptyCreateFailed',
+            error,
+            endBarDropped('terminal.ptyCreateFailed')
+          );
         }
       };
 
@@ -1387,12 +1560,12 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             return;
           }
 
-          const closedHandled = await attachClosedListener<void>(
+          const closedHandled = await attachClosedListener<TelnetClosedPayload>(
             listenTelnetClosed,
             id,
             generation,
             attempt,
-            () => {
+            (closed) => {
               clearTransportListeners();
               useConnectionStore.getState().removeTransport(sessionId, 'telnet', id);
               backendId = '';
@@ -1401,13 +1574,32 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
               // Same rule as the local path: keep the status when a sibling
               // split pane still has a live Telnet transport.
               if (useConnectionStore.getState().connections[sessionId] === undefined) {
-                useSessionStore.getState().setStatus(sessionId, 'idle');
+                useSessionStore.getState().setStatus(sessionId, 'disconnected');
               }
-              void writeScrollbackNotice(
-                instance,
-                `\x1b[33m[${t('terminal.telnetDisconnected')}]\x1b[0m`,
-                true
-              );
+              // A deliberate disconnect (`closed`) never retries; a dropped
+              // stream retries under the same ladder as SSH when enabled.
+              if (closed.reason === 'closed') {
+                writeEndBlock(instance, telnetCloseEndBar(closed));
+                return;
+              }
+              if (shouldResetBackoff(connectedAt > 0 ? Date.now() - connectedAt : 0)) {
+                reconnectAttempts = 0;
+              }
+              if (useSettingsStore.getState().telnetAutoReconnect) {
+                void writeScrollbackNotice(
+                  instance,
+                  `\x1b[33m[${t('terminal.telnetDisconnected')}]\x1b[0m`,
+                  true
+                );
+                scheduleReconnect(
+                  instance,
+                  'terminal.telnetDisconnected',
+                  connectTelnetTransport,
+                  () => useSettingsStore.getState().telnetAutoReconnect
+                );
+              } else {
+                writeEndBlock(instance, telnetCloseEndBar(closed));
+              }
             }
           );
           if (!closedHandled) {
@@ -1425,12 +1617,8 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             disconnectQuietly(disconnectTelnet(connectedId));
             if (attempt.closedEarly && !disposed && generation === transportGeneration) {
               clearTransportListeners();
-              useSessionStore.getState().setStatus(sessionId, 'idle');
-              void writeScrollbackNotice(
-                instance,
-                `\x1b[33m[${t('terminal.telnetDisconnected')}]\x1b[0m`,
-                true
-              );
+              useSessionStore.getState().setStatus(sessionId, 'disconnected');
+              writeEndBlock(instance, endBarDropped('terminal.telnetDisconnected'));
             }
             return;
           }
@@ -1438,9 +1626,11 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           attempt.established = true;
           backendId = connectedId;
           backendIdRef.current = connectedId;
+          connectedAt = Date.now();
           resizeTarget = { id: connectedId, transport: 'telnet' };
           useConnectionStore.getState().addTransport(sessionId, 'telnet', connectedId);
           useSessionStore.getState().setStatus(sessionId, 'connected');
+          setEndBar(null);
           // Drain a resize queued while connecting, then report the real grid
           // once: the server assumes 80x24 until NAWS is negotiated, and the
           // dedup in backendResize would skip an unchanged size.
@@ -1451,7 +1641,15 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
 
           focusIfActive(instance);
         } catch (error) {
-          failAttempt(instance, generation, 'terminal.telnetConnectFailed', error);
+          // Telnet connect failures are terminal: only established streams
+          // that drop feed the reconnect ladder.
+          failAttempt(
+            instance,
+            generation,
+            'terminal.telnetConnectFailed',
+            error,
+            endBarDropped('terminal.telnetConnectFailed')
+          );
         }
       };
 
@@ -1492,12 +1690,8 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
               resizeTarget = null;
               // No auto-reconnect: unplugged adapters stay unplugged until the
               // user explicitly reconnects.
-              useSessionStore.getState().setStatus(sessionId, 'idle');
-              void writeScrollbackNotice(
-                instance,
-                `\x1b[33m[${serialCloseNotice(payload)}]\x1b[0m`,
-                true
-              );
+              useSessionStore.getState().setStatus(sessionId, 'disconnected');
+              writeEndBlock(instance, serialCloseEndBar(payload));
             }
           );
           if (!closedHandled) {
@@ -1514,12 +1708,8 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             disconnectQuietly(disconnectSerial(connectedId));
             if (attempt.closedEarly && !disposed && generation === transportGeneration) {
               clearTransportListeners();
-              useSessionStore.getState().setStatus(sessionId, 'idle');
-              void writeScrollbackNotice(
-                instance,
-                `\x1b[33m[${t('terminal.serialDisconnected')}]\x1b[0m`,
-                true
-              );
+              useSessionStore.getState().setStatus(sessionId, 'disconnected');
+              writeEndBlock(instance, endBarDropped('terminal.serialDisconnected'));
             }
             return;
           }
@@ -1529,12 +1719,20 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           backendIdRef.current = connectedId;
           // Serial has no window-size negotiation: no resizeTarget.
           useSessionStore.getState().setStatus(sessionId, 'connected');
+          setEndBar(null);
 
           attachInputOutput(instance, (data) => writeSerial(connectedId, data), false);
 
           focusIfActive(instance);
         } catch (error) {
-          failAttempt(instance, generation, 'terminal.serialConnectFailed', error);
+          // Serial has no reconnect ladder: connect failure is final.
+          failAttempt(
+            instance,
+            generation,
+            'terminal.serialConnectFailed',
+            error,
+            endBarDropped('terminal.serialConnectFailed')
+          );
         }
       };
 
@@ -1560,6 +1758,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         }
         reconnectAttempts = 0;
         useSessionStore.getState().setStatus(sessionId, 'connecting');
+        setEndBar(null);
         void writeScrollbackNotice(
           instance,
           `\x1b[33m[${t('terminal.reconnectNotice')}]\x1b[0m`,
@@ -1585,6 +1784,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
           reconnect(terminal);
         }
       };
+      cancelReconnectRef.current = cancelAutoReconnect;
       const unregisterReconnect = registerTerminalReconnect(sessionId, () => {
         if (!terminal) {
           return false;
@@ -1658,6 +1858,26 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             if (platform?.backend === 'conpty') {
               armConptyDa1(instance);
             }
+
+            // End-state keyboard shortcuts (MobaXterm-style single keys).
+            // Registered once; the handler reads the mirrored end state and
+            // swallows only the mapped keys, so live-session typing and IME
+            // composition pass through untouched.
+            instance.attachCustomKeyEventHandler((event) => {
+              const state = endStateRef.current;
+              if (!state || event.type !== 'keydown') {
+                return true;
+              }
+              if (event.isComposing || event.ctrlKey || event.altKey || event.metaKey) {
+                return true;
+              }
+              const action = sessionEndShortcutAction(state.kind, event.key);
+              if (!action) {
+                return true;
+              }
+              dispatchEndActionRef.current(action);
+              return false;
+            });
 
             const fit = new FitAddon();
             instance.loadAddon(fit);
@@ -2394,6 +2614,7 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
         disposed = true;
         manualDisconnect = true;
         reconnectRef.current = null;
+        cancelReconnectRef.current = null;
         if (reconnectTimer !== null) {
           window.clearTimeout(reconnectTimer);
           reconnectTimer = null;
@@ -2618,6 +2839,17 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
     return (
       <div className="relative h-full w-full overflow-hidden">
         <div ref={containerRef} className="h-full w-full" />
+        {endState?.kind === 'reconnecting' ? (
+          <SessionEndBar
+            state={endState}
+            onAction={(action: SessionEndAction) => dispatchEndAction(action)}
+          />
+        ) : null}
+        {endState && endState.kind !== 'reconnecting' ? (
+          <span aria-live="polite" className="sr-only">
+            {t(endState.messageKey, endState.messageParams)}
+          </span>
+        ) : null}
         {resizeHud ? (
           <div
             aria-live="polite"

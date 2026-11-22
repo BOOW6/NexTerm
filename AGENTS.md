@@ -16,13 +16,14 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
   - `write_pty(id, data)` —— 向指定会话写入用户输入。
   - `resize_pty(id, cols, rows)` —— 调整会话终端尺寸。
   - `close_pty_session(id)` —— 关闭并回收 PTY 会话。
-- 会话级事件：`pty-output-{id}`；每 32 KiB 读取一次并批量写入 xterm。
+- 会话级事件：`pty-output-{id}`；每 32 KiB 读取一次并批量写入 xterm。`pty-closed-{id}` 带 `exitStatus`（watcher 线程 `child.wait()` 接住 `ExitStatus`；Unix 下 reader-EOF 先 finalize 时为 null，Windows 上 ConPTY 无 EOF、wait 是唯一退出探测点所以总有码）。
 
 ### 前端终端集成
 
 - `XtermCanvas` 基于 `@xterm/xterm`，挂载 `@xterm/addon-fit`、`@xterm/addon-search` 与 `@xterm/addon-webgl`。
 - 键盘输入、尺寸变化分别接入 `write_*` / `resize_*`；输出事件渲染进 xterm。
 - 终端主题从 CSS tokens 派生；通过 imperative handle 暴露查找、清屏、复制、字号等操作。
+- **会话终态结束块与键盘操作**：会话退出/断开/重连穷尽时在缓冲内输出下方写入 MobaXterm 式结束块（`endBlockText` 纯函数生成：暗色分隔线 + 消息 + 暗色按键提示行），随缓冲滚动、不遮盖内容；`writeScrollbackNotice` 的 `keepVisible` 模式让块保持可见（默认语义仍是把记录类提示推入滚动缓冲并清空视口）。键盘交互经 `attachCustomKeyEventHandler`（注册一次，`endStateRef` 镜像读取，仅在终态生效，拒绝修饰键与 IME 组合）：`R` 重连（倒计时中为立即重连）、`Enter` 关闭标签（仅终态）、`Esc` 取消自动重连（仅倒计时）、`S` 保存终端输出（`terminalTranscript` 缓冲转纯文本 + `export_terminal_transcript` 后端弹保存对话框落盘，路径不过 IPC）。自动重连倒计时渲染为右下角浮动小条（`SessionEndBar`，仅 reconnecting 态，deadline 本地逐秒 tick + [立即重连 R][取消 Esc]），终态另渲染 `sr-only aria-live` 供屏幕阅读器。重连梯子 `scheduleReconnect` 已参数化，SSH 与 Telnet 共用（Telnet 由 `telnetAutoReconnect` 设置控制，`reason=closed` 的主动断开永不重连；Serial 与本地 PTY 维持永不自动重连）。滚动缓冲里的一次性「已断开」通知保留作记录，每轮退避不再往缓冲写倒计时行。SSH 断开且关闭自动重连的路径经 `writeScrollbackNotice` 退出备用缓冲（裸 `\x1b[?1049l` 会把视口恢复到过时的滚动位置、跳到缓冲顶部）。状态枚举含 `disconnected`（已断开的深灰灯，区别于未连接的浅灰）。
 
 ### 停靠布局与多标签
 
@@ -42,7 +43,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - 基于 `russh` 实现**密码认证**、**私钥认证**（可选 passphrase）、**OpenSSH 用户证书认证**（私钥 + `*-cert.pub`，SSH config 导入识别 `CertificateFile`）与 **SSH Agent 认证**的交互式 SSH 终端。**ProxyJump** 在后端通过跳板连接上的 `direct-tcpip` 通道（`ssh -J` 语义）承载目标握手，跳板与目标两台主机分别做 known_hosts 校验；跳板传输随目标会话存亡。
 - **主机密钥校验（TOFU）**：首次连接弹出 SHA256 指纹确认，写入应用配置目录的 `known_hosts.json`；后续自动比对，不匹配则中止。支持 OpenSSH `known_hosts` 导入/导出（导出可选 hashed host 格式；导入会跳过哈希与通配符条目）。
 - 后端命令：`ssh_connect` / `ssh_write` / `ssh_resize` / `ssh_disconnect` / `ssh_host_key_response` / `known_hosts_list` / `known_hosts_remove` / `known_hosts_import` / `known_hosts_export`；`set_session_log` 用于对活动会话（SSH / PTY / Telnet）即时切换输出日志。
-- **Telnet**（`src-tauri/src/telnet/mod.rs`）：最小 RFC 854 NVT 实现——拒绝一切选项协商（`decode_telnet` 纯函数处理 IAC 转义/子协商跨块、带单测），输出走同一解码/事件/日志管线，事件 `telnet-output-{id}`、`telnet-closed-{id}`；resize 为 no-op（未协商窗口尺寸）。
+- **Telnet**（`src-tauri/src/telnet/mod.rs`）：最小 RFC 854 NVT 实现——拒绝一切选项协商（`decode_telnet` 纯函数处理 IAC 转义/子协商跨块、带单测），输出走同一解码/事件/日志管线，事件 `telnet-output-{id}`、`telnet-closed-{id}`（closed 事件带 `closed`/`eof`/`error` 原因与可选错误串）；resize 为 no-op（未协商窗口尺寸）。
 - **串口**（`src-tauri/src/serial.rs`）：命令 `serial_list` / `serial_connect` / `serial_write` / `serial_resize`（no-op）/ `serial_disconnect`；事件 `serial-output-{id}`、`serial-closed-{id}`；复用日志管线与 `Utf8StreamDecoder`；断开即关闭端口句柄，由读取线程统一发出关闭事件。
 - 输出事件：`ssh-output-{id}`、`ssh-closed-{id}`；主机密钥事件：`ssh-host-key`、`ssh-host-key-mismatch`。
 - **端口转发**：命令 `port_forward_list` / `port_forward_start` / `port_forward_stop`，事件 `port-forwards-changed`；支持本地（`-L`）、远程（`-R`）与动态 SOCKS5（`-D`）。UI 为独立「端口转发」面板。
@@ -163,7 +164,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - 新派生色先入令牌层再被组件消费：逐主题结构色写 `src/theme/tokens.css`，跨主题交互 ramp 写 `src/theme/derived-tokens.css`。
 - 令牌层改动后运行 `npm run ds:tokens` 更新 `.ai/ds/ds-tokens.json` 快照；`npm run ds:tokens:check` 失败即视为变更未交付。
 - 布局键（字号/字重/字距/标签几何）只改 `src/theme/layout-tokens.css`，主题块与皮肤不得覆盖。
-- 用户可见文案（i18n 值、schema description、组件字符串字面量）禁止 em dash（—）。
+- 用户可见文案（i18n 值、schema description、组件字符串字面量）禁止 em dash（—）与间隔中点（·）。
 - 用户可见文案禁止 AI 演示风动词：elevate / seamless / revolutionize / supercharge / effortless / delve / unleash / empower。
 - 用户可见字符串禁止开发者标记：TODO / FIXME / "AI generated" / "This component"；逻辑代码中的 WHY 注释保留。
 - 面向用户的产物（主题 schema、导出文件、错误提示）不得含仓库内部路径（如 `src/…`）。
@@ -263,6 +264,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - [x] 片段变量占位（{{变量}} 顺序提示输入）与执行前确认（单片段开关）
 - [x] 串口会话（serialport；端口探测/波特率预设；无自动重连，手动重连）
 - [x] 自定义主题（主题文件夹 drop-in JSON + Windows Terminal / iTerm2 配色导入、notify 热重载、编辑器 schema 自动补全；structure 结构覆盖）
+- [x] 会话终态结束块与键盘操作（缓冲内 MobaXterm 式结束块 + R 重连/Enter 关闭/Esc 取消重连/S 保存输出到文件；自动重连倒计时右下角浮条；SSH 断开路径视口跳顶修复）
 - [x] 现代主题 4 族 8 款（Slate / Graphite / Terminal Green / Sandstone）、强调色自定义、终端配色跟随界面、对比度门禁
 - [x] 依赖审计门禁（cargo audit + npm audit --omit=dev）与 SECURITY.md 漏洞披露流程
 - [ ] trzsz / rz 发送端（ZMODEM 上行）、SSH Agent 转发、多跳 ProxyJump、可访问性增强

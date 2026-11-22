@@ -4,7 +4,11 @@ import type { Session } from '../../types/session';
 import { sessionSubtitle } from '../../types/session';
 import { DropdownMenu } from '../ui/dropdown-menu';
 import { showNativeContextMenu } from '../../lib/appWindows';
-import { SESSION_KIND_ICON, sessionStatusDot } from '../../lib/sessionVisuals';
+import {
+  SESSION_KIND_ICON,
+  SESSION_STATUS_LABEL_KEY,
+  sessionStatusDot
+} from '../../lib/sessionVisuals';
 import { useI18n } from '../../i18n';
 
 interface SessionRowProps {
@@ -71,7 +75,7 @@ export default function SessionRow({
     >
       <span
         className={cn('h-1.5 w-1.5 shrink-0 rounded-full', sessionStatusDot(session.status, true))}
-        title={session.status}
+        title={t(SESSION_STATUS_LABEL_KEY[session.status])}
       />
       <KindIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
 

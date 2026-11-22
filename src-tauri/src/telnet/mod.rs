@@ -109,6 +109,16 @@ struct TelnetOutputPayload {
     data: String,
 }
 
+/// Why a session ended: `closed` (the user disconnected), `eof` (the peer
+/// closed the TCP stream), or `error` (the connection failed). Without the
+/// reason the UI cannot tell a deliberate close from a network drop.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TelnetClosedPayload {
+    reason: &'static str,
+    message: Option<String>,
+}
+
 /// Decode one buffer of Telnet data: returns the displayable payload bytes
 /// plus, appended to `responses`, the answers for every negotiation command
 /// found. `size` is the client grid reported when NAWS is negotiated. Returns
@@ -303,9 +313,17 @@ impl TelnetSessionManager {
             let mut buffer = [0_u8; 32 * 1024];
             let mut pending: Vec<u8> = Vec::new();
             let mut decoder = crate::text_stream::Utf8StreamDecoder::new();
+            // Close bookkeeping lives in locals, serial.rs style: the select
+            // and the match each break for a different reason, and the emit
+            // after the loop reports whichever one fired.
+            let mut close_reason = "eof";
+            let mut close_message: Option<String> = None;
             loop {
                 let read = tokio::select! {
-                    _ = read_close.notified() => break,
+                    _ = read_close.notified() => {
+                        close_reason = "closed";
+                        break;
+                    }
                     read = read_half.read(&mut buffer) => read,
                 };
                 match read {
@@ -348,11 +366,21 @@ impl TelnetSessionManager {
                         };
                         let _ = app_handle.emit(&format!("telnet-output-{}", event_id), payload);
                     }
-                    Err(_) => break,
+                    Err(error) => {
+                        close_reason = "error";
+                        close_message = Some(error.to_string());
+                        break;
+                    }
                 }
             }
 
-            let _ = app_handle.emit(&format!("telnet-closed-{}", event_id), ());
+            let _ = app_handle.emit(
+                &format!("telnet-closed-{}", event_id),
+                TelnetClosedPayload {
+                    reason: close_reason,
+                    message: close_message,
+                },
+            );
             // Only remove our own entry: the id may already have been
             // recycled by a newer session.
             remove_reserved_session(&sessions, &event_id, &read_session);
@@ -368,7 +396,13 @@ impl TelnetSessionManager {
         tokio::spawn(async move {
             if let Err(join_error) = reader_task.await {
                 eprintln!("[telnet] {watchdog_id}: read loop aborted: {join_error}");
-                let _ = watchdog_app.emit(&format!("telnet-closed-{}", watchdog_id), ());
+                let _ = watchdog_app.emit(
+                    &format!("telnet-closed-{}", watchdog_id),
+                    TelnetClosedPayload {
+                        reason: "error",
+                        message: None,
+                    },
+                );
                 remove_reserved_session(&watchdog_sessions, &watchdog_id, &watchdog_session);
             }
         });

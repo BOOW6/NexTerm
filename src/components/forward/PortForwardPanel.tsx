@@ -99,7 +99,7 @@ export default function PortForwardPanel({ params, api }: IDockviewPanelProps) {
 
   useEffect(() => {
     void api.setTitle(
-      sessionTitle ? `${t('forward.windowTitle')} · ${sessionTitle}` : t('forward.windowTitle')
+      sessionTitle ? `${t('forward.windowTitle')} - ${sessionTitle}` : t('forward.windowTitle')
     );
   }, [api, sessionTitle, t]);
 

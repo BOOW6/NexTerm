@@ -121,6 +121,17 @@ describe('applySettings', () => {
     useSettingsStore.getState().applySettings(snapshot({ terminalLineHeight: 1.234 }));
     expect(useSettingsStore.getState().terminalLineHeight).toBe(1.2);
   });
+
+  it('defaults the telnet auto-reconnect toggle when older snapshots omit it', () => {
+    const legacy = { ...snapshot(), telnetAutoReconnect: undefined } as unknown as SettingsSnapshot;
+    useSettingsStore.getState().applySettings(legacy);
+    expect(useSettingsStore.getState().telnetAutoReconnect).toBe(
+      DEFAULT_SETTINGS.telnetAutoReconnect
+    );
+
+    useSettingsStore.getState().applySettings(snapshot({ telnetAutoReconnect: false }));
+    expect(useSettingsStore.getState().telnetAutoReconnect).toBe(false);
+  });
 });
 
 describe('theme setters', () => {

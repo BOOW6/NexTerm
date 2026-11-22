@@ -925,6 +925,35 @@ pub async fn export_sessions(
     .map_err(format_err)?
 }
 
+/// Backend-driven terminal transcript export. The save dialog and the write
+/// both happen in Rust; the renderer only hands over the plain-text buffer.
+#[tauri::command]
+pub async fn export_terminal_transcript(
+    app: AppHandle,
+    contents: String,
+    file_name: String,
+    title: Option<String>,
+) -> Result<bool, String> {
+    tokio::task::spawn_blocking(move || {
+        let mut saver = app
+            .dialog()
+            .file()
+            .add_filter("Text", &["txt"])
+            .set_file_name(file_name.as_str());
+        if let Some(title) = title.as_deref() {
+            saver = saver.set_title(title);
+        }
+        let Some(selected) = saver.blocking_save_file() else {
+            return Ok(false);
+        };
+        let path = selected.into_path().map_err(format_err)?;
+        std::fs::write(&path, contents).map_err(format_err)?;
+        Ok(true)
+    })
+    .await
+    .map_err(format_err)?
+}
+
 #[tauri::command]
 pub fn vault_status(state: State<'_, VaultManager>) -> VaultStatus {
     state.status()

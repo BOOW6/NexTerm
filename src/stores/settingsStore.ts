@@ -51,6 +51,8 @@ export interface SettingsSnapshot {
   terminalCopyOnSelect: boolean;
   terminalRestoreScrollback: boolean;
   sshAutoReconnect: boolean;
+  /** Whether a dropped Telnet connection retries with the shared backoff. */
+  telnetAutoReconnect: boolean;
   sshRememberCredentials: boolean;
   defaultAuthMethod: SessionAuthMethod;
   /** How SFTP transfers resolve an existing target file (panel toolbar + settings). */
@@ -91,6 +93,7 @@ export const DEFAULT_SETTINGS: SettingsSnapshot = {
   terminalCopyOnSelect: false,
   terminalRestoreScrollback: true,
   sshAutoReconnect: true,
+  telnetAutoReconnect: true,
   sshRememberCredentials: false,
   defaultAuthMethod: 'password',
   sftpConflictPolicy: 'ask',
@@ -170,6 +173,10 @@ function normalizeSettings(input: SettingsSnapshot): SettingsSnapshot {
       input.sshAutoReconnect === undefined
         ? DEFAULT_SETTINGS.sshAutoReconnect
         : Boolean(input.sshAutoReconnect),
+    telnetAutoReconnect:
+      input.telnetAutoReconnect === undefined
+        ? DEFAULT_SETTINGS.telnetAutoReconnect
+        : Boolean(input.telnetAutoReconnect),
     sshRememberCredentials: Boolean(input.sshRememberCredentials),
     defaultAuthMethod:
       input.defaultAuthMethod === 'key'
@@ -299,6 +306,7 @@ export function settingsSnapshot(): SettingsSnapshot {
     terminalCopyOnSelect: state.terminalCopyOnSelect,
     terminalRestoreScrollback: state.terminalRestoreScrollback,
     sshAutoReconnect: state.sshAutoReconnect,
+    telnetAutoReconnect: state.telnetAutoReconnect,
     sshRememberCredentials: state.sshRememberCredentials,
     defaultAuthMethod: state.defaultAuthMethod,
     sftpConflictPolicy: state.sftpConflictPolicy,

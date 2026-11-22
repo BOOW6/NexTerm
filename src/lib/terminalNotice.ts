@@ -24,7 +24,8 @@ export interface NoticePlacement {
 export function computeNoticePlacement(
   getLineText: (row: number) => string,
   cursorRow: number,
-  rows: number
+  rows: number,
+  noticeRows = 1
 ): NoticePlacement {
   let lastContentRow = -1;
   for (let row = rows - 1; row >= 0; row -= 1) {
@@ -35,11 +36,14 @@ export function computeNoticePlacement(
   }
   const lastUsedRow = Math.max(lastContentRow, Math.min(cursorRow, rows - 1));
 
-  if (lastUsedRow < rows - 1) {
+  // All `noticeRows` lines of the notice must fit below the last used row.
+  const freeBelow = rows - 1 - lastUsedRow;
+  if (freeBelow >= noticeRows) {
     return { scrollFirst: 0, targetRow: lastUsedRow + 1 };
   }
-  // Content reaches the bottom row: one scroll-up frees the bottom row.
-  return { scrollFirst: 1, targetRow: rows - 1 };
+  // Content reaches too low: scroll up until the bottom holds enough blank
+  // rows for the whole notice.
+  return { scrollFirst: noticeRows - freeBelow, targetRow: rows - noticeRows };
 }
 
 /**
@@ -48,8 +52,8 @@ export function computeNoticePlacement(
  * `targetRow + 1` line feeds move every content row (and the notice) above
  * the viewport; ED2 then only clears blank rows.
  */
-export function computeNoticeScrollLines(targetRow: number, rows: number): number {
-  return Math.min(rows, Math.max(1, targetRow + 1));
+export function computeNoticeScrollLines(targetRow: number, rows: number, noticeRows = 1): number {
+  return Math.min(rows, Math.max(1, targetRow + noticeRows));
 }
 
 /**
@@ -82,7 +86,7 @@ export function buildNoticeWriteSequence(
  * Push `[...history][notice]` above the viewport and clear the (blank)
  * viewport for the incoming shell.
  */
-export function buildNoticeScrollSequence(targetRow: number, rows: number): string {
-  const scrollLines = computeNoticeScrollLines(targetRow, rows);
+export function buildNoticeScrollSequence(targetRow: number, rows: number, noticeRows = 1): string {
+  const scrollLines = computeNoticeScrollLines(targetRow, rows, noticeRows);
   return `\x1b[${rows};1H${'\r\n'.repeat(scrollLines)}\x1b[2J\x1b[H`;
 }

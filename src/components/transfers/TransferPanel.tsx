@@ -262,7 +262,7 @@ export default function TransferPanel() {
                     <span className="truncate">
                       {t(statusText[item.status])}
                       {item.status === 'running' && item.speed > 0
-                        ? ` · ${formatSpeed(item.speed)}`
+                        ? ` - ${formatSpeed(item.speed)}`
                         : ''}
                     </span>
                   </div>

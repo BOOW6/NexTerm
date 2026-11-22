@@ -72,6 +72,25 @@ describe('computeNoticePlacement', () => {
     });
   });
 
+  it('reserves room for every row of a multi-row block', () => {
+    const getLineText = (row: number) => (row === 7 ? 'bottom' : '');
+    // Two free rows fit a 2-row block without scrolling; a 3-row block
+    // needs one scroll-up so the whole block lands on blank rows.
+    expect(computeNoticePlacement(getLineText, 7, 10, 2)).toEqual({
+      scrollFirst: 0,
+      targetRow: 8
+    });
+    expect(computeNoticePlacement(getLineText, 7, 10, 3)).toEqual({
+      scrollFirst: 1,
+      targetRow: 7
+    });
+    // Full viewport: the block clears the content entirely.
+    expect(computeNoticePlacement(getLineText, 9, 10, 3)).toEqual({
+      scrollFirst: 3,
+      targetRow: 7
+    });
+  });
+
   it('ignores a stale cursor parked above or inside the content', () => {
     // Regression: `\x1b[?1049l` restores the cursor to (0,0) and serialized
     // snapshot tails can park it mid-content. Either way the notice must go
@@ -93,6 +112,11 @@ describe('computeNoticeScrollLines', () => {
     expect(computeNoticeScrollLines(0, 10)).toBe(1);
     expect(computeNoticeScrollLines(5, 10)).toBe(6);
     expect(computeNoticeScrollLines(9, 10)).toBe(10);
+  });
+
+  it('accounts for the whole block height', () => {
+    expect(computeNoticeScrollLines(5, 10, 3)).toBe(8);
+    expect(computeNoticeScrollLines(9, 10, 3)).toBe(10);
   });
 });
 

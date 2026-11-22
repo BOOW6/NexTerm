@@ -165,6 +165,9 @@ export const ZH: Dictionary = {
   'settings.ssh.autoReconnect': '连接意外断开时自动重连',
   'settings.ssh.keepaliveNote':
     'SSH 每 30 秒发送一次保活探测；断线后按 1s / 2s / 4s / 8s / 16s 退避重试。',
+  'settings.ssh.telnetAutoReconnect': 'Telnet 连接意外断开时自动重连',
+  'settings.ssh.telnetAutoReconnectNote':
+    'Telnet 断开后按相同退避节奏重试；重连成功后需要在终端内重新登录。',
 
   // Shortcuts
   'settings.shortcuts.action.commandPalette': '打开命令面板',
@@ -267,7 +270,7 @@ export const ZH: Dictionary = {
   'settings.discard.ok': '放弃修改',
 
   // About
-  'settings.about.shortcuts': '命令面板 {palette} · 设置 {settings}',
+  'settings.about.shortcuts': '命令面板 {palette}，设置 {settings}',
   'settings.about.updateHint': '检查是否有可用的新版本。',
   'settings.about.checking': '正在检查…',
   'settings.about.checkUpdate': '检查更新',
@@ -474,6 +477,9 @@ export const EN: Dictionary = {
   'settings.ssh.autoReconnect': 'Reconnect automatically when a connection drops unexpectedly',
   'settings.ssh.keepaliveNote':
     'SSH sends a keepalive probe every 30 seconds; after a drop it retries with 1s / 2s / 4s / 8s / 16s backoff.',
+  'settings.ssh.telnetAutoReconnect': 'Reconnect automatically when a Telnet connection drops',
+  'settings.ssh.telnetAutoReconnectNote':
+    'Dropped Telnet sessions retry with the same backoff; log in again in the terminal after reconnecting.',
 
   // Shortcuts
   'settings.shortcuts.action.commandPalette': 'Open command palette',
@@ -583,7 +589,7 @@ export const EN: Dictionary = {
   'settings.discard.ok': 'Discard changes',
 
   // About
-  'settings.about.shortcuts': 'Command palette {palette} · Settings {settings}',
+  'settings.about.shortcuts': 'Command palette {palette}, Settings {settings}',
   'settings.about.updateHint': 'Check whether a new version is available.',
   'settings.about.checking': 'Checking…',
   'settings.about.checkUpdate': 'Check for updates',

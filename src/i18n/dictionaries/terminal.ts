@@ -2,8 +2,18 @@ import type { Dictionary } from './types';
 
 // Terminal surface: XtermCanvas notices/errors, SSH connect form leftovers.
 export const ZH: Dictionary = {
-  'terminal.sshReconnectExhausted': 'SSH 自动重连已达上限，已停止重试',
-  'terminal.reconnectCountdown': '{reason}，{seconds} 秒后进行第 {attempt}/5 次重连',
+  'terminal.reconnectExhausted': '自动重连已达上限，已停止重试',
+  'terminal.endBarReconnecting': '{reason}，{seconds} 秒后进行第 {attempt}/{max} 次重连',
+  'terminal.endBarReconnectNow': '立即重连',
+  'terminal.endBarCancelReconnect': '取消自动重连',
+  'terminal.endBarCloseTab': '关闭标签页',
+  'terminal.endBarSaveOutput': '保存输出',
+  'terminal.endBlockHints': '按 R 重连，按 Enter 关闭标签，按 S 保存输出',
+  'terminal.exportTranscriptTitle': '保存终端输出',
+  'terminal.exportTranscriptOk': '终端输出已保存',
+  'terminal.exportTranscriptFailed': '保存终端输出失败',
+  'terminal.endBarLocalExitedWithCode': '本地 Shell 已退出，退出码 {code}',
+  'terminal.telnetLost': 'Telnet 连接错误：{message}',
   'terminal.missingHost': '缺少主机或用户名',
   'terminal.missingPassword': '缺少密码',
   'terminal.missingKeyFile': '缺少私钥文件',
@@ -28,8 +38,18 @@ export const ZH: Dictionary = {
 };
 
 export const EN: Dictionary = {
-  'terminal.sshReconnectExhausted': 'SSH auto-reconnect limit reached; retries stopped',
-  'terminal.reconnectCountdown': '{reason}; reconnecting (attempt {attempt}/5) in {seconds}s',
+  'terminal.reconnectExhausted': 'Auto-reconnect limit reached; retries stopped',
+  'terminal.endBarReconnecting': '{reason}; reconnecting (attempt {attempt}/{max}) in {seconds}s',
+  'terminal.endBarReconnectNow': 'Reconnect now',
+  'terminal.endBarCancelReconnect': 'Cancel auto-reconnect',
+  'terminal.endBarCloseTab': 'Close tab',
+  'terminal.endBarSaveOutput': 'Save output',
+  'terminal.endBlockHints': 'Press R to reconnect, Enter to close the tab, S to save output',
+  'terminal.exportTranscriptTitle': 'Save terminal output',
+  'terminal.exportTranscriptOk': 'Terminal output saved',
+  'terminal.exportTranscriptFailed': 'Failed to save terminal output',
+  'terminal.endBarLocalExitedWithCode': 'Local shell exited with code {code}',
+  'terminal.telnetLost': 'Telnet error: {message}',
   'terminal.missingHost': 'Missing host or username',
   'terminal.missingPassword': 'Missing password',
   'terminal.missingKeyFile': 'Missing private key file',

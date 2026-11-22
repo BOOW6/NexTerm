@@ -6,6 +6,7 @@ describe('sessionStatusDot', () => {
     expect(sessionStatusDot('idle')).toBe('bg-muted');
     expect(sessionStatusDot('connecting')).toBe('bg-warning');
     expect(sessionStatusDot('connected')).toBe('bg-success');
+    expect(sessionStatusDot('disconnected')).toBe('bg-muted-foreground');
     expect(sessionStatusDot('error')).toBe('bg-error');
   });
 

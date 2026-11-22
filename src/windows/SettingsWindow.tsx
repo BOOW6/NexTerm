@@ -1705,6 +1705,18 @@ export default function SettingsWindow() {
           {t('settings.ssh.autoReconnect')}
         </label>
         <p className="text-tiny text-muted-foreground">{t('settings.ssh.keepaliveNote')}</p>
+        <label className="flex items-center gap-2 text-meta text-muted">
+          <input
+            type="checkbox"
+            className="app-checkbox h-3.5 w-3.5 accent-accent"
+            checked={draft.telnetAutoReconnect}
+            onChange={(event) => update('telnetAutoReconnect', event.target.checked)}
+          />
+          {t('settings.ssh.telnetAutoReconnect')}
+        </label>
+        <p className="text-tiny text-muted-foreground">
+          {t('settings.ssh.telnetAutoReconnectNote')}
+        </p>
       </div>
     </section>
   );
@@ -1883,7 +1895,7 @@ export default function SettingsWindow() {
                       className="selectable truncate text-tiny text-muted"
                       title={entry.fingerprint}
                     >
-                      {entry.algorithm} · {entry.fingerprint}
+                      {entry.algorithm} - {entry.fingerprint}
                     </p>
                   </div>
                   <Button

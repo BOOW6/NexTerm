@@ -157,7 +157,7 @@ export default function CommandPalette() {
       id: `session-${session.id}`,
       group: 'sessions',
       label: session.title,
-      hint: `${t(SESSION_KIND_LABEL_KEY[session.kind])} · ${sessionSubtitle(session, t)}`,
+      hint: `${t(SESSION_KIND_LABEL_KEY[session.kind])} - ${sessionSubtitle(session, t)}`,
       keywords: `${session.group} ${session.host ?? ''} ${session.username ?? ''}`,
       icon: SESSION_KIND_ICON[session.kind],
       run: () => openSession(session.id)

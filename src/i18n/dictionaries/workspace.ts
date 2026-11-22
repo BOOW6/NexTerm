@@ -80,8 +80,8 @@ export const ZH: Dictionary = {
   'quickConnect.toastCredentialsSaveFailed': '连接已保存，但凭据写入保险库失败',
   // sessionActions
   'sessionAction.duplicateTitle': '{name} 副本',
-  'sessionAction.sftpPanelTitle': 'SFTP · {name}',
-  'sessionAction.portForwardPanelTitle': '端口转发 · {name}',
+  'sessionAction.sftpPanelTitle': 'SFTP - {name}',
+  'sessionAction.portForwardPanelTitle': '端口转发 - {name}',
   'sessionAction.portForwardPanel': '端口转发',
   'sessionAction.transferPanelTitle': '传输队列',
   // CommandPalette
@@ -135,8 +135,8 @@ export const ZH: Dictionary = {
   'menu.zoomOut': '缩小字号',
   'menu.zoomReset': '重置字号',
   'menu.toggleSidebar': '显示侧栏',
-  'menu.themeLight': '亮色主题 · {name}',
-  'menu.themeDark': '暗色主题 · {name}',
+  'menu.themeLight': '亮色主题 - {name}',
+  'menu.themeDark': '暗色主题 - {name}',
   'menu.themeSystem': '跟随系统',
   'menu.commandPalette': '命令面板',
   'menu.session': '会话',
@@ -201,6 +201,7 @@ export const ZH: Dictionary = {
   'status.idle': '未连接',
   'status.connecting': '连接中',
   'status.connected': '已连接',
+  'status.disconnected': '已断开',
   'status.error': '连接错误',
   'status.noSession': '未选择会话',
   // sessionImport
@@ -296,8 +297,8 @@ export const EN: Dictionary = {
     'Session saved, but storing credentials in the vault failed',
   // sessionActions
   'sessionAction.duplicateTitle': '{name} copy',
-  'sessionAction.sftpPanelTitle': 'SFTP · {name}',
-  'sessionAction.portForwardPanelTitle': 'Port forwarding · {name}',
+  'sessionAction.sftpPanelTitle': 'SFTP - {name}',
+  'sessionAction.portForwardPanelTitle': 'Port forwarding - {name}',
   'sessionAction.portForwardPanel': 'Port forwarding',
   'sessionAction.transferPanelTitle': 'Transfer queue',
   // CommandPalette
@@ -351,8 +352,8 @@ export const EN: Dictionary = {
   'menu.zoomOut': 'Decrease font size',
   'menu.zoomReset': 'Reset font size',
   'menu.toggleSidebar': 'Show sidebar',
-  'menu.themeLight': 'Light theme · {name}',
-  'menu.themeDark': 'Dark theme · {name}',
+  'menu.themeLight': 'Light theme - {name}',
+  'menu.themeDark': 'Dark theme - {name}',
   'menu.themeSystem': 'Follow system',
   'menu.commandPalette': 'Command palette',
   'menu.session': 'Session',
@@ -417,6 +418,7 @@ export const EN: Dictionary = {
   'status.idle': 'Not connected',
   'status.connecting': 'Connecting',
   'status.connected': 'Connected',
+  'status.disconnected': 'Disconnected',
   'status.error': 'Connection error',
   'status.noSession': 'No session selected',
   // sessionImport

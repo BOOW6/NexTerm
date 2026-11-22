@@ -428,6 +428,7 @@ export default function TerminalTab(props: IDockviewPanelProps) {
           sessionId={session.id}
           fontSize={fontSize}
           visible={isVisible}
+          onRequestClose={() => props.api.close()}
           transport={
             session.kind === 'telnet'
               ? 'telnet'

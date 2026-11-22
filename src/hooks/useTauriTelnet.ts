@@ -44,8 +44,19 @@ export async function listenTelnetOutput(
   });
 }
 
-export async function listenTelnetClosed(id: string, onClosed: () => void): Promise<() => void> {
-  return listen(`telnet-closed-${id}`, () => {
-    onClosed();
+export interface TelnetClosedPayload {
+  /** `closed` (user disconnect), `eof` (peer closed the stream), or `error`. */
+  reason: 'closed' | 'eof' | 'error';
+  message?: string | null;
+}
+
+export async function listenTelnetClosed(
+  id: string,
+  onClosed: (payload: TelnetClosedPayload) => void
+): Promise<() => void> {
+  return listen<TelnetClosedPayload>(`telnet-closed-${id}`, (event) => {
+    // Older backends emit a unit payload; the peer closing the stream is the
+    // most common cause, so treat a missing payload as an ordinary eof.
+    onClosed(event.payload ?? { reason: 'eof' });
   });
 }
