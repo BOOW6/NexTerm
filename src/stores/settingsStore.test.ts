@@ -195,3 +195,34 @@ describe('migratePersistedSettings', () => {
     expect(migratePersistedSettings('garbage', 1)).toBe('garbage');
   });
 });
+
+describe('terminalSnapshots mode', () => {
+  it('normalizes invalid modes to the local-only default', () => {
+    useSettingsStore
+      .getState()
+      .applySettings(snapshot({ terminalSnapshots: 'everything' as never }));
+    expect(useSettingsStore.getState().terminalSnapshots).toBe('local');
+
+    useSettingsStore.getState().applySettings(snapshot({ terminalSnapshots: 'all' }));
+    expect(useSettingsStore.getState().terminalSnapshots).toBe('all');
+  });
+
+  it('maps the legacy boolean field: false -> off, true/default -> local', () => {
+    useSettingsStore.getState().applySettings({
+      ...snapshot(),
+      terminalSnapshots: undefined,
+      terminalRestoreScrollback: false
+    } as unknown as SettingsSnapshot);
+    expect(useSettingsStore.getState().terminalSnapshots).toBe('off');
+
+    // A persisted `true` is indistinguishable from the historical default,
+    // so it lands on the new safer default instead of keeping remote
+    // snapshots on.
+    useSettingsStore.getState().applySettings({
+      ...snapshot(),
+      terminalSnapshots: undefined,
+      terminalRestoreScrollback: true
+    } as unknown as SettingsSnapshot);
+    expect(useSettingsStore.getState().terminalSnapshots).toBe('local');
+  });
+});

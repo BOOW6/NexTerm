@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   clearAllTerminalSnapshots,
+  snapshotEnabledFor,
+  type TerminalSnapshotMode,
   clearTerminalSnapshot,
   readTerminalSnapshot,
   trimSnapshot,
@@ -62,5 +64,21 @@ describe('terminalSnapshot', () => {
     expect(readTerminalSnapshot('a')).toBeNull();
     expect(readTerminalSnapshot('b')).toBeNull();
     expect(clearAllTerminalSnapshots()).toBe(0);
+  });
+});
+
+describe('snapshotEnabledFor', () => {
+  const cases: Array<[TerminalSnapshotMode, string, boolean]> = [
+    ['all', 'ssh', true],
+    ['all', 'local', true],
+    ['local', 'local', true],
+    ['local', 'ssh', false],
+    ['local', 'telnet', false],
+    ['local', 'serial', false],
+    ['off', 'local', false],
+    ['off', 'ssh', false]
+  ];
+  it.each(cases)('mode %j + kind %s -> %j', (mode, kind, expected) => {
+    expect(snapshotEnabledFor(mode, kind)).toBe(expected);
   });
 });

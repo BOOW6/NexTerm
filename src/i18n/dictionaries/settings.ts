@@ -138,9 +138,14 @@ export const ZH: Dictionary = {
   'settings.terminal.lineHeight': '行高',
   'settings.terminal.cursorBlink': '光标闪烁',
   'settings.terminal.copyOnSelect': '选中即复制',
-  'settings.terminal.restoreScrollback': '重启后恢复滚动缓冲',
+  'settings.terminal.snapshotsLabel': '滚动缓冲快照',
+  'settings.terminal.snapshotsAll': '所有会话',
+  'settings.terminal.snapshotsLocal': '仅本地会话（推荐）',
+  'settings.terminal.snapshotsOff': '关闭',
+  'settings.terminal.snapshotsHint':
+    '快照以明文形式保存在本地，用于重开或重启后恢复滚动缓冲。远程会话输出可能包含敏感内容，默认不保存。',
   'settings.terminal.ligaturesNote':
-    '连字需要等宽字体支持（如 Fira Code、Cascadia Code），WebGL 渲染下同样生效。 滚动缓冲快照保存在本地 localStorage，可能包含敏感输出；如不需要可关闭「重启后恢复滚动缓冲」。',
+    '连字需要等宽字体支持（如 Fira Code、Cascadia Code），WebGL 渲染下同样生效。',
   'settings.terminal.sessionLog': '记录会话日志',
   'settings.terminal.logDirPlaceholder': '选择或输入保存会话日志的目录',
   'settings.terminal.logDirAria': '会话日志目录',
@@ -457,9 +462,14 @@ export const EN: Dictionary = {
   'settings.terminal.lineHeight': 'Line height',
   'settings.terminal.cursorBlink': 'Cursor blink',
   'settings.terminal.copyOnSelect': 'Copy on select',
-  'settings.terminal.restoreScrollback': 'Restore scrollback on restart',
+  'settings.terminal.snapshotsLabel': 'Scrollback snapshots',
+  'settings.terminal.snapshotsAll': 'All sessions',
+  'settings.terminal.snapshotsLocal': 'Local sessions only (recommended)',
+  'settings.terminal.snapshotsOff': 'Off',
+  'settings.terminal.snapshotsHint':
+    'Snapshots are stored locally as plaintext to restore scrollback after reopening or restarting. Remote session output may contain sensitive content and is not saved by default.',
   'settings.terminal.ligaturesNote':
-    'Ligatures require monospaced font support (e.g. Fira Code, Cascadia Code) and also apply under the WebGL renderer. Scrollback snapshots are stored locally in localStorage and may contain sensitive output; turn off "Restore scrollback on restart" if you do not need them.',
+    'Ligatures require monospaced font support (e.g. Fira Code, Cascadia Code) and also apply under the WebGL renderer.',
   'settings.terminal.sessionLog': 'Record session logs',
   'settings.terminal.logDirPlaceholder': 'Choose or enter a directory for session logs',
   'settings.terminal.logDirAria': 'Session log directory',

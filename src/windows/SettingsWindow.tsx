@@ -87,7 +87,7 @@ import {
 } from '../hooks/useTauriSsh';
 import type { SessionAuthMethod, SftpConflictPolicy } from '../types/session';
 import { localizeBackendError } from '../lib/backendErrors';
-import { clearAllTerminalSnapshots } from '../lib/terminalSnapshot';
+import { clearAllTerminalSnapshots, type TerminalSnapshotMode } from '../lib/terminalSnapshot';
 import { appVersion } from '../lib/appInfo';
 import { KnownHostsSection } from './settings/KnownHostsSection';
 
@@ -1606,15 +1606,23 @@ export default function SettingsWindow() {
           />
           {t('settings.terminal.copyOnSelect')}
         </label>
-        <label className="flex items-center gap-2 text-meta text-muted">
-          <input
-            type="checkbox"
-            className="app-checkbox h-3.5 w-3.5 accent-accent"
-            checked={draft.terminalRestoreScrollback}
-            onChange={(event) => update('terminalRestoreScrollback', event.target.checked)}
-          />
-          {t('settings.terminal.restoreScrollback')}
-        </label>
+        <div>
+          <Label htmlFor="terminal-snapshots">{t('settings.terminal.snapshotsLabel')}</Label>
+          <Select
+            id="terminal-snapshots"
+            value={draft.terminalSnapshots}
+            onChange={(event) =>
+              update('terminalSnapshots', event.target.value as TerminalSnapshotMode)
+            }
+          >
+            <option value="all">{t('settings.terminal.snapshotsAll')}</option>
+            <option value="local">{t('settings.terminal.snapshotsLocal')}</option>
+            <option value="off">{t('settings.terminal.snapshotsOff')}</option>
+          </Select>
+          <p className="mt-1 text-tiny text-muted-foreground">
+            {t('settings.terminal.snapshotsHint')}
+          </p>
+        </div>
       </div>
       <p className="-mt-1 text-tiny text-muted-foreground">
         {t('settings.terminal.ligaturesNote')}

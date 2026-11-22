@@ -6,6 +6,22 @@ const MAX_SNAPSHOT_CHARS = 512 * 1024;
 // still happens when the session is removed.
 const MAX_SNAPSHOT_ENTRIES = 24;
 
+/** Which sessions persist plaintext scrollback snapshots. */
+export type TerminalSnapshotMode = 'all' | 'local' | 'off';
+
+/** Whether the given session kind may save/restore a snapshot under the
+ * mode. Snapshots are plaintext terminal output in localStorage; remote
+ * output (SSH/Telnet/Serial) defaults to staying off disk. */
+export function snapshotEnabledFor(mode: TerminalSnapshotMode, kind: string): boolean {
+  if (mode === 'off') {
+    return false;
+  }
+  if (mode === 'all') {
+    return true;
+  }
+  return kind === 'local';
+}
+
 function storageKey(sessionId: string): string {
   return `${SNAPSHOT_PREFIX}${sessionId}`;
 }

@@ -67,6 +67,7 @@ import { NativeLigaturesAddon } from '../../theme/nativeLigaturesAddon';
 import {
   clearTerminalSnapshot,
   readTerminalSnapshot,
+  snapshotEnabledFor,
   writeTerminalSnapshot
 } from '../../lib/terminalSnapshot';
 import {
@@ -1945,7 +1946,14 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
               }
             };
             const saveSnapshot = () => {
-              if (!serializeAddon || !useSettingsStore.getState().terminalRestoreScrollback) {
+              if (!serializeAddon) {
+                return;
+              }
+              const mode = useSettingsStore.getState().terminalSnapshots;
+              // Snapshots are plaintext terminal output in localStorage:
+              // remote output only persists when the user opted into "all".
+              const sessionKind = useSessionStore.getState().getSession(sessionId)?.kind;
+              if (!snapshotEnabledFor(mode, sessionKind ?? 'local')) {
                 return;
               }
               // Full-screen programs use the alternate buffer; restoring that
@@ -2013,7 +2021,12 @@ const XtermCanvas = forwardRef<XtermHandle, XtermCanvasProps>(
             setInitError(null);
 
             let restored = Promise.resolve();
-            if (settings.terminalRestoreScrollback) {
+            if (
+              snapshotEnabledFor(
+                settings.terminalSnapshots,
+                useSessionStore.getState().getSession(sessionId)?.kind ?? 'local'
+              )
+            ) {
               const snapshot = readTerminalSnapshot(sessionId);
               if (snapshot) {
                 restored = new Promise<void>((resolve) => {

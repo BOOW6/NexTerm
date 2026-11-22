@@ -3,6 +3,7 @@ import type { SftpConflictPolicy } from '../types/session';
 import { persist } from 'zustand/middleware';
 import { emit } from '@tauri-apps/api/event';
 import type { SessionAuthMethod } from '../types/session';
+import type { TerminalSnapshotMode } from '../lib/terminalSnapshot';
 import {
   DEFAULT_DARK_THEME,
   DEFAULT_LIGHT_THEME,
@@ -49,7 +50,9 @@ export interface SettingsSnapshot {
   terminalScrollback: number;
   terminalLineHeight: number;
   terminalCopyOnSelect: boolean;
-  terminalRestoreScrollback: boolean;
+  /** Which sessions persist plaintext scrollback snapshots:
+   * all / local-only (default; remote output stays off disk) / off. */
+  terminalSnapshots: TerminalSnapshotMode;
   sshAutoReconnect: boolean;
   /** Whether a dropped Telnet connection retries with the shared backoff. */
   telnetAutoReconnect: boolean;
@@ -91,7 +94,7 @@ export const DEFAULT_SETTINGS: SettingsSnapshot = {
   terminalScrollback: 10000,
   terminalLineHeight: 1,
   terminalCopyOnSelect: false,
-  terminalRestoreScrollback: true,
+  terminalSnapshots: 'local',
   sshAutoReconnect: true,
   telnetAutoReconnect: true,
   sshRememberCredentials: false,
@@ -145,6 +148,17 @@ function asClampedInt(value: unknown, fallback: number, min: number, max: number
   return Math.min(max, Math.max(min, rounded || fallback));
 }
 
+/** Snapshot retention scope. Older payloads carry the legacy boolean:
+ * an explicit false maps to off, everything else to the new safer default
+ * (local-only), because a persisted `true` is indistinguishable from the
+ * historical default. */
+function normalizeSnapshotMode(value: unknown, legacy: unknown): TerminalSnapshotMode {
+  if (value === 'all' || value === 'local' || value === 'off') {
+    return value;
+  }
+  return legacy === false ? 'off' : 'local';
+}
+
 /** Line height, rounded to one decimal and clamped. */
 function asLineHeight(value: unknown): number {
   const rounded = Math.round((typeof value === 'number' ? value : NaN) * 10) / 10;
@@ -180,10 +194,10 @@ function normalizeSettings(input: Partial<SettingsSnapshot>): SettingsSnapshot {
     terminalScrollback: asClampedInt(input.terminalScrollback, 10000, 1000, 100000),
     terminalLineHeight: asLineHeight(input.terminalLineHeight),
     terminalCopyOnSelect: Boolean(input.terminalCopyOnSelect),
-    terminalRestoreScrollback:
-      input.terminalRestoreScrollback === undefined
-        ? DEFAULT_SETTINGS.terminalRestoreScrollback
-        : Boolean(input.terminalRestoreScrollback),
+    terminalSnapshots: normalizeSnapshotMode(
+      input.terminalSnapshots,
+      (input as { terminalRestoreScrollback?: unknown }).terminalRestoreScrollback
+    ),
     sshAutoReconnect:
       input.sshAutoReconnect === undefined
         ? DEFAULT_SETTINGS.sshAutoReconnect
@@ -335,7 +349,7 @@ export function settingsSnapshot(): SettingsSnapshot {
     terminalScrollback: state.terminalScrollback,
     terminalLineHeight: state.terminalLineHeight,
     terminalCopyOnSelect: state.terminalCopyOnSelect,
-    terminalRestoreScrollback: state.terminalRestoreScrollback,
+    terminalSnapshots: state.terminalSnapshots,
     sshAutoReconnect: state.sshAutoReconnect,
     telnetAutoReconnect: state.telnetAutoReconnect,
     sshRememberCredentials: state.sshRememberCredentials,
