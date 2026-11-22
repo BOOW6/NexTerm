@@ -89,6 +89,7 @@ import type { SessionAuthMethod, SftpConflictPolicy } from '../types/session';
 import { localizeBackendError } from '../lib/backendErrors';
 import { clearAllTerminalSnapshots } from '../lib/terminalSnapshot';
 import { appVersion } from '../lib/appInfo';
+import { KnownHostsSection } from './settings/KnownHostsSection';
 
 type SettingsTab =
   'appearance' | 'terminal' | 'snippets' | 'ssh' | 'shortcuts' | 'security' | 'about';
@@ -1909,74 +1910,17 @@ export default function SettingsWindow() {
           </label>
         </div>
 
-        <div>
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-xs font-emphasis text-foreground">
-              {t('settings.security.knownHosts.title')}
-            </h3>
-            <div className="flex items-center gap-1.5">
-              <label className="flex items-center gap-1 text-tiny text-muted">
-                <input
-                  type="checkbox"
-                  checked={hashHosts}
-                  onChange={(event) => setHashHosts(event.target.checked)}
-                />
-                {t('settings.security.knownHosts.hashHostnames')}
-              </label>
-              <Button size="xs" variant="secondary" onClick={() => void handleImportHosts()}>
-                {t('settings.security.knownHosts.import')}
-              </Button>
-              <Button size="xs" variant="secondary" onClick={() => void handleExportHosts()}>
-                {t('settings.security.knownHosts.export')}
-              </Button>
-            </div>
-          </div>
-          {loadingHosts ? (
-            <p className="text-meta text-muted">{t('settings.security.knownHosts.loading')}</p>
-          ) : hostsError ? (
-            <p className="selectable text-meta text-error">{hostsError}</p>
-          ) : visibleHosts.length === 0 ? (
-            <p className="text-meta text-muted">{t('settings.security.knownHosts.empty')}</p>
-          ) : (
-            <div className="max-h-72 overflow-y-auto rounded-sm border border-border">
-              {visibleHosts.map((entry) => (
-                <div
-                  key={entry.host}
-                  className="flex items-center gap-2 border-b border-border-muted/60 px-2 py-1.5 last:border-b-0"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="selectable truncate font-mono text-meta text-foreground">
-                      {entry.host}
-                    </p>
-                    <p
-                      className="selectable truncate text-tiny text-muted"
-                      title={entry.fingerprint}
-                    >
-                      {entry.algorithm} - {entry.fingerprint}
-                    </p>
-                  </div>
-                  <Button
-                    size="icon-md"
-                    variant="ghost"
-                    aria-label={t('settings.security.knownHosts.removeAria')}
-                    title={t('settings.security.knownHosts.removeAria')}
-                    onClick={() => void handleRemoveHost(entry.host)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-          {removedHosts.length > 0 ? (
-            <p className="mt-2 text-tiny text-warning">
-              {t('settings.security.knownHosts.pendingRemoval', { count: removedHosts.length })}
-            </p>
-          ) : null}
-          <p className="mt-2 text-tiny text-muted-foreground">
-            {t('settings.security.knownHosts.removeHint')}
-          </p>
-        </div>
+        <KnownHostsSection
+          hosts={visibleHosts}
+          pendingRemovals={removedHosts}
+          loading={loadingHosts}
+          error={hostsError}
+          hashHostnames={hashHosts}
+          onHashHostnamesChange={setHashHosts}
+          onImport={() => void handleImportHosts()}
+          onExport={() => void handleExportHosts()}
+          onRemove={(host) => void handleRemoveHost(host)}
+        />
       </section>
     );
   };
