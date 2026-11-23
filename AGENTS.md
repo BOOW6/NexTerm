@@ -52,8 +52,8 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
   - 事件：`sftp-progress`、`sftp-transfer-done`
   - 每个 SSH 会话复用一条 SFTP 子系统通道；传输支持递归目录、聚合进度、断点续传、暂停/取消/重试与冲突策略（询问/覆盖/跳过/重命名/较新才覆盖）。断点续传实现：下载写本地 `<file>.part`，上传写远端 `<file>.nexterm-part`，均带侧车元数据（来源 size + mtime 指纹）做续传校验，完成后原子替换目标文件，目标路径上只出现完整内容。传输任务绑定会话而非后端连接 id：断线自动重连后自动从 part 续传；conflict=ask 时经 `sftp-conflict` 事件弹出独立确认窗口（`sftp_conflict_response` 应答，支持"应用到全部"）。OS 拖拽上传与面板内拖动移动复用同一传输/重命名管线。
   - **传输失败路径 fail-closed**：`ConflictPolicy` 是 serde 强类型枚举（未知值在 IPC 边界拒绝，缺省回落 ask）；rename 候选耗尽与远程目录创建失败会让传输报错终止，绝不回退原路径覆盖。
-  - ZMODEM 接收（`src-tauri/src/zmodem.rs`，纯状态机 + 单测）：SSH 读循环在 UTF-8 解码前拦截 `sz` 流，文件落系统下载目录；进度复用 `sftp-progress`（id 前缀 `zmodem-`，取消走取消序列，暂停被拒绝）。本地写失败即终态（关文件、删 part、队列报错、发送取消序列），且接收有单文件 2 GiB / 会话批次 8 GiB 配额（FileStart 拒绝 + 逐块校验，谎报 size 逃不过）。接收确认模式（设置 `zmodemAutoReceive` 关闭）：`BatchStartScanner` 在握手应答前拦截 ZRQINIT，经 `zmodem-receive-request` 事件弹确认框、`zmodem_receive_response` 应答，120s 超时视为拒绝并发送取消序列。
-  - 远程文件本地编辑：baseline 仅在上传成功后推进（失败保持 dirty 并按 2s→60s 指数退避重试）；scratch 副本随 watcher 退出删除、启动时清理遗留。
+  - ZMODEM 接收（`src-tauri/src/zmodem.rs`，纯状态机 + 单测）：SSH 读循环在 UTF-8 解码前拦截 `sz` 流，文件落系统下载目录；进度复用 `sftp-progress`（id 前缀 `zmodem-`，取消走取消序列，暂停被拒绝）。本地写失败即终态（关文件、删 part、队列报错、发送取消序列），且接收有单文件 2 GiB / 会话批次 8 GiB 配额（FileStart 拒绝 + 逐块校验，谎报 size 逃不过）。接收确认模式（设置 `zmodemAutoReceive` 关闭）：`BatchStartScanner` 在握手应答前拦截 ZRQINIT，经 `zmodem-receive-request` 事件弹确认框、`zmodem_receive_response` 应答，120s 超时视为拒绝并发送取消序列；拒绝后重置接收机与 scanner（`reset_after_zmodem_reject`），普通 echo 输出不会再次弹窗，只有新的 ZRQINIT 才会。
+  - 远程文件本地编辑：baseline 在**实际上传完成后**才推进（`sftp_upload_and_wait` 等待传输任务结束，而不是只拿到 transfer id；失败保持 dirty 并按 2s→60s 指数退避重试）；scratch 副本随 watcher 退出删除，`remote_edit_stop` 在没有 watcher 持有时直接删除副本，启动时清理遗留；所有权以 manager 里注册的 cancel token 为准（stop 只置取消标志、不移除条目，watcher 退出时凭 token 决定是否删副本）。
   - UI：目录浏览、文件/文件夹上传、文件/文件夹下载、新建文件夹、重命名、删除、传输队列、远程文件本地编辑、拖拽上传/移动。
 
 ### 设置与主题（P4 / P5）
@@ -74,7 +74,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - 新增主题的约定：在 `tokens.css` 追加完整的颜色 + 结构 token 块 → 在 `themes.ts` 注册（含 `group` 与 `family`）→ 需要结构差异再写 `skins/<族>.css` → 补 i18n 文案 → 跑对比度测试与截图脚本（`doc/themes/README.md`）。不要用组件内的 Tailwind 覆盖实现主题差异。
 - 设置面板：外观、终端外观（字体/字号/光标/回滚/行高）、命令片段管理、SSH 默认值、可配置快捷键、known_hosts 管理、恢复默认。
 - **会话日志**：设置 > 终端 开启并选择目录后，PTY 与 SSH 读循环把解码后的输出（含 ANSI 序列）追加写入 `会话名-时间.log`（`src-tauri/src/log_sink.rs`，`Arc<LogSink>` 挂在会话上，零额外 IPC）；日志路径在终端面板挂载时决定，自动重连续写同一文件，切换开关对活动会话即时生效。`session_logs_clear` 后端命令删除配置日志根（canonicalize 校验）下的顶层 `.log`，入口在设置 > 终端。
-- **敏感缓存保留**：终端快照（明文滚动缓冲，localStorage）超过 24 个会话按 LRU 淘汰（`terminalSnapshot.ts` 索引键），设置 > 终端 提供一键清除全部快照；远程编辑 scratch 副本随 watcher 退出删除并在启动时清理遗留。
+- **敏感缓存保留**：终端快照（明文滚动缓冲，localStorage）超过 24 个会话按 LRU 淘汰（`terminalSnapshot.ts` 索引键，索引随淘汰同步截断、写入时自愈陈旧条目），设置 > 终端 提供一键清除全部快照；快照范围切换时（含启动）由 `useTerminalSnapshotScope` 删除当前范围之外的旧快照（含已删除会话的遗留）；远程编辑 scratch 副本随 watcher 退出删除并在启动时清理遗留。
 - **凭据删除可观察**：`forgetSessionCredentials` 返回 `{ removed, failed }`，失败键写入持久化墓碑（`nexterm.pendingVaultDeletes.v1`）并在每次解锁后重试（`retryPendingVaultDeletions`），删除会话与快速连接改认证方式时失败弹警告。
 - **自动更新**：`tauri-plugin-updater` 已接线（capability `updater:default`；公钥与更新源在 `tauri.conf.json` 的 `plugins.updater`），设置 > 关于 提供「检查更新」。签名私钥在 `~/.tauri/nexterm-updater.key`（不进仓库），发布流程见 `doc/build.md`。
 
@@ -250,7 +250,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - [x] 递归传输、断点续传、暂停/取消/重试、冲突策略
 - [x] SSH 保活（30s / 3 次）、断线自动重连（指数退避）、断线后端口转发清理与会话状态回收
 - [x] 加密凭据保险库（主密码、Argon2id + AES-256-GCM、KDF 参数随文件持久化、异步命令 + 磁盘操作互斥）
-- [x] 会话导入（SSH config / MobaXterm / PuTTY）、v2 全字段 JSON 备份（Telnet/Serial/证书/ProxyJump/自定义 Shell 无损 round-trip，兼容 v1）、树形分组
+- [x] 会话导入（SSH config / MobaXterm / PuTTY）、v2 全字段 JSON 备份（Telnet/Serial/证书/ProxyJump/自定义 Shell 无损 round-trip，兼容 v1；v2 每项带 `sourceId`，导入时 ProxyJump 引用按 sourceId 重映射到 store 新分配的 session id，悬空引用丢弃）、树形分组
 - [x] 终端 WebLinks / Unicode11 / 选中即复制 / 滚动缓冲恢复
 - [x] i18n 骨架（中 / 英核心工作区）
 - [x] OpenSSH 证书认证、跳板机 / ProxyJump（单跳；SFTP 与端口转发复用隧道）
@@ -273,6 +273,7 @@ NexTerm 是一个基于 **Tauri 2.0** 的跨平台终端与远程管理应用，
 - [x] 依赖审计门禁（cargo audit + npm audit --omit=dev）与 SECURITY.md 漏洞披露流程
 - [x] 质量审计整改第一批：transport 连接表不变量与 Serial 广播、SFTP/ZMODEM/远程编辑失败路径 fail-closed、凭据删除墓碑重试、backup v2、设置迁移加固、根级/面板级 Error Boundary、de-slop 检查器增强（black/white + 原始 JSX 文案）、i18n 键使用扫描、敏感缓存保留与清理入口
 - [x] 质量审计整改第二批：SFTP 健康检查不再持锁等待 RTT（5s 信任窗 + 无锁探测）、sftp-transfer-done 按面板会话过滤并合并刷新、ssh 后端抽边界第一批（known_hosts 存储与编解码移入 ssh/host_keys.rs，14 个测试随迁）、SettingsWindow 抽边界第一批（known_hosts 卡片拆为展示组件）
+- [x] 质量审计整改第三批：远程编辑等待真实上传完成（`sftp_upload_and_wait`，非 transfer id）并补失败重试测试、scratch 所有权清理（stop 只取消不移除）、SFTP 探测失败的死缓存通道先失效再重建（`resolve_cached_channel`）、ZMODEM 拒绝后重置接收机与 scanner、backup v2 `sourceId` 与 ProxyJump 重映射、快照范围切换清理与 LRU 索引截断
 - [x] 产品决策落地：滚动缓冲快照改为三态范围设置（所有 / 仅本地（默认）/ 关闭，legacy 布尔迁移），ZMODEM 接收确认（`zmodemAutoReceive` 关闭时经 `BatchStartScanner` 在握手应答前拦截，复用主机密钥式 120s 超时对话框，拒绝发取消序列）
 - [ ] 拆分续批：XtermCanvas（建议边界：TransportAttempt 连接编排 → TerminalOutputPipeline 写队列/解析等待 → ResizeCoordinator，先补组件测试再动）；ssh/mod.rs 剩余（连接握手、SFTP 传输引擎、端口转发各成模块）；SettingsWindow 剩余（Vault、主题、片段各成卡片组件）
 - [ ] IPC Rust/TS 共享 schema 或生成绑定（消除手写字段与字符串枚举；需引入 schemars/ts-rs 或等价方案并评估构建链影响）
