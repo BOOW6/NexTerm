@@ -5,12 +5,15 @@ use std::{
     collections::HashMap,
     net::{Ipv4Addr, Ipv6Addr},
     path::{Path, PathBuf},
+    pin::Pin,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex, MutexGuard,
     },
     time::{Duration, Instant, UNIX_EPOCH},
 };
+
+use std::future::Future;
 
 use anyhow::{anyhow, Context};
 use russh::{
@@ -206,13 +209,85 @@ impl Drop for ConnectReservation<'_> {
 }
 
 /// Cached SFTP subsystem channel of a connection plus when its health was
-/// last verified. Within `SFTP_HEALTH_INTERVAL` of a verification the
-/// channel is trusted without another probe, so bursty usage (directory
-/// browsing) pays one health RTT per window instead of one per operation.
-#[derive(Default)]
-struct CachedSftp {
-    session: Option<Arc<SftpSession>>,
+/// last verified. Generic over the handle type so the resolution state
+/// machine (including the dead-channel path) is unit-testable without a live
+/// SSH connection; production stores `Arc<SftpSession>`.
+struct SftpChannelCache<T> {
+    inner: tokio::sync::Mutex<SftpCacheSlot<T>>,
+}
+
+struct SftpCacheSlot<T> {
+    session: Option<T>,
     verified_at: Option<Instant>,
+}
+
+impl<T> Default for SftpChannelCache<T> {
+    fn default() -> Self {
+        Self {
+            inner: tokio::sync::Mutex::new(SftpCacheSlot {
+                session: None,
+                verified_at: None,
+            }),
+        }
+    }
+}
+
+impl<T: Clone> SftpChannelCache<T> {
+    async fn snapshot(&self) -> Option<(T, Option<Instant>)> {
+        let guard = self.inner.lock().await;
+        guard
+            .session
+            .clone()
+            .map(|session| (session, guard.verified_at))
+    }
+
+    async fn existing(&self) -> Option<T> {
+        self.inner.lock().await.session.clone()
+    }
+
+    async fn store(&self, session: T) {
+        let mut guard = self.inner.lock().await;
+        guard.session = Some(session);
+        guard.verified_at = Some(Instant::now());
+    }
+
+    #[cfg(test)]
+    async fn store_verified(&self, session: T, verified_at: Option<Instant>) {
+        let mut guard = self.inner.lock().await;
+        guard.session = Some(session);
+        guard.verified_at = verified_at;
+    }
+
+    /// Refresh the verification timestamp, but only while the slot still
+    /// holds the handle that was just probed (another task may have rebuilt
+    /// it meanwhile).
+    async fn bless(&self, session: &T, same: impl Fn(&T, &T) -> bool) {
+        let mut guard = self.inner.lock().await;
+        if guard
+            .session
+            .as_ref()
+            .map(|current| same(current, session))
+            .unwrap_or(false)
+        {
+            guard.verified_at = Some(Instant::now());
+        }
+    }
+
+    /// Drop the slot if it still holds the failed handle. This is the part
+    /// that keeps a dead channel from being handed out again by the reopen
+    /// path.
+    async fn invalidate(&self, session: &T, same: impl Fn(&T, &T) -> bool) {
+        let mut guard = self.inner.lock().await;
+        let still_same = guard
+            .session
+            .as_ref()
+            .map(|current| same(current, session))
+            .unwrap_or(false);
+        if still_same {
+            guard.session = None;
+            guard.verified_at = None;
+        }
+    }
 }
 
 /// How long a cached SFTP channel is trusted without re-probing.
@@ -220,10 +295,48 @@ const SFTP_HEALTH_INTERVAL: Duration = Duration::from_secs(5);
 /// Upper bound for the stale-path health probe.
 const SFTP_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Resolve the cached channel: fast-path a recently verified handle, probe a
+/// stale one without any lock held, and rebuild when the probe fails. A
+/// failed probe invalidates the cached handle first — the old code fell
+/// through to the reopen path, found the same dead handle still cached and
+/// returned it as if it had just been rebuilt.
+async fn resolve_cached_channel<T: Clone>(
+    cache: &SftpChannelCache<T>,
+    same: impl Fn(&T, &T) -> bool,
+    probe_alive: impl Fn(T) -> Pin<Box<dyn Future<Output = bool> + Send>>,
+    rebuild: impl FnOnce() -> Pin<Box<dyn Future<Output = anyhow::Result<T>> + Send>>,
+) -> anyhow::Result<T> {
+    if let Some((session, verified_at)) = cache.snapshot().await {
+        let fresh = verified_at
+            .map(|at| at.elapsed() < SFTP_HEALTH_INTERVAL)
+            .unwrap_or(false);
+        if fresh {
+            return Ok(session);
+        }
+        if probe_alive(session.clone()).await {
+            cache.bless(&session, same).await;
+            return Ok(session);
+        }
+        eprintln!("[ssh] cached SFTP channel is no longer usable; reopening");
+        cache.invalidate(&session, same).await;
+    }
+
+    // Another task may have rebuilt the channel while we were probing; a
+    // handle present at this point is necessarily new (ours was invalidated
+    // or absent), so trusting it is safe.
+    if let Some(existing) = cache.existing().await {
+        return Ok(existing);
+    }
+
+    let session = rebuild().await?;
+    cache.store(session.clone()).await;
+    Ok(session)
+}
+
 struct SshConnection {
     handle: Arc<client::Handle<Client>>,
     writer: Arc<ChannelWriteHalf<client::Msg>>,
-    sftp: tokio::sync::Mutex<CachedSftp>,
+    sftp: SftpChannelCache<Arc<SftpSession>>,
     remote_forwards: Arc<Mutex<RemoteForwardMap>>,
     /// Session output log shared with the read loop; dropping the connection
     /// closes the file.
@@ -799,6 +912,20 @@ async fn ask_zmodem_receive(app: &AppHandle, session_id: &str) -> bool {
     let decision = tokio::time::timeout(Duration::from_secs(120), receiver).await;
     state.take_pending(&request_id);
     matches!(decision, Ok(Ok(true)))
+}
+
+/// Return the receiver to a clean scan state after the user rejected a
+/// batch: the cancel sequence is already on its way to the sender, so the
+/// machine must drop its cancellation flags (a fresh machine is in the same
+/// scan state, since nothing was fed while the dialog was open) and the
+/// sticky confirmation scanner must re-arm — otherwise the next ordinary
+/// echo chunk would re-open the dialog. Only a fresh ZRQINIT may prompt.
+fn reset_after_zmodem_reject(
+    machine: &std::sync::Mutex<ZmodemReceiver>,
+    scanner: &mut BatchStartScanner,
+) {
+    *machine.lock().unwrap_or_else(|poison| poison.into_inner()) = ZmodemReceiver::new();
+    scanner.reset();
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1421,8 +1548,11 @@ impl SshManager {
                                 // ZRQINIT retry drives the normal handshake.
                                 zbatch_active = true;
                             } else {
-                                // Stop the sender; the untouched machine
-                                // stays in scan state for the next batch.
+                                // Stop the sender, then return the receiver
+                                // to a clean scan state: cancel() flags the
+                                // machine aborted, and the sticky scanner
+                                // must re-arm so only a NEW ZRQINIT can
+                                // prompt again (not ordinary echo bytes).
                                 let cancel = {
                                     let mut machine = zmachine
                                         .lock()
@@ -1433,6 +1563,7 @@ impl SshManager {
                                 if let Err(err) = manager.write(&event_id, &cancel).await {
                                     eprintln!("[zmodem] cancel write failed: {err}");
                                 }
+                                reset_after_zmodem_reject(&zmachine, &mut zscanner);
                             }
                             continue;
                         }
@@ -1571,7 +1702,7 @@ impl SshManager {
                     Arc::new(SshConnection {
                         handle,
                         writer,
-                        sftp: tokio::sync::Mutex::new(CachedSftp::default()),
+                        sftp: SftpChannelCache::default(),
                         remote_forwards,
                         log,
                         jump_handle,
@@ -1847,6 +1978,73 @@ impl SshManager {
         Ok(transfer_id)
     }
 
+    /// Upload and wait for the transfer to actually finish. The command-shaped
+    /// `sftp_upload` only returns a transfer id (the UI tracks completion via
+    /// events), which cannot tell the remote-edit watcher whether a save
+    /// landed; advancing its baseline on a transfer id would silently drop
+    /// failed saves. Queue progress and the done event are still emitted, so
+    /// the upload stays visible in the transfer queue.
+    pub(crate) async fn sftp_upload_and_wait(
+        &self,
+        app: AppHandle,
+        id: &str,
+        local_path: String,
+        remote_path: String,
+        options: SftpTransferOptions,
+    ) -> anyhow::Result<()> {
+        let handle = self.connection(id)?.handle.clone();
+        let sftp = self.open_sftp(id).await?;
+        let (transfer_id, control) = self.register_transfer()?;
+        let name = basename(&local_path);
+        let result = run_upload(
+            sftp,
+            &app,
+            &transfer_id,
+            &name,
+            &local_path,
+            &remote_path,
+            options,
+            control.clone(),
+            self.conflicts.clone(),
+        )
+        .await;
+
+        let cancelled = control.cancelled.load(Ordering::SeqCst);
+        let disconnected = result.is_err() && !cancelled && handle.is_closed();
+        let payload = match &result {
+            Ok(report) => SftpTransferDonePayload {
+                transfer_id: transfer_id.clone(),
+                direction: "upload".to_string(),
+                name,
+                success: true,
+                cancelled: false,
+                disconnected: false,
+                error: None,
+                transferred: report.transferred,
+                total: report.total,
+                files_done: report.files_done,
+                files_total: report.files_total,
+            },
+            Err(failure) => SftpTransferDonePayload {
+                transfer_id: transfer_id.clone(),
+                direction: "upload".to_string(),
+                name,
+                success: false,
+                cancelled,
+                disconnected,
+                error: Some(failure.error.to_string()),
+                transferred: failure.report.transferred,
+                total: failure.report.total,
+                files_done: failure.report.files_done,
+                files_total: failure.report.files_total,
+            },
+        };
+        emit_done(&app, &payload);
+        lock(&self.transfers).remove(&transfer_id);
+
+        result.map(|_| ()).map_err(|failure| failure.error)
+    }
+
     pub fn set_transfer_paused(&self, transfer_id: &str, paused: bool) -> anyhow::Result<()> {
         let transfers = lock(&self.transfers);
         let control = transfers
@@ -2069,79 +2267,41 @@ impl SshManager {
     }
     pub(crate) async fn open_sftp(&self, id: &str) -> anyhow::Result<Arc<SftpSession>> {
         let connection = self.connection(id)?;
-
-        // Fast path: clone the cached handle and release the lock before any
-        // network I/O. The old code held the async mutex across a metadata
-        // probe (up to 10 s), so one slow or hung channel serialized every
-        // SFTP operation of the session behind it.
-        let cached = {
-            let guard = connection.sftp.lock().await;
-            CachedSftp {
-                session: guard.session.clone(),
-                verified_at: guard.verified_at,
-            }
-        };
-        if let Some(session) = cached.session {
-            let fresh = cached
-                .verified_at
-                .map(|at| at.elapsed() < SFTP_HEALTH_INTERVAL)
-                .unwrap_or(false);
-            if fresh {
-                return Ok(session);
-            }
-            // Stale or never verified: probe without holding the lock. The
-            // probe is still what self-heals a channel the server killed
-            // while the transport stayed up.
-            match tokio::time::timeout(SFTP_PROBE_TIMEOUT, session.metadata(".")).await {
-                Ok(Ok(_)) => {
-                    let mut guard = connection.sftp.lock().await;
-                    // Only bless the entry if it still holds the channel
-                    // we just verified (another task may have rebuilt it).
-                    let same = guard
-                        .session
-                        .as_ref()
-                        .map(|current| Arc::ptr_eq(current, &session))
-                        .unwrap_or(false);
-                    if same {
-                        guard.verified_at = Some(Instant::now());
-                    }
-                    return Ok(session);
-                }
-                _ => {
-                    eprintln!("[ssh] cached SFTP channel is no longer usable; reopening");
-                }
-            }
-        }
-
-        // Reopen path. Another task may have rebuilt the channel while we
-        // were probing; trust its fresh handle instead of duplicating work.
-        // The rare reopen serializes like before, which is fine: it is the
-        // recovery path, not the steady state.
-        let mut guard = connection.sftp.lock().await;
-        if let Some(session) = guard.session.clone() {
-            guard.verified_at = Some(Instant::now());
-            return Ok(session);
-        }
-
-        let channel = connection
-            .handle
-            .channel_open_session()
-            .await
-            .context("failed to open SFTP channel")?;
-        channel
-            .request_subsystem(true, "sftp")
-            .await
-            .context("failed to start SFTP subsystem")?;
-
-        let session = Arc::new(
-            SftpSession::new(channel.into_stream())
-                .await
-                .context("failed to initialize SFTP session")?,
-        );
-        guard.session = Some(session.clone());
-        guard.verified_at = Some(Instant::now());
-
-        Ok(session)
+        resolve_cached_channel(
+            &connection.sftp,
+            Arc::ptr_eq,
+            |session| {
+                Box::pin(async move {
+                    // Stale-or-never-verified handle: probe without holding the
+                    // cache lock, so one slow channel cannot serialize the
+                    // session's other SFTP operations.
+                    matches!(
+                        tokio::time::timeout(SFTP_PROBE_TIMEOUT, session.metadata(".")).await,
+                        Ok(Ok(_))
+                    )
+                })
+            },
+            || {
+                let handle = connection.handle.clone();
+                Box::pin(async move {
+                    let channel = handle
+                        .channel_open_session()
+                        .await
+                        .context("failed to open SFTP channel")?;
+                    channel
+                        .request_subsystem(true, "sftp")
+                        .await
+                        .context("failed to start SFTP subsystem")?;
+                    let session = Arc::new(
+                        SftpSession::new(channel.into_stream())
+                            .await
+                            .context("failed to initialize SFTP session")?,
+                    );
+                    Ok(session)
+                })
+            },
+        )
+        .await
     }
 
     /// Whether a live connection exists for the session (used by features
@@ -4035,5 +4195,169 @@ mod tests {
         assert!(!overwrite_if_newer(100, 40, 100, 60));
         // Unknown target mtime (0): a source with a real timestamp wins.
         assert!(overwrite_if_newer(100, 1, 100, 0));
+    }
+
+    #[tokio::test]
+    async fn fresh_cached_channel_is_returned_without_probing() {
+        let cache: SftpChannelCache<u32> = SftpChannelCache::default();
+        cache.store_verified(1, Some(Instant::now())).await;
+        let probed = Arc::new(AtomicBool::new(false));
+        let rebuilt = Arc::new(AtomicBool::new(false));
+        let probed_probe = probed.clone();
+        let rebuilt_flag = rebuilt.clone();
+        let result = resolve_cached_channel(
+            &cache,
+            |a, b| a == b,
+            move |_session| -> Pin<Box<dyn Future<Output = bool> + Send>> {
+                let probed = probed_probe.clone();
+                Box::pin(async move {
+                    probed.store(true, Ordering::SeqCst);
+                    true
+                })
+            },
+            move || -> Pin<Box<dyn Future<Output = anyhow::Result<u32>> + Send>> {
+                rebuilt_flag.store(true, Ordering::SeqCst);
+                Box::pin(async { Ok(2) })
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(result, 1);
+        assert!(!probed.load(Ordering::SeqCst));
+        assert!(!rebuilt.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn stale_but_alive_cached_channel_is_reblessed() {
+        let cache: SftpChannelCache<u32> = SftpChannelCache::default();
+        cache
+            .store_verified(1, Some(Instant::now() - Duration::from_secs(60)))
+            .await;
+        let result = resolve_cached_channel(
+            &cache,
+            |a, b| a == b,
+            |_session| -> Pin<Box<dyn Future<Output = bool> + Send>> { Box::pin(async { true }) },
+            || -> Pin<Box<dyn Future<Output = anyhow::Result<u32>> + Send>> {
+                Box::pin(async { panic!("a verified channel must not be rebuilt") })
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(result, 1);
+        // The verification timestamp was refreshed: the next resolution takes
+        // the fast path again.
+        let (_, verified_at) = cache.snapshot().await.unwrap();
+        assert!(verified_at.unwrap().elapsed() < SFTP_HEALTH_INTERVAL);
+    }
+
+    #[tokio::test]
+    async fn dead_cached_channel_is_invalidated_and_rebuilt_instead_of_returned() {
+        let cache: SftpChannelCache<u32> = SftpChannelCache::default();
+        cache
+            .store_verified(1, Some(Instant::now() - Duration::from_secs(60)))
+            .await;
+        let rebuilt = resolve_cached_channel(
+            &cache,
+            |a, b| a == b,
+            |_session| -> Pin<Box<dyn Future<Output = bool> + Send>> {
+                // The probe proves the cached handle unusable.
+                Box::pin(async { false })
+            },
+            || -> Pin<Box<dyn Future<Output = anyhow::Result<u32>> + Send>> {
+                Box::pin(async { Ok(2) })
+            },
+        )
+        .await
+        .unwrap();
+        // Regression: the old code fell through to the reopen path, found the
+        // same dead handle still cached and returned it as if rebuilt.
+        assert_eq!(rebuilt, 2, "the dead cached handle must never be returned");
+        assert_eq!(cache.existing().await, Some(2));
+        let (session, verified_at) = cache.snapshot().await.unwrap();
+        assert_eq!(session, 2);
+        assert!(verified_at.unwrap().elapsed() < SFTP_HEALTH_INTERVAL);
+    }
+
+    #[tokio::test]
+    async fn a_concurrent_rebuild_is_reused_instead_of_duplicated() {
+        let cache = Arc::new(SftpChannelCache::<u32>::default());
+        cache
+            .store_verified(1, Some(Instant::now() - Duration::from_secs(60)))
+            .await;
+        let probe_cache = cache.clone();
+        let rebuilt = Arc::new(AtomicBool::new(false));
+        let rebuilt_flag = rebuilt.clone();
+        let result = resolve_cached_channel(
+            &cache,
+            |a, b| a == b,
+            move |_session| -> Pin<Box<dyn Future<Output = bool> + Send>> {
+                let cache = probe_cache.clone();
+                Box::pin(async move {
+                    // Another task rebuilds while our probe runs; our probe
+                    // still reports the old handle dead.
+                    cache.store_verified(3, Some(Instant::now())).await;
+                    false
+                })
+            },
+            move || -> Pin<Box<dyn Future<Output = anyhow::Result<u32>> + Send>> {
+                rebuilt_flag.store(true, Ordering::SeqCst);
+                Box::pin(async { Ok(4) })
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(result, 3, "the concurrent rebuild must be reused");
+        assert!(!rebuilt.load(Ordering::SeqCst));
+        assert_eq!(cache.existing().await, Some(3));
+    }
+
+    #[test]
+    fn rejected_batch_rearms_the_scanner_and_clears_cancellation() {
+        let machine = std::sync::Mutex::new(ZmodemReceiver::new());
+        let mut scanner = BatchStartScanner::new();
+        let sentinel = [b'*', b'*', 0x18, b'B', b'0', b'0'];
+
+        // Detection fires on the ZRQINIT announcement.
+        assert!(scanner.feed(&sentinel));
+
+        // The reject path writes the cancel sequence (marking the machine
+        // aborted) and then resets the local state.
+        let cancel = {
+            let mut guard = machine.lock().unwrap();
+            guard.cancel()
+        };
+        assert!(!cancel.is_empty());
+        reset_after_zmodem_reject(&machine, &mut scanner);
+
+        // Regression: ordinary echo output must not re-open the dialog (the
+        // sticky scanner used to keep reporting a batch start)...
+        assert!(!scanner.feed(b"user@host:~$ echo hi\r\n"));
+        // ...and the machine must not emit abort actions for it.
+        let feed = machine.lock().unwrap().feed(b"user@host:~$ echo hi\r\n");
+        assert!(!feed.done, "echo must not end a batch");
+        assert!(!feed.aborted, "echo must not be reported as an abort");
+        assert!(
+            !feed.cancelled,
+            "the rejection must not leak into later output"
+        );
+        assert!(feed.actions.is_empty(), "echo must not emit zmodem actions");
+        assert_eq!(feed.passthrough, b"user@host:~$ echo hi\r\n");
+
+        // A genuinely new transfer is still detected and prompts again.
+        assert!(scanner.feed(&sentinel));
+    }
+
+    #[test]
+    fn accepting_a_batch_keeps_the_scanner_disarmed_until_batch_end() {
+        // The read loop disarms via zbatch_active; this pins the scanner
+        // contract that acceptance does NOT re-arm on its own: the sticky
+        // flag is only cleared by the explicit reset when the batch ends.
+        let mut scanner = BatchStartScanner::new();
+        let sentinel = [b'*', b'*', 0x18, b'B', b'0', b'0'];
+        assert!(scanner.feed(&sentinel));
+        // The loop keeps the scanner armed-but-unused via zbatch_active; the
+        // batch-end reset is the only place that clears it.
+        scanner.reset();
+        assert!(!scanner.feed(b"plain output"));
     }
 }

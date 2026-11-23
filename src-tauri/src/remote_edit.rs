@@ -12,8 +12,10 @@
 //! not linger in the app data dir.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -40,11 +42,117 @@ const QUIET_PERIOD: Duration = Duration::from_millis(1500);
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(60);
 
 /// Next delay before retrying a failed sync.
-fn next_retry_delay(current: Duration) -> Duration {
-    (current * 2).min(MAX_RETRY_DELAY)
+fn next_retry_delay(current: Duration, max: Duration) -> Duration {
+    (current * 2).min(max)
 }
 
 type Baseline = (u64, Option<SystemTime>);
+
+/// Timing of the watch loop; parameterized so tests can drive the real loop
+/// without waiting seconds per iteration.
+#[derive(Clone, Copy)]
+struct WatchTiming {
+    poll: Duration,
+    quiet: Duration,
+    max_retry: Duration,
+}
+
+const WATCH_TIMING: WatchTiming = WatchTiming {
+    poll: POLL_INTERVAL,
+    quiet: QUIET_PERIOD,
+    max_retry: MAX_RETRY_DELAY,
+};
+
+/// Observable outcomes of one watch-loop iteration.
+enum WatchEvent {
+    Synced,
+    Error(String),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum WatchExit {
+    Cancelled,
+    ScratchGone,
+    SessionGone,
+}
+
+type UploadFuture = Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
+
+/// The watcher state machine: poll the scratch copy, wait for writes to
+/// settle, upload, and advance the baseline only after a completed upload.
+/// Injected effects (upload, event sink, liveness probe) make the retry
+/// contract testable without a live SSH session or a Tauri runtime.
+async fn run_watch_loop<U, N, C>(
+    scratch: &PathBuf,
+    mut baseline: Baseline,
+    cancel: &Arc<AtomicBool>,
+    timing: WatchTiming,
+    mut upload: U,
+    mut notify: N,
+    connection_alive: C,
+) -> WatchExit
+where
+    U: FnMut(PathBuf) -> UploadFuture,
+    N: FnMut(WatchEvent),
+    C: Fn() -> bool,
+{
+    let mut interval = tokio::time::interval(timing.poll);
+    interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    let mut retry_delay = timing.poll;
+
+    loop {
+        interval.tick().await;
+        if cancel.load(Ordering::SeqCst) {
+            return WatchExit::Cancelled;
+        }
+        // The scratch file is the source of truth for the watcher's lifetime:
+        // once it disappears (cleanup, editor moved it) there is nothing to sync.
+        let Some(current) = stat_baseline(scratch).await else {
+            return WatchExit::ScratchGone;
+        };
+        if current == baseline {
+            continue;
+        }
+        tokio::time::sleep(timing.quiet).await;
+        if cancel.load(Ordering::SeqCst) {
+            return WatchExit::Cancelled;
+        }
+        let Some(settled) = stat_baseline(scratch).await else {
+            return WatchExit::ScratchGone;
+        };
+        if settled != current {
+            // Still being written; the next poll sees the final state.
+            continue;
+        }
+
+        if !connection_alive() {
+            return WatchExit::SessionGone;
+        }
+        match upload(scratch.clone()).await {
+            Ok(()) => {
+                // Only a completed upload advances the baseline: the file
+                // stays dirty across failures so a later poll retries it.
+                baseline = settled;
+                retry_delay = timing.poll;
+                notify(WatchEvent::Synced);
+            }
+            Err(error) => {
+                notify(WatchEvent::Error(error));
+                if !connection_alive() {
+                    return WatchExit::SessionGone;
+                }
+                // Back off so a persistent failure does not fire an error
+                // event every couple of seconds; cancel is honoured between
+                // attempts.
+                tokio::time::sleep(retry_delay).await;
+                retry_delay = next_retry_delay(retry_delay, timing.max_retry);
+                if cancel.load(Ordering::SeqCst) {
+                    return WatchExit::Cancelled;
+                }
+            }
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct RemoteEditManager {
@@ -52,15 +160,22 @@ pub struct RemoteEditManager {
 }
 
 impl RemoteEditManager {
-    fn stop(&self, key: &str) {
+    /// Cancel the watcher registered for `key`, if any. The entry is NOT
+    /// removed here: the running task owns the scratch copy and must be able
+    /// to prove ownership on exit (removing the entry up front made the task
+    /// fail its ownership check, so an explicitly stopped edit leaked its
+    /// scratch copy). Returns whether a watcher was signalled.
+    fn stop(&self, key: &str) -> bool {
         if let Some(cancel) = self
             .watchers
             .lock()
             .unwrap_or_else(|poison| poison.into_inner())
-            .remove(key)
+            .get(key)
         {
             cancel.store(true, Ordering::SeqCst);
+            return true;
         }
+        false
     }
 
     /// Stop a watcher only when `cancel` is the token currently registered for
@@ -132,6 +247,16 @@ fn scratch_dir(app: &AppHandle, id: &str, remote_path: &str) -> anyhow::Result<P
         .join(format!("{:016x}", hasher.finish())))
 }
 
+/// Exact scratch file path for one (session, remote path). Deterministic so
+/// both the open and the stop path can address the same copy.
+fn scratch_path(app: &AppHandle, id: &str, remote_path: &str) -> anyhow::Result<PathBuf> {
+    let file_name = remote_path
+        .rsplit('/')
+        .find(|part| !part.is_empty())
+        .unwrap_or("file");
+    Ok(scratch_dir(app, id, remote_path)?.join(sanitize_component(file_name)))
+}
+
 async fn download_to(
     sftp: &SftpSession,
     remote_path: &str,
@@ -185,100 +310,80 @@ async fn watch_task(
     remote_path: String,
     scratch: PathBuf,
     cancel: Arc<AtomicBool>,
-    mut baseline: Baseline,
+    baseline: Baseline,
 ) {
     let key = edit_key(&id, &remote_path);
-    let mut interval = tokio::time::interval(POLL_INTERVAL);
-    interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
-    let mut retry_delay = POLL_INTERVAL;
+    let name = scratch
+        .file_name()
+        .map(|value| value.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "file".to_string());
 
-    loop {
-        interval.tick().await;
-        if cancel.load(Ordering::SeqCst) {
-            break;
-        }
-        // The scratch file is the source of truth for the watcher's lifetime:
-        // once it disappears (cleanup, editor moved it) there is nothing to sync.
-        let Some(current) = stat_baseline(&scratch).await else {
-            break;
-        };
-        if current == baseline {
-            continue;
-        }
-        tokio::time::sleep(QUIET_PERIOD).await;
-        if cancel.load(Ordering::SeqCst) {
-            break;
-        }
-        let Some(settled) = stat_baseline(&scratch).await else {
-            break;
-        };
-        if settled != current {
-            // Still being written; the next poll sees the final state.
-            continue;
-        }
-
-        let ssh = app.state::<SshManager>();
-        if !ssh.has_connection(&id) {
-            break;
-        }
-        let options = SftpTransferOptions {
-            recursive: false,
-            resume: false,
-            conflict: ConflictPolicy::Overwrite,
-        };
-        let name = scratch
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "file".to_string());
-        match ssh
-            .sftp_upload(
+    let upload_app = app.clone();
+    let upload_id = id.clone();
+    let upload_remote = remote_path.clone();
+    let upload = move |path: PathBuf| -> UploadFuture {
+        let app = upload_app.clone();
+        let id = upload_id.clone();
+        let remote = upload_remote.clone();
+        Box::pin(async move {
+            let ssh = app.state::<SshManager>();
+            ssh.sftp_upload_and_wait(
                 app.clone(),
                 &id,
-                scratch.to_string_lossy().into_owned(),
-                remote_path.clone(),
-                options,
+                path.to_string_lossy().into_owned(),
+                remote,
+                SftpTransferOptions {
+                    recursive: false,
+                    resume: false,
+                    conflict: ConflictPolicy::Overwrite,
+                },
             )
             .await
-        {
-            Ok(_) => {
-                // Only a successful sync advances the baseline. Advancing it
-                // before the upload made the next poll see "no local change"
-                // and never retry a failed save.
-                baseline = settled;
-                retry_delay = POLL_INTERVAL;
-                let _ = app.emit(
-                    "remote-edit-synced",
-                    serde_json::json!({
-                        "sessionId": id,
-                        "remotePath": remote_path,
-                        "name": name,
-                    }),
-                );
-            }
-            Err(err) => {
-                let _ = app.emit(
-                    "remote-edit-error",
-                    serde_json::json!({
-                        "sessionId": id,
-                        "remotePath": remote_path,
-                        "name": name,
-                        "error": err.to_string(),
-                    }),
-                );
-                if !ssh.has_connection(&id) {
-                    break;
-                }
-                // The file stays dirty and is retried on a later poll; back
-                // off so a persistent failure does not fire an error event
-                // every couple of seconds.
-                tokio::time::sleep(retry_delay).await;
-                retry_delay = next_retry_delay(retry_delay);
-                if cancel.load(Ordering::SeqCst) {
-                    break;
-                }
-            }
+            .map_err(|error| error.to_string())
+        })
+    };
+
+    let notify_app = app.clone();
+    let notify_id = id.clone();
+    let notify_remote = remote_path.clone();
+    let notify = move |event: WatchEvent| match event {
+        WatchEvent::Synced => {
+            let _ = notify_app.emit(
+                "remote-edit-synced",
+                serde_json::json!({
+                    "sessionId": notify_id,
+                    "remotePath": notify_remote,
+                    "name": name.clone(),
+                }),
+            );
         }
-    }
+        WatchEvent::Error(error) => {
+            let _ = notify_app.emit(
+                "remote-edit-error",
+                serde_json::json!({
+                    "sessionId": notify_id,
+                    "remotePath": notify_remote,
+                    "name": name.clone(),
+                    "error": error,
+                }),
+            );
+        }
+    };
+
+    let alive_app = app.clone();
+    let alive_id = id.clone();
+    let connection_alive = move || alive_app.state::<SshManager>().has_connection(&alive_id);
+
+    let _exit = run_watch_loop(
+        &scratch,
+        baseline,
+        &cancel,
+        WATCH_TIMING,
+        upload,
+        notify,
+        connection_alive,
+    )
+    .await;
 
     if let Some(manager) = app.try_state::<RemoteEditManager>() {
         let was_current = manager.stop_if_current(&key, &cancel);
@@ -325,7 +430,7 @@ pub async fn remote_edit_open(
     }
     let key = edit_key(&id, &remote_path);
     // Re-opening the same file restarts the watcher on a fresh download.
-    edits.stop(&key);
+    let _ = edits.stop(&key);
 
     let sftp = ssh.open_sftp(&id).await.map_err(|err| err.to_string())?;
     let metadata = sftp
@@ -336,13 +441,7 @@ pub async fn remote_edit_open(
         return Err("cannot edit a directory".to_string());
     }
 
-    let file_name = remote_path
-        .rsplit('/')
-        .find(|part| !part.is_empty())
-        .unwrap_or("file");
-    let scratch = scratch_dir(&app, &id, &remote_path)
-        .map_err(|err| err.to_string())?
-        .join(sanitize_component(file_name));
+    let scratch = scratch_path(&app, &id, &remote_path).map_err(|err| err.to_string())?;
 
     download_to(&sftp, &remote_path, &scratch)
         .await
@@ -389,16 +488,30 @@ pub async fn remote_edit_open(
 }
 
 /// Stop watching a file (also used when the caller knows the edit is done).
-/// The watcher deletes its scratch copy on exit, so remote content does not
-/// stay in the app data dir after the edit ends.
+/// A stopped watcher deletes its scratch copy on exit; when no watcher owns
+/// the copy anymore (it already exited, or the pair was never opened) this
+/// command removes the copy directly, so remote content never stays behind
+/// in the app data dir after the edit ends.
 #[tauri::command]
 pub async fn remote_edit_stop(
     app: AppHandle,
     id: String,
     remote_path: String,
 ) -> Result<(), String> {
-    if let Some(manager) = app.try_state::<RemoteEditManager>() {
-        manager.stop(&edit_key(&id, &remote_path));
+    let stopped = app
+        .try_state::<RemoteEditManager>()
+        .map(|manager| manager.stop(&edit_key(&id, &remote_path)))
+        .unwrap_or(false);
+    if !stopped {
+        if let Ok(scratch) = scratch_path(&app, &id, &remote_path) {
+            let _ = tokio::fs::remove_file(&scratch).await;
+            if let Some(hash_dir) = scratch.parent() {
+                let _ = tokio::fs::remove_dir(hash_dir).await;
+                if let Some(session_dir) = hash_dir.parent() {
+                    let _ = tokio::fs::remove_dir(session_dir).await;
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -406,19 +519,23 @@ pub async fn remote_edit_stop(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicUsize;
 
     #[test]
     fn retry_backoff_doubles_up_to_the_cap() {
         let mut delay = POLL_INTERVAL;
         let mut steps = 0;
         while delay < MAX_RETRY_DELAY {
-            delay = next_retry_delay(delay);
+            delay = next_retry_delay(delay, MAX_RETRY_DELAY);
             steps += 1;
         }
         assert_eq!(delay, MAX_RETRY_DELAY);
         // 2s -> 4s -> 8s -> 16s -> 32s -> 60s cap: the ladder stays short.
         assert!(steps <= 5, "backoff reached the cap in {steps} steps");
-        assert_eq!(next_retry_delay(MAX_RETRY_DELAY), MAX_RETRY_DELAY);
+        assert_eq!(
+            next_retry_delay(MAX_RETRY_DELAY, MAX_RETRY_DELAY),
+            MAX_RETRY_DELAY
+        );
     }
 
     #[test]
@@ -434,5 +551,171 @@ mod tests {
         assert_ne!(first, edit_key("sess", "/a/two.txt"));
         assert_eq!(first, edit_key("sess", "/a/one.txt"));
         assert_ne!(first, edit_key("sess2", "/a/one.txt"));
+    }
+
+    #[test]
+    fn stopping_a_watcher_keeps_ownership_with_the_task() {
+        let manager = RemoteEditManager::default();
+        let token = Arc::new(AtomicBool::new(false));
+        manager
+            .watchers
+            .lock()
+            .unwrap()
+            .insert("k".to_string(), token.clone());
+
+        // stop() only cancels; the running task stays registered so it can
+        // prove ownership on exit and delete the scratch copy. Removing the
+        // entry here (the old behaviour) made the task skip that cleanup and
+        // leak the copy until the next startup sweep.
+        assert!(manager.stop("k"));
+        assert!(token.load(Ordering::SeqCst));
+        assert!(manager.stop_if_current("k", &token));
+        assert!(!manager.stop("k"));
+    }
+
+    #[test]
+    fn a_reopened_watcher_owns_the_scratch() {
+        let manager = RemoteEditManager::default();
+        let old = Arc::new(AtomicBool::new(false));
+        let fresh = Arc::new(AtomicBool::new(false));
+        manager
+            .watchers
+            .lock()
+            .unwrap()
+            .insert("k".to_string(), old.clone());
+        assert!(manager.stop("k"));
+        manager
+            .watchers
+            .lock()
+            .unwrap()
+            .insert("k".to_string(), fresh.clone());
+
+        // The old task exits later: it must not delete the new download.
+        assert!(!manager.stop_if_current("k", &old));
+        assert!(manager.stop_if_current("k", &fresh));
+    }
+
+    fn watch_timing() -> WatchTiming {
+        WatchTiming {
+            poll: Duration::from_millis(5),
+            quiet: Duration::from_millis(2),
+            max_retry: Duration::from_millis(10),
+        }
+    }
+
+    async fn wait_until(mut condition: impl FnMut() -> bool) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while !condition() {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "condition timed out"
+            );
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_upload_stays_dirty_and_is_retried_until_success() {
+        let dir = tempfile::tempdir().unwrap();
+        let scratch = dir.path().join("file.txt");
+        std::fs::write(&scratch, b"v1").unwrap();
+        let baseline = stat_baseline(&scratch).await.unwrap();
+        // A different length guarantees the change is visible even on
+        // filesystems with coarse mtime granularity.
+        std::fs::write(&scratch, b"version-2").unwrap();
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_upload = attempts.clone();
+        let upload = move |_path: PathBuf| -> UploadFuture {
+            let attempt = attempts_upload.fetch_add(1, Ordering::SeqCst);
+            let fail = attempt == 0;
+            Box::pin(async move {
+                if fail {
+                    Err("disk full".to_string())
+                } else {
+                    Ok(())
+                }
+            })
+        };
+        let synced = Arc::new(AtomicUsize::new(0));
+        let synced_notify = synced.clone();
+        let notify = move |event: WatchEvent| {
+            if matches!(event, WatchEvent::Synced) {
+                synced_notify.fetch_add(1, Ordering::SeqCst);
+            }
+        };
+        let cancel = Arc::new(AtomicBool::new(false));
+        let task = tokio::spawn({
+            let scratch = scratch.clone();
+            let cancel = cancel.clone();
+            async move {
+                run_watch_loop(
+                    &scratch,
+                    baseline,
+                    &cancel,
+                    watch_timing(),
+                    upload,
+                    notify,
+                    || true,
+                )
+                .await
+            }
+        });
+
+        // The first real upload fails. The file stays dirty with no local
+        // change in between, so the retry proves the baseline was not
+        // advanced on a mere transfer id; the second attempt succeeds.
+        wait_until(|| attempts.load(Ordering::SeqCst) >= 2).await;
+        wait_until(|| synced.load(Ordering::SeqCst) == 1).await;
+
+        // Success advanced the baseline: no further attempts while the file
+        // stays unchanged.
+        tokio::time::sleep(Duration::from_millis(40)).await;
+        assert_eq!(
+            attempts.load(Ordering::SeqCst),
+            2,
+            "a completed sync must not be re-uploaded"
+        );
+
+        // A fresh edit triggers exactly one more upload.
+        std::fs::write(&scratch, b"version-333").unwrap();
+        wait_until(|| attempts.load(Ordering::SeqCst) >= 3).await;
+
+        cancel.store(true, Ordering::SeqCst);
+        assert_eq!(task.await.unwrap(), WatchExit::Cancelled);
+        assert_eq!(synced.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn losing_the_connection_ends_the_watch_without_uploading() {
+        let dir = tempfile::tempdir().unwrap();
+        let scratch = dir.path().join("file.txt");
+        std::fs::write(&scratch, b"v1").unwrap();
+        let baseline = stat_baseline(&scratch).await.unwrap();
+        std::fs::write(&scratch, b"version-2").unwrap();
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_upload = attempts.clone();
+        let upload = move |_path: PathBuf| -> UploadFuture {
+            attempts_upload.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(()) })
+        };
+        let cancel = Arc::new(AtomicBool::new(false));
+        let exit = tokio::time::timeout(
+            Duration::from_secs(5),
+            run_watch_loop(
+                &scratch,
+                baseline,
+                &cancel,
+                watch_timing(),
+                upload,
+                |_event| {},
+                || false,
+            ),
+        )
+        .await
+        .expect("watch loop must stop when the session is gone");
+        assert_eq!(exit, WatchExit::SessionGone);
+        assert_eq!(attempts.load(Ordering::SeqCst), 0);
     }
 }
