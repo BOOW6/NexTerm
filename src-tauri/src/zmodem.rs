@@ -293,7 +293,12 @@ impl ZmodemReceiver {
         }
 
         if self.h_phase == HPhase::HexEol {
-            if matches!(b, 0x0D | 0x0A | 0x11) {
+            // Hex-header trailer. Real sz sends CR, LF-with-high-bit (0x8A),
+            // XON; the high bit protects the line ending from tty processing.
+            // Accepting only the plain bytes made the parser treat 0x8A as
+            // terminal output, drop back to Scan and pass the whole ZFILE
+            // frame through, so every receive stalled after the handshake.
+            if matches!(b, 0x0D | 0x0A | 0x11 | 0x8D | 0x8A | 0x91) {
                 return false;
             }
             self.h_phase = HPhase::Pads;
@@ -369,6 +374,13 @@ impl ZmodemReceiver {
             // Binary headers start "ZPAD ZDLE", hex headers "ZPAD ZPAD ZDLE".
             // Any ZPAD arms the parser; the ZDLE after it opens the variant.
             HPhase::Pads => {
+                // Inter-frame XON/XOFF padding (sz emits XON after a
+                // subpacket). Treating it as a failed header candidate used
+                // to drop the parser back to Scan, after which every
+                // following frame leaked to the terminal as text.
+                if matches!(b, 0x11 | 0x13) {
+                    return false;
+                }
                 self.h_raw.push(b);
                 if b == ZPAD {
                     self.h_pads = 1;
@@ -798,15 +810,17 @@ fn parse_file_info(payload: &[u8]) -> (String, Option<u64>) {
     (name, size)
 }
 
-/// ZMODEM CRC-16: CCITT table walk (`crc >> 8 ^ table[(crc ^ byte) & 0xff]`,
-/// poly 0x1021, init 0) finalized by feeding two zero bytes.
+/// ZMODEM CRC-16 (CRC-16/XMODEM): poly 0x1021, init 0, MSB-first update,
+/// no final XOR and no trailing zero bytes. The historical implementation
+/// combined an MSB-first table with a reflected update and fed two zero
+/// bytes; real sz rejects such heads with ZNAK, so every receive stalled
+/// at the handshake.
 pub fn crc16(data: &[u8]) -> u16 {
     let mut crc: u16 = 0;
     for &b in data {
-        crc = (crc >> 8) ^ CRC16_TABLE[((crc ^ b as u16) & 0xFF) as usize];
+        crc = (crc << 8) ^ CRC16_TABLE[(((crc >> 8) as u8) ^ b) as usize];
     }
-    crc = (crc >> 8) ^ CRC16_TABLE[(crc & 0xFF) as usize];
-    (crc >> 8) ^ CRC16_TABLE[(crc & 0xFF) as usize]
+    crc
 }
 
 const CRC16_TABLE: [u16; 256] = build_crc16_table();

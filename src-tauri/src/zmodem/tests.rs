@@ -445,3 +445,127 @@ mod batch_start_scanner {
         }
     }
 }
+
+mod crc_interop {
+    use super::super::{crc16, crc32, hex_header, ZDLE, ZHEX, ZPAD};
+
+    #[test]
+    fn crc16_matches_the_xmodem_reference_vector() {
+        // CRC-16/XMODEM of "123456789" is 0x31C3. The previous reflected
+        // implementation produced 0x6C0D, so no real sz ever accepted a
+        // header from this receiver (it answered ZNAK instead).
+        assert_eq!(crc16(b"123456789"), 0x31C3);
+        assert_eq!(crc16(&[0, 0, 0, 0, 0]), 0);
+    }
+
+    #[test]
+    fn crc32_matches_the_reference_vector() {
+        assert_eq!(crc32(b"123456789"), 0xCBF43926);
+    }
+
+    #[test]
+    fn zrinit_header_pins_the_interoperable_wire_format() {
+        // type 1 (ZRINIT), flags CANFDX|CANOVIO = 3, CRC 0x9A32.
+        let header = hex_header(1, 3);
+        let mut expected = vec![ZPAD, ZPAD, ZDLE, ZHEX];
+        expected.extend_from_slice(b"01000000039a32\r\n\x11");
+        assert_eq!(header, expected);
+    }
+}
+
+mod real_sz_frames {
+    use super::super::{Action, ZmodemReceiver};
+
+    /// Bytes captured from lrzsz `sz small.txt` on Alpine: ZRQINIT hex
+    /// header (CR + high-bit LF + XON trailer), then the ZFILE binary
+    /// header and its Fileinfo subpacket, up to the point where sz waits
+    /// for our ZRPOS.
+    const CAPTURE_HEX: &str = "2a2a184230303030303030303030303030300d8a112a184104000000008906736d616c6c2e747874003238203135333031313035343135203130303634342030203120323800186be44411";
+
+    fn captured() -> Vec<u8> {
+        let mut out = Vec::new();
+        let bytes = CAPTURE_HEX.as_bytes();
+        for pair in bytes.chunks(2) {
+            let hi = (pair[0] as char).to_digit(16).unwrap() as u8;
+            let lo = (pair[1] as char).to_digit(16).unwrap() as u8;
+            out.push((hi << 4) | lo);
+        }
+        out
+    }
+
+    fn assert_flow(actions: &[Action], passthrough: &[u8]) {
+        // Regression: the 0x8A trailer byte used to drop the parser back to
+        // Scan, so the whole ZFILE frame leaked to the terminal and no file
+        // was ever started.
+        assert!(
+            passthrough.is_empty(),
+            "frame bytes leaked to the terminal: {:?}",
+            String::from_utf8_lossy(passthrough)
+        );
+        let start = actions
+            .iter()
+            .find_map(|action| match action {
+                Action::FileStart { name, size } => Some((name.clone(), *size)),
+                _ => None,
+            })
+            .expect("FileStart must be emitted");
+        assert_eq!(start, ("small.txt".to_string(), Some(28)));
+        let writes: Vec<&Vec<u8>> = actions
+            .iter()
+            .filter_map(|action| match action {
+                Action::WriteToRemote { data } => Some(data),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            writes
+                .iter()
+                .any(|data| data.starts_with(b"**\x18B01000000039a32")),
+            "ZRINIT answer missing: {:?}",
+            writes
+        );
+        assert!(
+            writes.len() >= 2,
+            "ZRPOS answer missing after FileStart: {:?}",
+            writes
+        );
+    }
+
+    #[test]
+    fn real_sz_handshake_and_file_header_are_parsed() {
+        let mut receiver = ZmodemReceiver::new();
+        let feed = receiver.feed(&captured());
+        assert_flow(&feed.actions, &feed.passthrough);
+    }
+
+    #[test]
+    fn inter_frame_xon_padding_does_not_drop_to_scan() {
+        use super::super::hex_header;
+        let mut receiver = ZmodemReceiver::new();
+        let feed = receiver.feed(&captured());
+        assert_flow(&feed.actions, &feed.passthrough);
+        // sz pads between frames with XON; it must not end the header state.
+        let pad = receiver.feed(&[0x11]);
+        assert!(pad.passthrough.is_empty());
+        // The next header (ZEOF) must still be parsed, not leaked as text.
+        let next = receiver.feed(&hex_header(0x0B, 0));
+        assert!(
+            next.passthrough.is_empty(),
+            "inter-frame padding leaked the next frame: {:?}",
+            String::from_utf8_lossy(&next.passthrough)
+        );
+    }
+
+    #[test]
+    fn real_sz_frame_survives_byte_by_byte_feeding() {
+        let mut receiver = ZmodemReceiver::new();
+        let mut actions = Vec::new();
+        let mut passthrough = Vec::new();
+        for byte in captured() {
+            let feed = receiver.feed(&[byte]);
+            actions.extend(feed.actions);
+            passthrough.extend(feed.passthrough);
+        }
+        assert_flow(&actions, &passthrough);
+    }
+}
