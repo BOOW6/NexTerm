@@ -51,10 +51,12 @@ function writeIndex(ids: string[]): void {
   }
 }
 
-function touchIndex(sessionId: string): string[] {
-  const next = [sessionId, ...readIndex().filter((id) => id !== sessionId)];
-  writeIndex(next);
-  return next;
+/** Move `sessionId` to the MRU end of the index and drop entries whose
+ * storage no longer exists. Returns the reordered list without trimming —
+ * only writes enforce the retention cap. */
+function reorderIndex(sessionId: string): string[] {
+  const order = [sessionId, ...readIndex().filter((id) => id !== sessionId)];
+  return order.filter((id) => window.localStorage.getItem(storageKey(id)) !== null);
 }
 
 /**
@@ -73,7 +75,7 @@ export function readTerminalSnapshot(sessionId: string): string | null {
     const data = window.localStorage.getItem(storageKey(sessionId));
     if (data) {
       // Reading counts as use: keep the entry at the MRU end.
-      touchIndex(sessionId);
+      writeIndex(reorderIndex(sessionId));
       return trimSnapshot(data);
     }
     return data;
@@ -91,11 +93,15 @@ export function writeTerminalSnapshot(sessionId: string, data: string): void {
       return;
     }
     window.localStorage.setItem(storageKey(sessionId), trimmed);
-    // Evict the least recently used snapshots beyond the retention cap.
-    const mru = touchIndex(sessionId);
-    for (const evicted of mru.slice(MAX_SNAPSHOT_ENTRIES)) {
+    // Retention cap: keep the MRU window, evict the rest from storage AND
+    // from the index. Writing the pre-eviction order (the old behaviour) let
+    // the index grow without bound even though the storage entries were
+    // gone.
+    const order = reorderIndex(sessionId);
+    for (const evicted of order.slice(MAX_SNAPSHOT_ENTRIES)) {
       window.localStorage.removeItem(storageKey(evicted));
     }
+    writeIndex(order.slice(0, MAX_SNAPSHOT_ENTRIES));
   } catch {
     /* quota exceeded or storage unavailable */
   }
@@ -108,6 +114,42 @@ export function clearTerminalSnapshot(sessionId: string): void {
   } catch {
     /* storage unavailable */
   }
+}
+
+/** Every session id that currently has a stored snapshot. Scans storage
+ * rather than the MRU index so snapshots written before the index existed
+ * are still found (cleanup must not miss legacy leftovers). */
+export function storedSnapshotSessionIds(): string[] {
+  const ids: string[] = [];
+  try {
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key !== null && key.startsWith(SNAPSHOT_PREFIX)) {
+        ids.push(key.slice(SNAPSHOT_PREFIX.length));
+      }
+    }
+  } catch {
+    return [];
+  }
+  return ids;
+}
+
+/** Delete snapshots the current scope excludes: remote sessions (and
+ * snapshots whose session no longer exists) must not linger as plaintext
+ * after a mode switch. Returns how many were removed. */
+export function clearSnapshotsOutsideScope(
+  mode: TerminalSnapshotMode,
+  kindOf: (sessionId: string) => string | undefined
+): number {
+  let removed = 0;
+  for (const sessionId of storedSnapshotSessionIds()) {
+    const kind = kindOf(sessionId);
+    if (kind === undefined || !snapshotEnabledFor(mode, kind)) {
+      clearTerminalSnapshot(sessionId);
+      removed += 1;
+    }
+  }
+  return removed;
 }
 
 /** Wipe every stored snapshot (settings: privacy cleanup). Returns the

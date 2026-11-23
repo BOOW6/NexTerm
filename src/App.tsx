@@ -17,6 +17,7 @@ import { useSettingsSync } from './hooks/useSettingsSync';
 import { useSessionLogRootSync } from './hooks/useSessionLogRootSync';
 import { useSessionLogEvents } from './hooks/useSessionLogEvents';
 import { useZmodemPolicySync } from './hooks/useZmodemPolicySync';
+import { useTerminalSnapshotScope } from './hooks/useTerminalSnapshotScope';
 import { useSnippetSync } from './hooks/useSnippetSync';
 import { useMacroSync } from './hooks/useMacroSync';
 import { useWindowState } from './hooks/useWindowState';
@@ -39,6 +40,7 @@ function AppShell() {
   useSessionLogRootSync();
   useSessionLogEvents();
   useZmodemPolicySync();
+  useTerminalSnapshotScope();
   useVaultEvents();
   useWindowState();
   useWindowTitle();
