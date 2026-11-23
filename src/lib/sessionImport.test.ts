@@ -1,12 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
   importKey,
+  importSessionsIntoStore,
   parseMobaXterm,
   parseNexTermBackup,
   parsePuTTY,
   parseSshConfig,
   serializeSessionBackup
 } from './sessionImport';
+import { useSessionStore } from '../stores/sessionStore';
 import type { Session } from '../types/session';
 
 describe('parseSshConfig', () => {
@@ -274,5 +276,112 @@ describe('NexTerm backup', () => {
     const backup = serializeSessionBackup([{ ...session, port: 99999 }]);
     const imported = parseNexTermBackup(backup);
     expect(imported[0].port).toBe(22);
+  });
+});
+
+describe('ProxyJump remap on import', () => {
+  const jump: Session = {
+    id: 'old-jump-id',
+    kind: 'ssh',
+    title: 'Bastion',
+    host: '10.0.0.1',
+    port: 22,
+    username: 'ops',
+    authMethod: 'key',
+    keyPath: '/keys/id_ed25519',
+    group: 'Infra',
+    favorite: false,
+    status: 'idle',
+    createdAt: 1,
+    lastUsed: 2
+  };
+  const target: Session = {
+    id: 'old-target-id',
+    kind: 'sftp',
+    title: 'Files',
+    host: '10.0.0.2',
+    port: 22,
+    username: 'files',
+    authMethod: 'key',
+    jumpSessionId: 'old-jump-id',
+    group: 'Infra',
+    favorite: false,
+    status: 'idle',
+    createdAt: 3,
+    lastUsed: 4
+  };
+
+  beforeEach(() => {
+    useSessionStore.setState({ sessions: [] });
+  });
+
+  it('restores ProxyJump onto the ids the store assigns in a fresh environment', () => {
+    // Round-trip through the real v2 backup format, then import through the
+    // real store pipeline: the old ids do not exist here, so the reference
+    // must be rewritten to the newly created bastion.
+    const imported = parseNexTermBackup(serializeSessionBackup([jump, target]));
+    const { created, skipped } = importSessionsIntoStore(imported, { defaultUsername: 'root' });
+
+    expect(skipped).toBe(0);
+    expect(created).toHaveLength(2);
+
+    const sessions = useSessionStore.getState().sessions;
+    const bastion = sessions.find((session) => session.title === 'Bastion');
+    const files = sessions.find((session) => session.title === 'Files');
+    expect(bastion).toBeDefined();
+    expect(files).toBeDefined();
+    // The jump reference points at the NEW bastion id, not at the source id.
+    expect(files?.jumpSessionId).toBe(bastion?.id);
+    expect(files?.jumpSessionId).not.toBe('old-jump-id');
+  });
+
+  it('drops dangling jump references instead of keeping a source-environment id', () => {
+    // A backup whose jump target was not exported (hand-edited file).
+    const backup = JSON.stringify({
+      app: 'NexTerm',
+      version: 2,
+      sessions: [
+        {
+          sourceId: 'still-here',
+          kind: 'sftp',
+          title: 'Orphan',
+          host: '10.0.0.3',
+          port: 22,
+          authMethod: 'password',
+          jumpSessionId: 'not-in-this-file',
+          group: 'Infra'
+        }
+      ]
+    });
+    const imported = parseNexTermBackup(backup);
+    importSessionsIntoStore(imported, { defaultUsername: 'root' });
+
+    const session = useSessionStore.getState().sessions[0];
+    expect(session?.title).toBe('Orphan');
+    expect(session?.jumpSessionId).toBeUndefined();
+  });
+
+  it('keeps v1 imports working without proxy references', () => {
+    const v1 = JSON.stringify({
+      app: 'NexTerm',
+      version: 1,
+      sessions: [
+        {
+          kind: 'ssh',
+          title: 'Legacy',
+          host: '10.0.0.9',
+          port: 2200,
+          username: 'root',
+          authMethod: 'key',
+          keyPath: '/keys/id_rsa',
+          group: 'Legacy'
+        }
+      ]
+    });
+    const imported = parseNexTermBackup(v1);
+    importSessionsIntoStore(imported, { defaultUsername: 'root' });
+    const session = useSessionStore.getState().sessions[0];
+    expect(session?.host).toBe('10.0.0.9');
+    expect(session?.jumpSessionId).toBeUndefined();
   });
 });

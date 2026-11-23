@@ -32,12 +32,12 @@ import { Input } from '../ui/input';
 import { DropdownMenu } from '../ui/dropdown-menu';
 import { invoke } from '@tauri-apps/api/core';
 import {
-  importKey,
   importSessionsFromText,
+  importSessionsIntoStore,
   serializeSessionBackup,
   type ImportFormat
 } from '../../lib/sessionImport';
-import { DEFAULT_GROUP, type Session, type SessionDraft } from '../../types/session';
+import { DEFAULT_GROUP, type Session } from '../../types/session';
 import { useI18n } from '../../i18n';
 import SessionRow from './SessionRow';
 import { confirmAction } from '../../lib/appWindows';
@@ -167,7 +167,6 @@ export default function SessionSidebar() {
   const sessions = useSessionStore((state) => state.sessions);
   const toggleFavorite = useSessionStore((state) => state.toggleFavorite);
   const removeSession = useSessionStore((state) => state.removeSession);
-  const addSessions = useSessionStore((state) => state.addSessions);
 
   const activeSessionId = useWorkspaceStore((state) => state.activeSessionId);
   const setActiveSessionId = useWorkspaceStore((state) => state.setActiveSessionId);
@@ -359,40 +358,9 @@ export default function SessionSidebar() {
         return;
       }
 
-      const known = new Set(
-        useSessionStore.getState().sessions.map((session) => importKey(session))
-      );
-      const drafts: SessionDraft[] = [];
-      let skipped = 0;
-      for (const item of imported) {
-        const key = importKey(item);
-        if (known.has(key)) {
-          skipped += 1;
-          continue;
-        }
-        known.add(key);
-        drafts.push({
-          kind: item.kind,
-          title: item.title,
-          host: item.host,
-          port: item.port,
-          // Imported configs often omit User; fall back to the configured
-          // default so the session can actually connect.
-          username: item.username || useSettingsStore.getState().defaultUsername,
-          authMethod: item.authMethod,
-          keyPath: item.keyPath,
-          certPath: item.certPath,
-          jumpSessionId: item.jumpSessionId,
-          shellCommand: item.shellCommand,
-          shellArgs: item.shellArgs,
-          serialPort: item.serialPort,
-          serialBaud: item.serialBaud,
-          group: item.group,
-          favorite: item.favorite
-        });
-      }
-
-      const created = addSessions(drafts);
+      const { created, skipped } = importSessionsIntoStore(imported, {
+        defaultUsername: useSettingsStore.getState().defaultUsername
+      });
       toast({
         title: t('sidebar.imported', { count: created.length }),
         description: skipped > 0 ? t('sidebar.importedSkipped', { count: skipped }) : undefined,
