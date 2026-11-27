@@ -34,7 +34,7 @@ export const ZH: Dictionary = {
   'quickConnect.authMethod.key': '私钥',
   'quickConnect.authMethod.certificate': 'OpenSSH 证书',
   'quickConnect.authMethod.agent': 'SSH Agent',
-  'quickConnect.agentHint': '连接时使用系统 SSH Agent 中的密钥，无需在 NexTerm 中保存凭据。',
+  'quickConnect.agentHint': '使用系统 SSH Agent 中的密钥认证，无需保存凭据。',
   'quickConnect.field.password': '密码',
   'quickConnect.passwordPlaceholderExisting': '留空则沿用内存中的密码',
   'quickConnect.passwordPlaceholderNew': '仅保存在内存中',
@@ -47,7 +47,7 @@ export const ZH: Dictionary = {
     '使用 OpenSSH 用户证书（ssh-keygen 签发的 *-cert.pub）认证，服务器需信任对应的 CA。',
   'quickConnect.field.passphrase': '私钥口令（可选）',
   'quickConnect.passphrasePlaceholder': '加密私钥需要填写',
-  'quickConnect.telnetHint': 'Telnet 连接建立后按服务器提示在终端内登录，NexTerm 不保存凭据。',
+  'quickConnect.telnetHint': '连接后在终端内按服务器提示登录，NexTerm 不保存凭据。',
   'quickConnect.field.jump': '跳板机（可选）',
   'quickConnect.jumpNone': '无',
   'quickConnect.jumpHint':
@@ -250,7 +250,7 @@ export const EN: Dictionary = {
   'quickConnect.authMethod.certificate': 'OpenSSH certificate',
   'quickConnect.authMethod.agent': 'SSH Agent',
   'quickConnect.agentHint':
-    'Connects with keys from the system SSH Agent; no credentials are stored in NexTerm.',
+    'Uses keys from the system SSH Agent; no credentials are stored in NexTerm.',
   'quickConnect.field.password': 'Password',
   'quickConnect.passwordPlaceholderExisting': 'Leave empty to keep the in-memory password',
   'quickConnect.passwordPlaceholderNew': 'Stored in memory only',
@@ -264,7 +264,7 @@ export const EN: Dictionary = {
   'quickConnect.field.passphrase': 'Key passphrase (optional)',
   'quickConnect.passphrasePlaceholder': 'Required for encrypted keys',
   'quickConnect.telnetHint':
-    'After the Telnet connection is up, log in inside the terminal as the server prompts; NexTerm stores no credentials.',
+    'Log in inside the terminal as the server prompts; NexTerm stores no credentials.',
   'quickConnect.field.jump': 'Jump host (optional)',
   'quickConnect.jumpNone': 'None',
   'quickConnect.jumpHint':

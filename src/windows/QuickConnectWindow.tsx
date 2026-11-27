@@ -223,38 +223,44 @@ export default function QuickConnectWindow() {
     if (!payload) {
       return;
     }
+    // Validation failures focus the offending field: the error line sits at
+    // the bottom of the form, far from the input the user must fix.
+    const fail = (fieldId: string, message: string) => {
+      setError(message);
+      document.getElementById(fieldId)?.focus();
+    };
     if (isRemote && !form.host.trim()) {
-      setError(t('quickConnect.errorHostRequired'));
+      fail('session-host', t('quickConnect.errorHostRequired'));
       return;
     }
     if (isSerial && !form.serialPort.trim()) {
-      setError(t('quickConnect.serialPortRequired'));
+      fail('session-serial-port', t('quickConnect.serialPortRequired'));
       return;
     }
     if (isSerial && form.serialBaud && !Number.isFinite(Number(form.serialBaud))) {
-      setError(t('quickConnect.serialBaudInvalid'));
+      fail('session-serial-port', t('quickConnect.serialBaudInvalid'));
       return;
     }
     if (!isRemote && form.shellPreset === 'custom' && !normalizeShellCommand(form.shellCommand)) {
-      setError(t('quickConnect.errorShellRequired'));
+      fail('session-shell-command', t('quickConnect.errorShellRequired'));
       return;
     }
     if (hasAuth && form.authMethod === 'key' && !form.keyPath.trim()) {
-      setError(t('quickConnect.errorKeyRequired'));
+      fail('session-key-path', t('quickConnect.errorKeyRequired'));
       return;
     }
     if (hasAuth && form.authMethod === 'certificate' && !form.keyPath.trim()) {
-      setError(t('quickConnect.errorCertKeyRequired'));
+      fail('session-key-path', t('quickConnect.errorCertKeyRequired'));
       return;
     }
     if (hasAuth && form.authMethod === 'certificate' && !form.certPath.trim()) {
-      setError(t('quickConnect.errorCertRequired'));
+      fail('session-cert-path', t('quickConnect.errorCertRequired'));
       return;
     }
     if (isRemote && form.port) {
       const port = Number(form.port);
       if (!Number.isInteger(port) || port < 1 || port > 65535) {
-        setError(t('quickConnect.errorPortRange'));
+        fail('session-port', t('quickConnect.errorPortRange'));
         return;
       }
     }
@@ -323,24 +329,12 @@ export default function QuickConnectWindow() {
             </Select>
           </div>
 
-          <div>
-            <Label htmlFor="session-title">{t('quickConnect.field.title')}</Label>
-            <Input
-              id="session-title"
-              value={form.title}
-              onChange={(event) => update('title', event.target.value)}
-              placeholder={
-                isRemote
-                  ? t('quickConnect.titlePlaceholderRemote')
-                  : t('quickConnect.titlePlaceholderLocal')
-              }
-            />
-          </div>
-
           {!isRemote ? (
             <>
               <div>
-                <Label htmlFor="session-shell">{t('quickConnect.shellLabel')}</Label>
+                <Label htmlFor="session-shell" title={t('quickConnect.shellHint')}>
+                  {t('quickConnect.shellLabel')}
+                </Label>
                 <Select
                   id="session-shell"
                   value={form.shellPreset}
@@ -553,7 +547,7 @@ export default function QuickConnectWindow() {
 
                       {form.authMethod === 'certificate' ? (
                         <div>
-                          <Label htmlFor="session-cert-path">
+                          <Label htmlFor="session-cert-path" title={t('quickConnect.certHint')}>
                             {t('quickConnect.field.certPath')}
                           </Label>
                           <div className="flex items-stretch gap-1">
@@ -575,7 +569,6 @@ export default function QuickConnectWindow() {
                               <FolderOpen className="h-3.5 w-3.5" />
                             </Button>
                           </div>
-                          <p className="mt-1 text-meta text-muted">{t('quickConnect.certHint')}</p>
                         </div>
                       ) : null}
 
@@ -605,7 +598,9 @@ export default function QuickConnectWindow() {
 
           {hasAuth && payload?.jumpCandidates.length ? (
             <div>
-              <Label htmlFor="session-jump">{t('quickConnect.field.jump')}</Label>
+              <Label htmlFor="session-jump" title={t('quickConnect.jumpHint')}>
+                {t('quickConnect.field.jump')}
+              </Label>
               <Select
                 id="session-jump"
                 value={form.jumpSessionId}
@@ -618,18 +613,32 @@ export default function QuickConnectWindow() {
                   </option>
                 ))}
               </Select>
-              <p className="mt-1 text-meta text-muted">{t('quickConnect.jumpHint')}</p>
             </div>
           ) : null}
 
-          <div>
-            <Label htmlFor="session-group">{t('quickConnect.field.group')}</Label>
-            <Input
-              id="session-group"
-              value={form.group}
-              onChange={(event) => update('group', event.target.value)}
-              placeholder={t('quickConnect.groupPlaceholder', { group: DEFAULT_GROUP })}
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="session-title">{t('quickConnect.field.title')}</Label>
+              <Input
+                id="session-title"
+                value={form.title}
+                onChange={(event) => update('title', event.target.value)}
+                placeholder={
+                  isRemote
+                    ? t('quickConnect.titlePlaceholderRemote')
+                    : t('quickConnect.titlePlaceholderLocal')
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="session-group">{t('quickConnect.field.group')}</Label>
+              <Input
+                id="session-group"
+                value={form.group}
+                onChange={(event) => update('group', event.target.value)}
+                placeholder={t('quickConnect.groupPlaceholder', { group: DEFAULT_GROUP })}
+              />
+            </div>
           </div>
 
           {error ? <p className="text-xs text-error">{error}</p> : null}

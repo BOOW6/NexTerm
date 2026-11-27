@@ -18,7 +18,6 @@ import {
   Star,
   TerminalSquare,
   Upload,
-  Zap,
   type LucideIcon
 } from 'lucide-react';
 import { useWorkspace } from '../../features/workspace/useWorkspace';
@@ -465,7 +464,7 @@ export default function SessionSidebar() {
             variant="ghost"
             aria-label={t('sidebar.newSession')}
             title={t('sidebar.newSession')}
-            onClick={() => openQuickConnect()}
+            onClick={() => openQuickConnect({ kind: 'ssh' })}
           >
             <Plus className="h-3.5 w-3.5" />
           </Button>
@@ -473,18 +472,14 @@ export default function SessionSidebar() {
       </div>
 
       <div className="flex gap-1 px-2 pt-2">
-        <Button size="sm" variant="secondary" className="flex-1" onClick={() => openQuickConnect()}>
-          <Plus className="h-3 w-3" />
-          {t('sidebar.newSession')}
-        </Button>
         <Button
           size="sm"
-          variant="secondary"
+          variant="primary"
           className="flex-1"
           onClick={() => openQuickConnect({ kind: 'ssh' })}
         >
-          <Zap className="h-3 w-3" />
-          {t('sidebar.quickConnect')}
+          <Plus className="h-3 w-3" />
+          {t('sidebar.newSession')}
         </Button>
       </div>
 
@@ -515,7 +510,7 @@ export default function SessionSidebar() {
           <div className="flex flex-col items-center gap-2 px-3 py-10 text-center">
             <TerminalSquare className="h-7 w-7 text-muted-foreground" />
             <p className="text-meta text-muted">{t('sidebar.empty')}</p>
-            <Button size="sm" variant="primary" onClick={() => openQuickConnect()}>
+            <Button size="sm" variant="primary" onClick={() => openQuickConnect({ kind: 'ssh' })}>
               <Plus className="h-3 w-3" />
               {t('sidebar.newSession')}
             </Button>
