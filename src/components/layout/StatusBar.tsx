@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+
 import { cn } from '../../lib/cn';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useBroadcastStore } from '../../stores/broadcastStore';
@@ -9,20 +9,13 @@ import { useI18n } from '../../i18n';
 import { SESSION_STATUS_LABEL_KEY, sessionStatusDot } from '../../lib/sessionVisuals';
 
 export default function StatusBar() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const activeSessionId = useWorkspaceStore((state) => state.activeSessionId);
   const broadcastIds = useBroadcastStore((state) => state.ids);
   const macroRecording = useMacroRecorderStore((state) => state.recording);
   const session = useSessionStore((state) =>
     state.sessions.find((item) => item.id === activeSessionId)
   );
-
-  const [clock, setClock] = useState(() => new Date());
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setClock(new Date()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   const sessions = useSessionStore((state) => state.sessions);
   const liveBroadcastCount = broadcastIds.filter((id) =>
@@ -37,11 +30,12 @@ export default function StatusBar() {
             <span
               className={cn('h-1.5 w-1.5 rounded-full', sessionStatusDot(session.status, true))}
             />
-            <span className="truncate font-medium text-foreground">{session.title}</span>
-            <span className="text-muted-foreground">|</span>
-            <span>{t(SESSION_KIND_LABEL_KEY[session.kind])}</span>
-            <span className="text-muted-foreground">|</span>
-            <span className="truncate">{sessionSubtitle(session, t)}</span>
+            <span
+              className="truncate font-medium text-foreground"
+              title={`${t(SESSION_KIND_LABEL_KEY[session.kind])} - ${sessionSubtitle(session, t)}`}
+            >
+              {session.title}
+            </span>
             <span className="text-muted-foreground">|</span>
             <span>{t(SESSION_STATUS_LABEL_KEY[session.status])}</span>
           </>
@@ -63,10 +57,6 @@ export default function StatusBar() {
             {t('status.broadcast', { count: liveBroadcastCount })}
           </button>
         ) : null}
-      </div>
-
-      <div className="flex items-center gap-2">
-        <span className="tabular-nums">{clock.toLocaleTimeString(locale, { hour12: false })}</span>
       </div>
     </footer>
   );

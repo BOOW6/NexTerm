@@ -12,7 +12,12 @@ import {
 import { showNativeContextMenu } from '../../lib/appWindows';
 import { useBroadcastStore, broadcastCount } from '../../stores/broadcastStore';
 import { toast } from '../ui/toastStore';
-import { SESSION_KIND_ICON, isSshBackedSession, sessionStatusDot } from '../../lib/sessionVisuals';
+import {
+  SESSION_KIND_ICON,
+  isSshBackedSession,
+  SESSION_STATUS_LABEL_KEY,
+  sessionStatusDot
+} from '../../lib/sessionVisuals';
 import { useI18n } from '../../i18n';
 
 export default function SessionTab({ api, params, containerApi }: IDockviewPanelHeaderProps) {
@@ -113,6 +118,7 @@ export default function SessionTab({ api, params, containerApi }: IDockviewPanel
       {session ? (
         <span
           className={cn('h-1.5 w-1.5 shrink-0 rounded-full', sessionStatusDot(session.status))}
+          title={t(SESSION_STATUS_LABEL_KEY[session.status])}
         />
       ) : null}
       <Icon className="h-3.5 w-3.5 shrink-0 text-muted" />

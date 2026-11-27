@@ -547,10 +547,6 @@ export default function SessionSidebar() {
         )}
       </div>
 
-      <div className="border-t border-border bg-background-alt px-2 py-1 text-meta text-muted">
-        {t('sidebar.total', { count: sessions.length })}
-      </div>
-
       <div
         role="separator"
         aria-orientation="vertical"

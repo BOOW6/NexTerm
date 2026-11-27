@@ -1053,13 +1053,13 @@ export default function SettingsWindow() {
               <option value="zh-CN">{t('settings.appearance.language.zh')}</option>
               <option value="en-US">English</option>
             </Select>
-            <p className="mt-1 text-tiny text-muted-foreground">
-              {t('settings.appearance.language.partialNote')}
-            </p>
           </div>
 
           <div>
-            <label className="flex items-center gap-2 text-meta text-muted">
+            <label
+              className="flex items-center gap-2 text-meta text-muted"
+              title={t('settings.appearance.closeToTrayHint')}
+            >
               <input
                 type="checkbox"
                 className="app-checkbox h-3.5 w-3.5 accent-accent"
@@ -1068,13 +1068,15 @@ export default function SettingsWindow() {
               />
               {t('settings.appearance.closeToTray')}
             </label>
-            <p className="mt-1 text-tiny text-muted-foreground">
-              {t('settings.appearance.closeToTrayHint')}
-            </p>
           </div>
 
           <div>
-            <Label htmlFor="global-show-hotkey">{t('settings.appearance.globalShowHotkey')}</Label>
+            <Label
+              htmlFor="global-show-hotkey"
+              title={t('settings.appearance.globalShowHotkeyHint')}
+            >
+              {t('settings.appearance.globalShowHotkey')}
+            </Label>
             <Input
               id="global-show-hotkey"
               value={draft.globalShowHotkey}
@@ -1082,9 +1084,6 @@ export default function SettingsWindow() {
               placeholder="Ctrl+Shift+Space"
               autoComplete="off"
             />
-            <p className="mt-1 text-tiny text-muted-foreground">
-              {t('settings.appearance.globalShowHotkeyHint')}
-            </p>
           </div>
         </div>
 
@@ -1250,7 +1249,10 @@ export default function SettingsWindow() {
                       key={swatch.id}
                       type="button"
                       aria-label={swatch.id}
-                      title={t(`settings.appearance.accentPreset.${swatch.id}`)}
+                      title={
+                        t(`settings.appearance.accentPreset.${swatch.id}`) +
+                        (isNeutral ? ` ${t('settings.appearance.accentNeutralHint')}` : '')
+                      }
                       aria-pressed={active}
                       onClick={() => update('themeAccent', swatch.accent)}
                       className={cn(
@@ -1263,9 +1265,6 @@ export default function SettingsWindow() {
                   );
                 })}
               </div>
-              <p className="mt-1.5 text-tiny text-muted-foreground">
-                {t('settings.appearance.accentNeutralHint')}
-              </p>
             </div>
             <div className="flex items-center justify-between gap-2 pt-2">
               <div>
@@ -1410,16 +1409,15 @@ export default function SettingsWindow() {
             {t('settings.fonts.ligaturesHint')}
           </p>
           <div className="mt-2">
-            <Label htmlFor="ui-font-feature-settings">{t('settings.fonts.featuresLabel')}</Label>
+            <Label htmlFor="ui-font-feature-settings" title={t('settings.fonts.featuresHint')}>
+              {t('settings.fonts.featuresLabel')}
+            </Label>
             <Input
               id="ui-font-feature-settings"
               value={draft.uiFontFeatureSettings}
               onChange={(event) => update('uiFontFeatureSettings', event.target.value)}
               placeholder={'"liga" 1, "calt" 1'}
             />
-            <p className="mt-1 text-tiny text-muted-foreground">
-              {t('settings.fonts.featuresHint')}
-            </p>
           </div>
           <div className="mt-2 flex min-w-0 items-center gap-1.5">
             <span className="shrink-0 text-tiny text-muted-foreground">
@@ -1633,12 +1631,12 @@ export default function SettingsWindow() {
           </p>
         </div>
       </div>
-      <p className="-mt-1 text-tiny text-muted-foreground">
-        {t('settings.terminal.ligaturesNote')}
-      </p>
 
       <div className="space-y-2 rounded-sm border border-border bg-surface p-3">
-        <label className="flex items-center gap-2 text-meta text-muted">
+        <label
+          className="flex items-center gap-2 text-meta text-muted"
+          title={t('settings.terminal.logNote')}
+        >
           <input
             type="checkbox"
             className="app-checkbox h-3.5 w-3.5 accent-accent"
@@ -1665,7 +1663,7 @@ export default function SettingsWindow() {
             <FolderOpen className="h-3.5 w-3.5" />
           </Button>
         </div>
-        <p className="text-tiny text-muted-foreground">{t('settings.terminal.logNote')}</p>
+        <p className="text-tiny text-muted-foreground">{t('settings.terminal.logSensitiveNote')}</p>
         <div className="flex gap-2 pt-1">
           <Button variant="secondary" size="sm" onClick={() => void clearSessionLogs()}>
             <Trash2 className="h-3.5 w-3.5" />
@@ -1679,16 +1677,15 @@ export default function SettingsWindow() {
       </div>
 
       <div>
-        <Label htmlFor="terminal-font-feature-settings">{t('settings.fonts.featuresLabel')}</Label>
+        <Label htmlFor="terminal-font-feature-settings" title={t('settings.terminal.featuresHint')}>
+          {t('settings.fonts.featuresLabel')}
+        </Label>
         <Input
           id="terminal-font-feature-settings"
           value={draft.terminalFontFeatureSettings}
           onChange={(event) => update('terminalFontFeatureSettings', event.target.value)}
           placeholder={'"calt" on'}
         />
-        <p className="mt-1 text-tiny text-muted-foreground">
-          {t('settings.terminal.featuresHint')}
-        </p>
       </div>
 
       <div>
@@ -1770,7 +1767,10 @@ export default function SettingsWindow() {
         <p className="mt-1 text-tiny text-muted-foreground">{t('settings.ssh.sftpConflictHint')}</p>
       </div>
       <div className="col-span-2 space-y-2 rounded-sm border border-border bg-background-alt px-2 py-2">
-        <label className="flex items-center gap-2 text-meta text-muted">
+        <label
+          className="flex items-center gap-2 text-meta text-muted"
+          title={t('settings.ssh.keepaliveNote')}
+        >
           <input
             type="checkbox"
             className="app-checkbox h-3.5 w-3.5 accent-accent"
@@ -1779,8 +1779,10 @@ export default function SettingsWindow() {
           />
           {t('settings.ssh.autoReconnect')}
         </label>
-        <p className="text-tiny text-muted-foreground">{t('settings.ssh.keepaliveNote')}</p>
-        <label className="flex items-center gap-2 text-meta text-muted">
+        <label
+          className="flex items-center gap-2 text-meta text-muted"
+          title={t('settings.ssh.telnetAutoReconnectNote')}
+        >
           <input
             type="checkbox"
             className="app-checkbox h-3.5 w-3.5 accent-accent"
@@ -1789,9 +1791,6 @@ export default function SettingsWindow() {
           />
           {t('settings.ssh.telnetAutoReconnect')}
         </label>
-        <p className="text-tiny text-muted-foreground">
-          {t('settings.ssh.telnetAutoReconnectNote')}
-        </p>
       </div>
     </section>
   );
@@ -2206,9 +2205,9 @@ export default function SettingsWindow() {
         <Button variant="ghost" className="mr-auto" onClick={() => void resetDefaults()}>
           {t('settings.footer.resetDefaults')}
         </Button>
-        <span className="mr-1 text-tiny text-muted">
-          {savedAt ? t('settings.footer.saved') : t('settings.footer.unsavedHint')}
-        </span>
+        {savedAt ? (
+          <span className="mr-1 text-tiny text-muted">{t('settings.footer.saved')}</span>
+        ) : null}
         <Button variant="ghost" onClick={() => void requestClose()}>
           {t('settings.footer.cancel')}
         </Button>

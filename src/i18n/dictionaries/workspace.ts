@@ -194,8 +194,6 @@ export const ZH: Dictionary = {
   'palette.macro.start': '开始录制宏',
   'palette.macro.stop': '停止录制并保存宏',
   'palette.group.macros': '宏',
-  'palette.joinBroadcast': '加入广播输入（向同组会话同步键入）',
-  'palette.leaveBroadcast': '退出广播输入',
   'tab.closeOtherTabs': '关闭其他标签页',
   'tab.closeTab': '关闭标签页',
   // StatusBar
@@ -413,8 +411,6 @@ export const EN: Dictionary = {
   'palette.macro.start': 'Start recording a macro',
   'palette.macro.stop': 'Stop recording and save the macro',
   'palette.group.macros': 'Macros',
-  'palette.joinBroadcast': 'Join broadcast input (mirror typing to the group)',
-  'palette.leaveBroadcast': 'Leave broadcast input',
   'tab.closeOtherTabs': 'Close other tabs',
   'tab.closeTab': 'Close tab',
   // StatusBar

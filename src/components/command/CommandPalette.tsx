@@ -307,8 +307,8 @@ export default function CommandPalette() {
           id: 'broadcast',
           group: 'commands',
           label: useBroadcastStore.getState().ids.includes(activeSession.id)
-            ? t('palette.leaveBroadcast')
-            : t('palette.joinBroadcast'),
+            ? t('tab.broadcastLeave')
+            : t('tab.broadcastJoin'),
           icon: Radio,
           keywords: 'broadcast input 广播 输入 同步 多开',
           run: () => {

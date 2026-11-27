@@ -46,7 +46,6 @@ export const ZH: Dictionary = {
   'settings.appearance.language': '界面语言',
   'settings.appearance.language.system': '跟随系统',
   'settings.appearance.language.zh': '简体中文',
-  'settings.appearance.language.partialNote': '部分面板暂未跟随界面语言，仍以中文显示。',
   'settings.appearance.closeToTray': '关闭窗口时最小化到托盘',
   'settings.appearance.closeToTrayHint': '关闭主窗口后保留在系统托盘，从托盘图标可重新打开或退出。',
   'settings.appearance.globalShowHotkey': '全局唤起快捷键',
@@ -144,6 +143,7 @@ export const ZH: Dictionary = {
   'settings.terminal.snapshotsOff': '关闭',
   'settings.terminal.snapshotsHint':
     '快照以明文形式保存在本地，用于重开或重启后恢复滚动缓冲。远程会话输出可能包含敏感内容，默认不保存。',
+  'settings.terminal.featuresHint': '仅在 Font Ligatures 开启时生效，例如 "calt" off, "ss03"。',
   'settings.terminal.zmodemAutoReceive': 'ZMODEM 自动接收（关闭后每次传输需要确认）',
   'settings.terminal.ligaturesNote':
     '连字需要等宽字体支持（如 Fira Code、Cascadia Code），WebGL 渲染下同样生效。',
@@ -151,6 +151,7 @@ export const ZH: Dictionary = {
   'settings.terminal.logDirPlaceholder': '选择或输入保存会话日志的目录',
   'settings.terminal.logDirAria': '会话日志目录',
   'settings.terminal.logDirPick': '选择会话日志目录',
+  'settings.terminal.logSensitiveNote': '日志可能包含敏感输出，请注意保存位置。',
   'settings.terminal.logNote':
     '开启后终端输出（含 ANSI 控制序列）会追加写入目录下的「会话名-时间.log」。新建连接立即生效； 对已连接的会话切换开关即时生效，且不更换已有日志文件。日志可能包含敏感输出，请注意保存位置。',
   'settings.terminal.clearLogs': '清理会话日志',
@@ -162,7 +163,6 @@ export const ZH: Dictionary = {
   'settings.terminal.clearSnapshotsConfirm':
     '将删除所有保存的终端滚动缓冲快照，其中可能包含敏感输出。继续吗？',
   'settings.terminal.snapshotsCleared': '已清除 {count} 份终端快照',
-  'settings.terminal.featuresHint': '仅在 Font Ligatures 开启时生效，例如 "calt" off, "ss03"。',
   'settings.terminal.preview': '预览',
   'settings.terminal.previewLoading': '正在加载终端预览…',
 
@@ -272,7 +272,6 @@ export const ZH: Dictionary = {
   // Footer / apply / reset / discard
   'settings.footer.resetDefaults': '恢复默认',
   'settings.footer.saved': '已应用',
-  'settings.footer.unsavedHint': '修改后需点击应用或确定',
   'settings.footer.cancel': '取消',
   'settings.footer.apply': '应用',
   'settings.footer.ok': '确定',
@@ -369,8 +368,6 @@ export const EN: Dictionary = {
   'settings.appearance.language': 'Language',
   'settings.appearance.language.system': 'Follow system',
   'settings.appearance.language.zh': '简体中文',
-  'settings.appearance.language.partialNote':
-    'Some panels do not follow the interface language yet and still display in Chinese.',
   'settings.appearance.closeToTray': 'Hide to tray when the window closes',
   'settings.appearance.closeToTrayHint':
     'Keep NexTerm in the system tray after closing the main window; reopen or quit from the tray icon.',
@@ -479,6 +476,10 @@ export const EN: Dictionary = {
   'settings.terminal.logDirPick': 'Choose session log directory',
   'settings.terminal.logNote':
     'When enabled, terminal output (including ANSI control sequences) is appended to "session-name-time.log" in the directory. New connections pick it up immediately; toggling applies to connected sessions live without switching to a new log file. Logs may contain sensitive output, so be mindful of where you store them.',
+  'settings.terminal.logSensitiveNote':
+    'Logs may contain sensitive output. Be mindful of where they are stored.',
+  'settings.terminal.featuresHint':
+    'Only applies when Font Ligatures is on, e.g. "calt" off, "ss03".',
   'settings.terminal.clearLogs': 'Clean up session logs',
   'settings.terminal.clearLogsConfirm':
     'This deletes every .log file in the configured log directory. Continue?',
@@ -489,8 +490,6 @@ export const EN: Dictionary = {
   'settings.terminal.clearSnapshotsConfirm':
     'This deletes every stored terminal scrollback snapshot. They may contain sensitive output. Continue?',
   'settings.terminal.snapshotsCleared': 'Removed {count} terminal snapshots',
-  'settings.terminal.featuresHint':
-    'Only applies when Font Ligatures is on, e.g. "calt" off, "ss03".',
   'settings.terminal.preview': 'Preview',
   'settings.terminal.previewLoading': 'Loading terminal preview…',
 
@@ -607,7 +606,6 @@ export const EN: Dictionary = {
   // Footer / apply / reset / discard
   'settings.footer.resetDefaults': 'Restore defaults',
   'settings.footer.saved': 'Applied',
-  'settings.footer.unsavedHint': 'Click Apply or OK to save your changes',
   'settings.footer.cancel': 'Cancel',
   'settings.footer.apply': 'Apply',
   'settings.footer.ok': 'OK',
