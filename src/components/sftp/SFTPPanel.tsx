@@ -12,6 +12,7 @@ import { openPath } from '@tauri-apps/plugin-opener';
 import type { IDockviewPanelProps } from 'dockview-react';
 import {
   ArrowUpDown,
+  Check,
   File,
   Folder,
   FolderPlus,
@@ -42,6 +43,7 @@ import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useWorkspace } from '../../features/workspace/useWorkspace';
 import { useI18n } from '../../i18n';
 import { Button } from '../ui/button';
+import { DropdownMenu } from '../ui/dropdown-menu';
 import { Select } from '../ui/select';
 import { Tooltip } from '../ui/tooltip';
 import { toast } from '../ui/toastStore';
@@ -680,6 +682,17 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
 
   const canBrowse = Boolean(sshId);
 
+  // Conflict policy: a low-frequency preference, kept out of the main path
+  // in an overflow menu. The active policy is marked with a check mark; the
+  // ask dialog remains the per-transfer decision point.
+  const conflictItems = (
+    ['ask', 'overwrite', 'skip', 'rename', 'newer'] as SftpConflictPolicy[]
+  ).map((policy) => ({
+    label: t(`sftp.conflict.${policy}`),
+    icon: conflict === policy ? Check : undefined,
+    onSelect: () => setConflict(policy)
+  }));
+
   // Roving tabindex for the file rows: one tab stop for the whole list,
   // arrow keys move the highlighted row.
   const rowRefs = useRef<Array<HTMLDivElement | null>>([]);
@@ -733,6 +746,7 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
   return (
     <div ref={panelRef} className="relative flex h-full flex-col bg-surface">
       <div className="flex h-7 shrink-0 items-center gap-1 border-b border-border px-1">
+        {/* 导航 */}
         <Tooltip label={t('sftp.tool.goUp')}>
           <Button
             size="icon-sm"
@@ -755,6 +769,8 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
             <RefreshCw className="h-3 w-3" />
           </Button>
         </Tooltip>
+        <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-border" />
+        {/* 会话与路径 */}
         <Select
           aria-label={t('sftp.tool.sessionSelect')}
           value={boundSessionId ?? ''}
@@ -773,38 +789,13 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
             </option>
           ))}
         </Select>
-        <Select
-          aria-label={t('sftp.tool.conflictSelect')}
-          title={t('sftp.tool.conflictHint')}
-          value={conflict}
-          onChange={(event) => setConflict(event.target.value as SftpConflictPolicy)}
-          size="sm"
-          width={110}
-          className="shrink-0"
-        >
-          <option value="ask">{t('sftp.conflict.ask')}</option>
-          <option value="overwrite">{t('sftp.conflict.overwrite')}</option>
-          <option value="skip">{t('sftp.conflict.skip')}</option>
-          <option value="rename">{t('sftp.conflict.rename')}</option>
-          <option value="newer">{t('sftp.conflict.newer')}</option>
-        </Select>
         <span
           className="selectable min-w-0 flex-1 truncate font-mono text-meta text-muted"
           title={path}
         >
           {canBrowse ? path : '-'}
         </span>
-        <Tooltip label={t('sftp.tool.mkdir')}>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label={t('sftp.tool.mkdir')}
-            disabled={!canBrowse}
-            onClick={() => void promptName('mkdir')}
-          >
-            <FolderPlus className="h-3 w-3" />
-          </Button>
-        </Tooltip>
+        {/* 动作：上传优先 */}
         <Tooltip label={t('sftp.tool.uploadFile')}>
           <Button
             size="icon-sm"
@@ -827,6 +818,17 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
             <FolderUp className="h-3 w-3" />
           </Button>
         </Tooltip>
+        <Tooltip label={t('sftp.tool.mkdir')}>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label={t('sftp.tool.mkdir')}
+            disabled={!canBrowse}
+            onClick={() => void promptName('mkdir')}
+          >
+            <FolderPlus className="h-3 w-3" />
+          </Button>
+        </Tooltip>
         <Tooltip label={t('sftp.tool.transfers')}>
           <Button
             size="icon-sm"
@@ -837,6 +839,11 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
             <ArrowUpDown className="h-3 w-3" />
           </Button>
         </Tooltip>
+        {/* 冲突策略：低频偏好，收进溢出菜单 */}
+        <DropdownMenu
+          label={`${t('sftp.tool.conflictSelect')}: ${t(`sftp.conflict.${conflict}`)}`}
+          items={conflictItems}
+        />
       </div>
 
       <div className="app-table-header grid shrink-0 grid-cols-[1fr_62px_104px_42px] border-b border-border bg-table-header px-2 py-1 text-meta font-emphasis text-foreground">
@@ -849,7 +856,9 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {!session ? (
           <p className="px-3 py-6 text-center text-meta text-muted">
-            {t('sftp.state.pickSession')}
+            {remoteSessions.length === 0
+              ? t('sftp.state.noRemoteSessions')
+              : t('sftp.state.pickSession')}
           </p>
         ) : session.kind === 'local' ? (
           <p className="px-3 py-6 text-center text-meta text-muted">
@@ -868,7 +877,16 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         ) : loading ? (
           <p className="px-3 py-6 text-center text-meta text-muted">{t('sftp.state.loading')}</p>
         ) : error ? (
-          <p className="px-3 py-6 text-center text-meta text-error">{error}</p>
+          <div className="flex flex-col items-center gap-2 px-3 py-6 text-center">
+            <p className="text-meta text-error">{error}</p>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setReloadToken((value) => value + 1)}
+            >
+              {t('sftp.state.retry')}
+            </Button>
+          </div>
         ) : entries.length === 0 ? (
           <p className="px-3 py-6 text-center text-meta text-muted">{t('sftp.state.empty')}</p>
         ) : (
@@ -966,13 +984,12 @@ export default function SFTPPanel({ params, api }: IDockviewPanelProps) {
         </div>
       ) : null}
 
-      <div className="flex items-center justify-between border-t border-border bg-background-alt px-2 py-1 text-tiny text-muted">
+      <div className="border-t border-border bg-background-alt px-2 py-1 text-tiny text-muted">
         <span>
           {canBrowse
             ? t('sftp.footer.count', { count: entries.length })
             : t('sftp.footer.waitingSsh')}
         </span>
-        <span>{t('sftp.footer.hint')}</span>
       </div>
     </div>
   );
