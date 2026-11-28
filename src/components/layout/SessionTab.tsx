@@ -117,7 +117,9 @@ export default function SessionTab({ api, params, containerApi }: IDockviewPanel
     >
       {session ? (
         <span
-          className={cn('h-1.5 w-1.5 shrink-0 rounded-full', sessionStatusDot(session.status))}
+          role="img"
+          aria-label={t(SESSION_STATUS_LABEL_KEY[session.status])}
+          className={cn('h-1.5 w-1.5 shrink-0', sessionStatusDot(session.status))}
           title={t(SESSION_STATUS_LABEL_KEY[session.status])}
         />
       ) : null}

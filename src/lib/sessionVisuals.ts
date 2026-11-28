@@ -9,16 +9,19 @@ export const SESSION_KIND_ICON: Record<SessionKind, LucideIcon> = {
   serial: Cable
 };
 
-const SESSION_STATUS_COLOR: Record<SessionStatus, string> = {
-  idle: 'bg-muted',
-  connecting: 'bg-warning',
-  connected: 'bg-success',
-  disconnected: 'bg-muted-foreground',
-  error: 'bg-error'
+const SESSION_STATUS_DOT_CLASS: Record<SessionStatus, string> = {
+  idle: 'rounded-full border border-muted bg-transparent',
+  connecting: 'rounded-full border-2 border-warning bg-transparent',
+  connected: 'rounded-full bg-success',
+  disconnected: 'rounded-none bg-muted-foreground',
+  error: 'rotate-45 rounded-none bg-error'
 };
 
-/** Shared with the sidebar rows and the status bar so a status label never
- * falls back to the raw enum string. */
+/** Status color is redundant: each state also has a distinct shape, so the
+ * dot remains distinguishable without relying on hue or a tooltip. The shape
+ * classes live here, not at the call sites: Tailwind emits `rounded-full`
+ * after `rounded-none`, so a component-level `rounded-full` base would
+ * silently win the cascade and collapse square/diamond back to circles. */
 export const SESSION_STATUS_LABEL_KEY: Record<SessionStatus, string> = {
   idle: 'status.idle',
   connecting: 'status.connecting',
@@ -35,6 +38,6 @@ export function isSshBackedSession(kind: SessionKind): boolean {
 }
 
 export function sessionStatusDot(status: SessionStatus, pulse = false): string {
-  const color = SESSION_STATUS_COLOR[status];
+  const color = SESSION_STATUS_DOT_CLASS[status];
   return pulse && status === 'connecting' ? `${color} animate-pulse` : color;
 }

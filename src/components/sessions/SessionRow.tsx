@@ -74,7 +74,9 @@ export default function SessionRow({
       )}
     >
       <span
-        className={cn('h-1.5 w-1.5 shrink-0 rounded-full', sessionStatusDot(session.status, true))}
+        role="img"
+        aria-label={t(SESSION_STATUS_LABEL_KEY[session.status])}
+        className={cn('h-1.5 w-1.5 shrink-0', sessionStatusDot(session.status, true))}
         title={t(SESSION_STATUS_LABEL_KEY[session.status])}
       />
       <KindIcon className="h-3.5 w-3.5 shrink-0 text-muted" />

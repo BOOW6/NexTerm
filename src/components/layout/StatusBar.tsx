@@ -27,7 +27,9 @@ export default function StatusBar() {
         {session ? (
           <>
             <span
-              className={cn('h-1.5 w-1.5 rounded-full', sessionStatusDot(session.status, true))}
+              role="img"
+              aria-label={t(SESSION_STATUS_LABEL_KEY[session.status])}
+              className={cn('h-1.5 w-1.5', sessionStatusDot(session.status, true))}
             />
             <span
               className="truncate font-medium text-foreground"
