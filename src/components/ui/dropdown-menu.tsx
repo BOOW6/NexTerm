@@ -138,6 +138,9 @@ export function DropdownMenu({ items, align = 'end', className, label }: Dropdow
                   onClick={(event) => {
                     event.stopPropagation();
                     setOpen(false);
+                    // Keyboard selection must not drop focus to <body>: the
+                    // menu unmounts, so hand focus back like Escape does.
+                    triggerRef.current?.focus();
                     item.onSelect();
                   }}
                   className={cn(
